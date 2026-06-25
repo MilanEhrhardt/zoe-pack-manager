@@ -1,0 +1,3114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zoe Pack Manager — The Zoe Project</title>
+  <!--
+    Zoe Pack Manager — The Zoe Project storeroom tool
+    Double-click this file to open. No install or internet needed.
+    Your work saves automatically on this computer.
+    Use Export Backup (footer) to save a copy somewhere safe.
+    To add items, change recipes, or clinics: edit the CONFIG block in the script below.
+  -->
+  <style>
+    :root {
+      --zoe-purple: #5F43B2;
+      --zoe-purple-dark: #3B2677;
+      --zoe-pink: #C64A8B;
+      --zoe-green: #2F8F5B;
+      --zoe-blue: #316B9E;
+      --bg: #F7F5F0;
+      --surface: rgba(255,255,255,0.92);
+      --surface-solid: #FFFFFF;
+      --text: #141414;
+      --text-muted: #6B7280;
+      --border: #E7E1D6;
+      --border-strong: #D8D0C4;
+      --shadow: 0 24px 70px rgba(20,20,20,0.08), 0 2px 10px rgba(20,20,20,0.04);
+      --shadow-soft: 0 10px 32px rgba(20,20,20,0.06);
+      --radius: 22px;
+      --radius-sm: 14px;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { background: var(--bg); }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(95,67,178,0.10), transparent 28%),
+        radial-gradient(circle at 86% 12%, rgba(198,74,139,0.08), transparent 24%),
+        linear-gradient(180deg, #FFFCF7 0%, var(--bg) 100%);
+      color: var(--text);
+      font-size: 18px;
+      line-height: 1.5;
+      min-height: 100vh;
+      letter-spacing: -0.01em;
+    }
+    .wrap {
+      width: min(980px, calc(100vw - 44px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+    .view-content {
+      background: var(--surface);
+      border: 1px solid rgba(216,208,196,0.85);
+      border-radius: 30px;
+      box-shadow: var(--shadow);
+      padding: 42px;
+      backdrop-filter: blur(10px);
+    }
+    h1, h2, h3 { letter-spacing: -0.045em; }
+    h1 { font-size: 1.5rem; font-weight: 650; margin: 0 0 8px; color: var(--zoe-purple-dark); }
+    h2 { font-size: clamp(2rem, 4vw, 3.5rem); line-height: 1.02; font-weight: 650; margin: 0 0 12px; color: var(--text); }
+    h3 { font-size: 1rem; font-weight: 650; margin: 0 0 14px; color: var(--text); }
+    p { margin-top: 0; }
+    .today-date { font-size: 0.95rem; color: var(--text-muted); margin-bottom: 24px; }
+
+    /* App header */
+    .app-header {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 22px;
+      padding: 0 6px;
+    }
+    .header-row { display: contents; }
+    .header-spacer { width: auto; min-width: 44px; }
+    .header-brand { display: flex; justify-content: center; align-items: center; }
+    .header-logo { height: 54px; width: auto; display: block; }
+    .app-header--home .header-logo { height: 72px; }
+    .header-back {
+      width: 48px;
+      height: 48px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.72);
+      border-radius: 999px;
+      box-shadow: var(--shadow-soft);
+      font-size: 1.35rem;
+      color: var(--zoe-purple);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .header-back:hover { border-color: var(--zoe-purple); }
+    .header-tagline { display: none; }
+    .header-title { display: none; }
+    .header-date {
+      grid-column: 3;
+      grid-row: 1;
+      justify-self: end;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    /* Home */
+    .home-question {
+      font-size: clamp(2.4rem, 5vw, 4.6rem);
+      line-height: 1.02;
+      letter-spacing: -0.06em;
+      font-weight: 650;
+      text-align: center;
+      color: var(--text);
+      margin: 14px 0 34px;
+    }
+    .home-actions { display: grid; gap: 16px; max-width: 720px; margin: 0 auto 26px; }
+    .home-action-btn {
+      display: grid;
+      grid-template-columns: 54px 1fr auto;
+      align-items: center;
+      gap: 18px;
+      width: 100%;
+      min-height: 94px;
+      padding: 22px 28px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      color: var(--text);
+      background: var(--surface-solid);
+      font-family: inherit;
+      font-size: 1.65rem;
+      font-weight: 620;
+      letter-spacing: -0.035em;
+      text-align: left;
+      box-shadow: var(--shadow-soft);
+      transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+    }
+    .home-action-btn::after { content: "→"; color: var(--text-muted); font-weight: 400; font-size: 1.35rem; }
+    .home-action-btn:hover { transform: translateY(-1px); border-color: #CFC6BA; box-shadow: var(--shadow); }
+    .home-action-btn--build { background: linear-gradient(135deg, #FFFFFF 0%, #F7FFF9 100%); }
+    .home-action-btn--donation { background: linear-gradient(135deg, #FFFFFF 0%, #FFF7FB 100%); }
+    .home-action-btn--deliver { background: linear-gradient(135deg, #FFFFFF 0%, #F6FAFF 100%); }
+    .home-action-icon {
+      flex-shrink: 0;
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(95,67,178,0.08);
+      color: var(--zoe-purple);
+    }
+    .home-action-icon svg { width: 30px; height: 30px; stroke: currentColor; fill: none; }
+    .home-action-btn--build .home-action-icon { color: var(--zoe-green); background: rgba(47,143,91,0.10); }
+    .home-action-btn--donation .home-action-icon { color: var(--zoe-pink); background: rgba(198,74,139,0.10); }
+    .home-action-btn--deliver .home-action-icon { color: var(--zoe-blue); background: rgba(49,107,158,0.10); }
+    .home-action-label { text-align: left; padding-right: 0; }
+    .stat-cards { display: none; }
+
+    /* Admin / secondary */
+    .admin-panel {
+      max-width: 720px;
+      margin: 18px auto 0;
+      border-top: 1px solid var(--border);
+      padding-top: 18px;
+    }
+    .admin-panel > summary {
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      list-style: none;
+      width: max-content;
+    }
+    .admin-panel > summary::-webkit-details-marker { display: none; }
+    .admin-panel-grid { margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .admin-card {
+      background: rgba(255,255,255,0.72);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      box-shadow: var(--shadow-soft);
+    }
+    .home-secondary { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 8px 0 0; }
+    .home-link, .home-undo, .footer button, .link-button {
+      background: none;
+      border: none;
+      color: var(--zoe-purple);
+      font-size: 0.92rem;
+      font-family: inherit;
+      cursor: pointer;
+      text-decoration: none;
+      padding: 0;
+    }
+    .home-link:hover, .home-undo:hover, .footer button:hover { text-decoration: underline; }
+    .panel, .hero {
+      background: var(--surface-solid);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow-soft);
+    }
+    .low-item { color: #A13A34; font-weight: 600; margin: 5px 0; }
+    .nudge { color: var(--zoe-green); margin: 5px 0; font-size: 0.95rem; }
+    .footer {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 0.86rem;
+      color: var(--text-muted);
+    }
+    .footer p { margin-bottom: 10px; }
+    .footer button { margin-right: 14px; }
+    .footer-tools { display: flex; flex-wrap: wrap; gap: 14px; }
+
+    /* Form surfaces */
+    .form-shell { max-width: 720px; margin: 0 auto; }
+    .screen-kicker { color: var(--zoe-purple); font-weight: 650; margin-bottom: 8px; letter-spacing: -0.02em; }
+    .screen-subtitle { color: var(--text-muted); font-size: 1.05rem; margin-bottom: 28px; }
+    .form-grid { display: grid; gap: 16px; }
+    .field-card, .donation-line, .custom-extra-line, .core-preview {
+      background: var(--surface-solid);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 18px;
+      box-shadow: var(--shadow-soft);
+    }
+    label {
+      display: block;
+      margin: 0 0 7px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    input[type="text"], input[type="number"], input[type="date"], select {
+      width: 100%;
+      padding: 15px 16px;
+      font-size: 1.05rem;
+      font-family: inherit;
+      border: 1px solid var(--border-strong);
+      border-radius: 13px;
+      background: #fff;
+      color: var(--text);
+      box-shadow: inset 0 1px 0 rgba(20,20,20,0.02);
+    }
+    input[type="number"] { font-variant-numeric: tabular-nums; }
+    input:focus, select:focus {
+      outline: 3px solid rgba(95,67,178,0.18);
+      border-color: var(--zoe-purple);
+    }
+    .primary-number {
+      font-size: clamp(2.4rem, 5vw, 4.2rem) !important;
+      font-weight: 650;
+      color: var(--zoe-purple) !important;
+      text-align: center;
+      letter-spacing: -0.055em;
+      padding: 18px !important;
+    }
+    .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: end; margin-bottom: 12px; }
+    .actions { display: flex; flex-direction: column; gap: 12px; margin: 24px 0 0; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 18px 24px;
+      font-size: 1.08rem;
+      font-family: inherit;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      text-align: center;
+      transition: opacity 0.15s, transform 0.12s;
+      font-weight: 650;
+    }
+    .btn:hover { opacity: 0.94; transform: translateY(-1px); }
+    .btn-primary { background: var(--text); color: #fff; }
+    .btn-secondary { background: var(--surface-solid); color: var(--text); border: 1px solid var(--border-strong); }
+    .btn-deliver { background: var(--zoe-blue); color: #fff; }
+    .btn-small {
+      padding: 10px 14px;
+      font-size: 0.92rem;
+      width: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface-solid);
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      border-radius: 999px;
+      cursor: pointer;
+      margin-right: 8px;
+      font-family: inherit;
+    }
+    .btn-undo { background: #8B7355; color: #fff; margin-top: 12px; }
+    .advanced-section {
+      margin-top: 16px;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      overflow: visible;
+    }
+    .advanced-section[open] {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.62);
+      overflow: hidden;
+    }
+    .advanced-section > summary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 15px;
+      cursor: pointer;
+      color: var(--zoe-purple);
+      font-weight: 650;
+      list-style: none;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      background: var(--surface-solid);
+      box-shadow: 0 1px 4px rgba(20, 16, 32, 0.06);
+      font-size: 0.92rem;
+    }
+    .advanced-section[open] > summary {
+      margin: 14px 18px 8px;
+    }
+    .advanced-section > summary::-webkit-details-marker { display: none; }
+    .advanced-body { padding: 0 18px 18px; }
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      padding: 13px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .toggle-row label { margin: 0; flex: 1; color: var(--text); text-transform: none; font-size: 1rem; letter-spacing: -0.01em; }
+    .toggle-btn {
+      padding: 9px 18px;
+      font-size: 0.95rem;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      background: #fff;
+      cursor: pointer;
+      min-width: 70px;
+      font-family: inherit;
+    }
+    .toggle-btn.on { background: var(--zoe-purple); color: #fff; border-color: var(--zoe-purple); }
+    .banner, .error {
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      font-size: 0.95rem;
+    }
+    .banner { background: #FFF8E7; border: 1px solid #E8D5A0; }
+    .banner-draft { background: #FFF0F0; border-color: #E8A0A0; }
+    .error { color: #8B1E16; background: #FFF0F0; border: 1px solid #E9B2AE; }
+    .field-error { color: #A13A34; font-size: 0.92rem; margin: 6px 0 10px; }
+    input.field-error-input, select.field-error-input { border-color: #A13A34; }
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+    .tab {
+      padding: 14px;
+      border: 1px solid var(--border-strong);
+      background: #fff;
+      border-radius: 999px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    .tab.active { border-color: var(--zoe-purple); background: rgba(95,67,178,0.08); font-weight: 650; color: var(--zoe-purple-dark); }
+    .shortcut-btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+    .shortcut-btns button { padding: 10px 14px; font-size: 0.92rem; background: rgba(95,67,178,0.06); border: 1px solid rgba(95,67,178,0.24); border-radius: 999px; cursor: pointer; font-family: inherit; }
+    .stock-fold summary { cursor: pointer; color: var(--text-muted); margin-top: 12px; }
+    .stock-list { font-size: 0.9rem; color: var(--text-muted); max-height: 360px; overflow-y: auto; margin-top: 8px; }
+    .hidden { display: none !important; }
+    .donor-hint { color: var(--text-muted); font-size: 0.9rem; margin: 6px 0 12px; }
+    #import-file { display: none; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(20,20,20,0.42); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 100; }
+    .modal { background: #fff; border-radius: 24px; padding: 28px; max-width: 520px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow); }
+    .modal h2 { margin-top: 0; font-size: 2rem; }
+    .modal-actions { display: flex; gap: 12px; margin-top: 24px; }
+    .modal-actions .btn { flex: 1; }
+    @media (max-width: 700px) {
+      .wrap { width: min(100vw - 22px, 980px); padding-top: 12px; }
+      .view-content { padding: 24px 18px; border-radius: 22px; }
+      .app-header { grid-template-columns: auto 1fr auto; }
+      .header-logo { height: 44px; }
+      .app-header--home .header-logo { height: 56px; }
+      .header-date { font-size: 0.8rem; }
+      .home-action-btn { min-height: 82px; font-size: 1.28rem; padding: 18px; grid-template-columns: 46px 1fr auto; }
+      .home-action-icon { width: 46px; height: 46px; border-radius: 15px; }
+      .row { grid-template-columns: 1fr; }
+      .admin-panel-grid { grid-template-columns: 1fr; }
+    }
+</style>
+</head>
+<body>
+  <div class="wrap" id="app"></div>
+  <input type="file" id="import-file" accept=".json,application/json">
+
+  <script>
+  // ═══════════════════════════════════════════════════════════════════
+  // CONFIG — edit here for items, recipes, clinics, thresholds
+  // ═══════════════════════════════════════════════════════════════════
+
+  const PACKERS = ["Janet", "Judy"];
+
+  const CLINICS = ["Retreat", "Mowbray", "Gugulethu", "Mitchell's Plain", "Zimbabwe"];
+
+  const COMPLETE_UNIT_ITEMS = ["nappy-bags", "avo-packs", "lions-packs"];
+
+  const PACK_CATEGORY_ORDER = {
+    momPack: ["Moms", "Baby Products", "Miscellaneous", "Baby Clothes", "Blankets", "Toys"],
+    babyPack: ["Baby Clothes", "Baby Products", "Blankets", "Toys", "Miscellaneous", "Moms"],
+  };
+
+  const PACK_STOCK_SHORTCUTS = {
+    momPack: ["pads", "face-cloths", "toothbrush"],
+    babyPack: ["baby-gro", "vest", "leggings"],
+  };
+
+  // Optional extras only: stock must exceed threshold × this before "Use-it-up" nudges
+  const SURPLUS_NUDGE_MULTIPLIER = 2;
+
+  function item(id, name, category, unit, threshold, extra = {}) {
+    return { id, name, category, unit, threshold, ...extra };
+  }
+
+  const ITEMS = [
+    // Baby Clothes
+    item("baby-gro", "Baby Gro", "Baby Clothes", "each", 15, { fastCount: true }),
+    item("vest", "Vest", "Baby Clothes", "each", 20, { fastCount: true }),
+    item("socks", "Socks", "Baby Clothes", "each", 15),
+    item("cotton-hat", "Cotton Hat", "Baby Clothes", "each", 10),
+    item("leggings", "Leggings", "Baby Clothes", "each", 15, { fastCount: true }),
+    item("fleece-gro", "Fleece Gro", "Baby Clothes", "each", 15),
+    item("shorts", "Shorts", "Baby Clothes", "each", 10),
+    item("t-shirts", "T-Shirts", "Baby Clothes", "each", 10),
+    item("dress", "Dress", "Baby Clothes", "each", 8),
+    item("skirt", "Skirt", "Baby Clothes", "each", 8),
+    item("preemie", "Preemie", "Baby Clothes", "each", 8),
+    item("bits-n-bobs", "Bits 'n Bobs", "Baby Clothes", "each", 5),
+    item("jerseys", "Jerseys", "Baby Clothes", "each", 20),
+    item("mother-teresa", "Mother Teresa", "Baby Clothes", "each", 8),
+    item("knit-legs", "Knit Legs", "Baby Clothes", "each", 8),
+    item("knit-gro", "Knit Gro", "Baby Clothes", "each", 8),
+    item("xmas", "Xmas", "Baby Clothes", "each", 5),
+    item("extra-0-3", "0–3 Extra", "Baby Clothes", "each", 15),
+    item("extra-3-6", "3–6 Extra", "Baby Clothes", "each", 15),
+    item("extra-6-9", "6–9 Extra", "Baby Clothes", "each", 15),
+    item("boy-summer-extra", "Boy Summer Extra", "Baby Clothes", "each", 10, { seasonal: true, season: "summer", gender: "boy" }),
+    item("girl-summer-extra", "Girl Summer Extra", "Baby Clothes", "each", 10, { seasonal: true, season: "summer", gender: "girl" }),
+    item("neutral-summer-extra", "Neutral Summer Extra", "Baby Clothes", "each", 10, { seasonal: true, season: "summer", gender: "neutral" }),
+    item("boy-winter-extra", "Boy Winter Extra", "Baby Clothes", "each", 10, { seasonal: true, season: "winter", gender: "boy" }),
+    item("girl-winter-extra", "Girl Winter Extra", "Baby Clothes", "each", 10, { seasonal: true, season: "winter", gender: "girl" }),
+    item("neutral-winter-extra", "Neutral Winter Extra", "Baby Clothes", "each", 10, { seasonal: true, season: "winter", gender: "neutral" }),
+    item("cotton-beanies", "Cotton Beanies", "Baby Clothes", "each", 10, { seasonal: true, season: "summer" }),
+    item("thick-jerseys", "Thick Jerseys", "Baby Clothes", "each", 10, { seasonal: true, season: "winter" }),
+    // Toys
+    item("toy-knitted", "Knitted", "Toys", "each", 15),
+    item("toy-plush", "Plush", "Toys", "each", 10),
+    item("toy-misc", "Misc.", "Toys", "each", 5),
+    // Baby Products
+    item("aqueous", "Aqueous", "Baby Products", "each", 5),
+    item("bum", "Bum", "Baby Products", "each", 5),
+    item("baby-oil", "Baby Oil", "Baby Products", "each", 5),
+    item("baby-wash-small", "Baby Wash small", "Baby Products", "each", 5),
+    item("baby-wash-large", "Baby Wash large", "Baby Products", "each", 5),
+    item("baby-soap", "Baby Soap", "Baby Products", "each", 10),
+    item("powder", "Powder", "Baby Products", "each", 5),
+    item("samples", "Samples", "Baby Products", "each", 5),
+    item("wet-wipes", "Wet Wipes", "Baby Products", "each", 8),
+    item("vaseline", "Vaseline", "Baby Products", "each", 5),
+    item("face-cloth-baby", "Face Cloth", "Baby Products", "each", 10),
+    item("bibs", "Bibs", "Baby Products", "each", 10),
+    item("nappies", "Nappies", "Baby Products", "each", 40),
+    item("pack-bags", "Pack Bags", "Baby Products", "each", 10),
+    // Blankets
+    item("knitted-blanket", "Knitted", "Blankets", "each", 20),
+    item("fleece-blanket", "Fleece", "Blankets", "each", 10),
+    item("receiving", "Receiving", "Blankets", "each", 15),
+    item("sleep-sac", "Sleep Sac", "Blankets", "each", 8),
+    item("quilts", "Quilts", "Blankets", "each", 5),
+    item("blanket-other", "Other", "Blankets", "each", 5),
+    // Miscellaneous
+    item("nappy-bags", "Nappy Bags", "Miscellaneous", "each", 10),
+    item("toiletry-bags", "Toiletry Bags", "Miscellaneous", "each", 10),
+    item("moms-socks", "Moms Socks", "Miscellaneous", "each", 10),
+    item("pumps", "Pumps", "Miscellaneous", "each", 3),
+    item("avo-packs", "Avo Packs", "Miscellaneous", "each", 5),
+    item("lions-packs", "Lions Packs", "Miscellaneous", "each", 5),
+    // Moms
+    item("breast-pads", "Breast Pads", "Moms", "each", 20),
+    item("body-lotion", "Body Lotion", "Moms", "each", 8),
+    item("body-wash", "Body Wash", "Moms", "each", 10),
+    item("cotton-wool", "Cotton Wool", "Moms", "each", 8),
+    item("deo", "Deo", "Moms", "each", 15),
+    item("face-cloths", "Face Cloths", "Moms", "each", 10),
+    item("pads", "Pads", "Moms", "packet", 20, { packSize: 12, variablePackSize: true }),
+    item("panties", "Panties", "Moms", "each", 15),
+    item("shampoo", "Shampoo", "Moms", "each", 8),
+    item("snacks", "Snacks", "Moms", "each", 15),
+    item("soap-moms", "Soap", "Moms", "each", 15),
+    item("toothbrush", "Toothbrush", "Moms", "each", 20),
+    item("toothpaste", "Toothpaste", "Moms", "each", 15),
+    item("tissues", "Tissues", "Moms", "each", 10),
+    item("tiny-lip-vaseline", "Tiny Lip Vaseline", "Moms", "each", 10),
+    item("hand-cream", "Hand Cream", "Moms", "each", 10),
+    item("cup-of-soup-sachets", "Cup of Soup Sachets", "Moms", "each", 10),
+  ];
+
+  const RECIPES = {
+    momPack: {
+      confirmed: true,
+      label: "Mom Pack",
+      core: [
+        { itemId: "pads", qty: 2 },
+        { itemId: "face-cloths", qty: 1 },
+        { itemId: "soap-moms", qty: 1 },
+        { itemId: "toothbrush", qty: 1 },
+        { itemId: "toothpaste", qty: 1 },
+      ],
+      optional: [
+        { itemId: "snacks", decrement: false, defaultOff: true, label: "Snack (make a plan — not tracked)" },
+        { itemId: "deo", decrement: true },
+        { itemId: "panties", decrement: true },
+        { itemId: "breast-pads", decrement: true },
+        { itemId: "wet-wipes", decrement: true },
+        { itemId: "tissues", decrement: true, surplusDriven: true },
+        { itemId: "hand-cream", decrement: true, surplusDriven: true, defaultOff: true },
+      ],
+    },
+    babyPack: {
+      confirmed: false,
+      label: "Baby Pack",
+      core: [
+        { itemId: "baby-gro", qty: 1 },
+        { itemId: "vest", qty: 1 },
+        { itemId: "nappies", qty: 5 },
+        { itemId: "baby-soap", qty: 1 },
+        { itemId: "face-cloth-baby", qty: 1 },
+      ],
+      optional: [
+        { itemId: "receiving", decrement: true },
+        { itemId: "knitted-blanket", decrement: true },
+        { itemId: "cotton-hat", decrement: true },
+        { itemId: "socks", decrement: true },
+        { id: "matching-knit-set", decrement: false, label: "Matching knit set (colour — assistive only)" },
+      ],
+    },
+  };
+
+  const PACK_CONTEXT_LABELS = { momPack: "Mom Pack", babyPack: "Baby Pack" };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // BUILD / SUBSTITUTION HELPERS
+  // ═══════════════════════════════════════════════════════════════════
+
+  function recipeItemIds(packKey) {
+    const recipe = RECIPES[packKey];
+    const ids = recipe.core.map(c => c.itemId);
+    recipe.optional.forEach(opt => { if (opt.itemId) ids.push(opt.itemId); });
+    return ids;
+  }
+
+  function categoryRank(packKey, category) {
+    const order = PACK_CATEGORY_ORDER[packKey] || [];
+    const idx = order.indexOf(category);
+    return idx === -1 ? 99 : idx;
+  }
+
+  function sortItemsForPack(packKey, opts = {}) {
+    const recipeIds = new Set(opts.recipeFirst ? recipeItemIds(packKey) : []);
+    return [...ITEMS].sort((a, b) => {
+      const aRecipe = recipeIds.has(a.id) ? 0 : 1;
+      const bRecipe = recipeIds.has(b.id) ? 0 : 1;
+      if (aRecipe !== bRecipe) return aRecipe - bRecipe;
+      const aCat = categoryRank(packKey, a.category);
+      const bCat = categoryRank(packKey, b.category);
+      if (aCat !== bCat) return aCat - bCat;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  function sortCategoriesForPack(categories, packKey) {
+    return [...categories].sort((a, b) => {
+      const diff = categoryRank(packKey, a) - categoryRank(packKey, b);
+      return diff !== 0 ? diff : a.localeCompare(b);
+    });
+  }
+
+  function itemOptions(selectedId, packKey, opts = {}) {
+    const pk = packKey || getPackContext();
+    return sortItemsForPack(pk, { recipeFirst: !!opts.recipeFirst }).map(i => {
+      let label = `${i.category} — ${i.name}`;
+      if (opts.showBalance) label += ` (currently ${getBalance(i.id)})`;
+      return `<option value="${i.id}" ${selectedId === i.id ? "selected" : ""}>${esc(label)}</option>`;
+    }).join("");
+  }
+
+  function renderPackContextSelector(inputId, packKey) {
+    const pk = packKey || "momPack";
+    return `<label>Packing for</label>
+      <select id="${esc(inputId)}" class="pack-context-select">
+        <option value="momPack" ${pk === "momPack" ? "selected" : ""}>${PACK_CONTEXT_LABELS.momPack}</option>
+        <option value="babyPack" ${pk === "babyPack" ? "selected" : ""}>${PACK_CONTEXT_LABELS.babyPack}</option>
+      </select>`;
+  }
+
+  function normalizeSubstitutions(substitutions) {
+    return (substitutions || []).map(s => ({
+      insteadOf: s.insteadOf,
+      substitute: s.substitute,
+      packCount: Math.max(0, parseInt(s.packCount, 10) || 0),
+      qtyPerPack: Math.max(1, parseInt(s.qtyPerPack, 10) || 1),
+    })).filter(s => s.insteadOf && s.substitute && s.insteadOf !== s.substitute && s.packCount > 0);
+  }
+
+  function normalizeOmissions(omissions) {
+    return (omissions || []).map(o => ({
+      itemId: o.itemId,
+      packCount: Math.max(0, parseInt(o.packCount, 10) || 0),
+      qtyPerPack: Math.max(1, parseInt(o.qtyPerPack, 10) || 1),
+    })).filter(o => o.itemId && o.packCount > 0);
+  }
+
+  function recipeQtyPerPack(packKey, itemId, optionalIncluded, customExtras) {
+    const recipe = RECIPES[packKey];
+    const core = recipe.core.find(c => c.itemId === itemId);
+    if (core) return core.qty;
+    if (optionalIncluded.includes(itemId)) return 1;
+    const extra = (customExtras || []).find(e => e.itemId === itemId);
+    if (extra) return parseInt(extra.qtyPerPack, 10) || 1;
+    return 1;
+  }
+
+  function computeBuildStockPlan(packKey, qty, optionalIncluded, customExtras, substitutions, omissions) {
+    const recipe = RECIPES[packKey];
+    const usage = {};
+    const subs = normalizeSubstitutions(substitutions);
+    const omits = normalizeOmissions(omissions);
+    const subPacksInstead = {};
+    const subPacksSubstitute = {};
+
+    for (const c of recipe.core) {
+      usage[c.itemId] = (usage[c.itemId] || 0) + c.qty * qty;
+    }
+    for (const opt of recipe.optional) {
+      const key = opt.itemId || opt.id;
+      if (!optionalIncluded.includes(key)) continue;
+      if (!opt.decrement || !opt.itemId) continue;
+      usage[opt.itemId] = (usage[opt.itemId] || 0) + qty;
+    }
+    for (const extra of customExtras || []) {
+      const perPack = parseInt(extra.qtyPerPack, 10) || 1;
+      usage[extra.itemId] = (usage[extra.itemId] || 0) + perPack * qty;
+    }
+
+    for (const s of subs) {
+      subPacksInstead[s.insteadOf] = (subPacksInstead[s.insteadOf] || 0) + s.packCount;
+      subPacksSubstitute[s.substitute] = (subPacksSubstitute[s.substitute] || 0) + s.packCount;
+      const origPerPack = recipeQtyPerPack(packKey, s.insteadOf, optionalIncluded, customExtras);
+      usage[s.insteadOf] = (usage[s.insteadOf] || 0) - s.packCount * origPerPack;
+      usage[s.substitute] = (usage[s.substitute] || 0) + s.packCount * s.qtyPerPack;
+    }
+
+    for (const o of omits) {
+      const perPack = recipeQtyPerPack(packKey, o.itemId, optionalIncluded, customExtras);
+      usage[o.itemId] = (usage[o.itemId] || 0) - o.packCount * perPack;
+    }
+
+    for (const opt of recipe.optional) {
+      const key = opt.itemId || opt.id;
+      if (!optionalIncluded.includes(key)) continue;
+      if (!opt.decrement || !opt.itemId) continue;
+      const skip = Math.min(qty, (subPacksInstead[key] || 0) + (subPacksSubstitute[key] || 0));
+      if (skip > 0) usage[key] = (usage[key] || 0) - skip;
+    }
+
+    for (const id of Object.keys(usage)) {
+      if (usage[id] < 0) usage[id] = 0;
+    }
+    return { usage, subs, omits };
+  }
+
+  function getSubstitutionLineErrors(qty, substitutions) {
+    const lineErrors = {};
+    const insteadTotals = {};
+    (substitutions || []).forEach((raw, idx) => {
+      const packCount = parseInt(raw.packCount, 10);
+      const hasPackCount = raw.packCount !== "" && raw.packCount !== undefined && !isNaN(packCount) && packCount > 0;
+      if (raw.insteadOf && raw.substitute && raw.insteadOf === raw.substitute) {
+        lineErrors[idx] = "Pick two different items.";
+        return;
+      }
+      if (!hasPackCount) return;
+      if (!qty || qty < 1) {
+        lineErrors[idx] = "Enter how many packs you built first (at the top).";
+        return;
+      }
+      if (packCount > qty) {
+        lineErrors[idx] = qty === 1
+          ? "You only built 1 pack — enter 1 here."
+          : `You only built ${qty} packs — enter ${qty} or less here.`;
+      }
+      if (raw.insteadOf) {
+        insteadTotals[raw.insteadOf] = (insteadTotals[raw.insteadOf] || 0) + packCount;
+      }
+    });
+    Object.entries(insteadTotals).forEach(([id, total]) => {
+      if (qty > 0 && total > qty) {
+        (substitutions || []).forEach((raw, idx) => {
+          if (raw.insteadOf === id && !lineErrors[idx]) {
+            lineErrors[idx] = qty === 1
+              ? "You only built 1 pack — the total here can't be more than 1."
+              : `You only built ${qty} packs — the total for ${itemName(id)} can't be more than ${qty}.`;
+          }
+        });
+      }
+    });
+    return lineErrors;
+  }
+
+  function validateSubstitutions(qty, substitutions) {
+    return Object.values(getSubstitutionLineErrors(qty, substitutions));
+  }
+
+  function substitutionsForPreview(qty, substitutions) {
+    const lineErrors = getSubstitutionLineErrors(qty, substitutions);
+    return (substitutions || []).filter((_, idx) => !lineErrors[idx]);
+  }
+
+  function formatBuildPreview(packKey, qty, included, customExtras, substitutions, compact, omissions) {
+    const recipe = RECIPES[packKey];
+    const subs = normalizeSubstitutions(substitutionsForPreview(qty, substitutions));
+    const omits = normalizeOmissions(omissions);
+    const { usage } = computeBuildStockPlan(packKey, qty, included, customExtras, subs, omissions);
+
+    let html = "";
+
+    if (!compact && !subs.length) {
+      const perPack = [];
+      recipe.core.forEach(c => perPack.push(`${c.qty} ${itemName(c.itemId)}`));
+      recipe.optional.forEach(opt => {
+        const key = opt.itemId || opt.id;
+        if (!included.includes(key)) return;
+        if (opt.decrement && opt.itemId) perPack.push(`1 ${itemName(opt.itemId)}`);
+        else if (!opt.decrement) perPack.push(`${opt.label || itemName(opt.itemId)} (not tracked)`);
+      });
+      (customExtras || []).forEach(e => {
+        const n = parseInt(e.qtyPerPack, 10) || 1;
+        perPack.push(`${n} ${itemName(e.itemId)}`);
+      });
+      html += `<p style="margin:0 0 6px;color:#555;font-size:0.9rem;"><strong>Each pack:</strong> ${perPack.join(" · ")}</p>`;
+    }
+
+    if (subs.length || omits.length) {
+      html += `<p style="margin:${compact ? "0" : "10px"} 0 6px;color:#555;font-size:0.9rem;"><strong>Changes:</strong></p>`;
+      subs.forEach(s => {
+        html += `${s.packCount} pack${s.packCount !== 1 ? "s" : ""} used ${s.qtyPerPack} ${esc(itemName(s.substitute))} instead of ${esc(itemName(s.insteadOf))}<br>`;
+      });
+      omits.forEach(o => {
+        html += `${o.packCount} pack${o.packCount !== 1 ? "s" : ""} left out ${esc(itemName(o.itemId))}<br>`;
+      });
+    }
+
+    html += `<p style="margin:${compact || subs.length ? "10px" : "12px"} 0 6px;"><strong>From the shelf (${qty} pack${qty !== 1 ? "s" : ""}):</strong></p>`;
+
+    const seen = new Set();
+    const shelfLines = [];
+    const addShelf = (id) => {
+      const n = usage[id] || 0;
+      if (n > 0 && !seen.has(id)) {
+        seen.add(id);
+        shelfLines.push(`${n} × ${itemName(id)}`);
+      }
+    };
+    recipe.core.forEach(c => addShelf(c.itemId));
+    recipe.optional.forEach(opt => {
+      if (opt.itemId && opt.decrement) addShelf(opt.itemId);
+    });
+    (customExtras || []).forEach(e => addShelf(e.itemId));
+    subs.forEach(s => addShelf(s.substitute));
+    Object.keys(usage).forEach(id => addShelf(id));
+
+    html += shelfLines.join("<br>") || "—";
+    return html;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // STATE
+  // ═══════════════════════════════════════════════════════════════════
+
+  const STORAGE_KEY = "zoePackManager_v1";
+
+  const itemMap = Object.fromEntries(ITEMS.map(i => [i.id, i]));
+
+  var ANALYTICS_SCHEMA_VERSION = "1.0.0";
+  var ANALYTICS_MAX_EVENTS = 50000;
+
+  let state = loadState();
+  let view = "home";
+  let form = {};
+  let confirmAction = null;
+  let errorMsg = "";
+
+  state = analyticsUpgradeState(state);
+  saveState();
+
+  const ANALYTICS_SESSION_ID = analyticsId("session");
+  let analyticsCurrentView = null;
+  let analyticsViewEnteredAt = Date.now();
+  let analyticsCurrentFlow = null;
+  let analyticsLastErrorSignature = "";
+  const analyticsFocusStartedAt = {};
+  const analyticsFieldState = {};
+  let analyticsLastFieldFocus = null;
+  let analyticsLastErrorMessage = "";
+  let analyticsLastExposureSig = "";
+  const analyticsClickBurst = {};
+  const analyticsHoverTimers = new Map();
+  const analyticsHoverLogged = new Set();
+  let analyticsScrollState = { view: "", startedAt: 0, maxPct: 0, lastPct: 0, lastAt: 0, timer: null };
+
+  analyticsTrack("app_open", {
+    userAgent: navigator.userAgent,
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    storageMode: location.protocol === "file:" ? "local_file" : location.protocol.replace(":", ""),
+    transactions: state.transactions.length,
+    analyticsEvents: state.analytics.events.length,
+  });
+
+  function freshState() {
+    const balances = {};
+    ITEMS.forEach(i => { balances[i.id] = 0; });
+    return {
+      balances,
+      readyPacks: { momPack: 0, babyPack: 0 },
+      transactions: [],
+      undoSnapshot: null,
+      packContext: "momPack",
+      donors: [],
+    };
+  }
+
+  function getPackContext() {
+    return state.packContext === "babyPack" ? "babyPack" : "momPack";
+  }
+
+  function setPackContext(packKey) {
+    state.packContext = packKey === "babyPack" ? "babyPack" : "momPack";
+    saveState();
+  }
+
+  function bindPackContextSelector(inputId, beforeRender) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    el.onchange = function() {
+      setPackContext(this.value);
+      if (beforeRender) beforeRender(this.value);
+      render();
+    };
+  }
+
+  function donationUnitsAdded(line) {
+    const it = itemMap[line.itemId];
+    if (!it) return line.qty;
+    if (it.unit === "packet") return line.qty * (line.packSize || it.packSize || 1);
+    return line.qty;
+  }
+
+  function normalizeDonorName(s) {
+    return (s || "").trim();
+  }
+
+  function donorMatches(a, b) {
+    return normalizeDonorName(a).toLowerCase() === normalizeDonorName(b).toLowerCase();
+  }
+
+  function getDonors() {
+    return state.donors || [];
+  }
+
+  function findDonor(name) {
+    const n = normalizeDonorName(name);
+    if (!n) return null;
+    return getDonors().find(d => donorMatches(d, n)) || null;
+  }
+
+  function extractDonorsFromTransactions(transactions) {
+    const set = new Set();
+    (transactions || []).forEach(tx => {
+      if (tx.type === "donation") {
+        const n = normalizeDonorName(tx.donor);
+        if (n) set.add(n);
+      }
+    });
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }
+
+  function rebuildDonorsFromTransactions() {
+    const set = new Set(getDonors().map(normalizeDonorName).filter(Boolean));
+    (state.transactions || []).forEach(tx => {
+      if (tx.type === "donation") {
+        const n = normalizeDonorName(tx.donor);
+        if (n) set.add(n);
+      }
+    });
+    state.donors = [...set].sort((a, b) => a.localeCompare(b));
+  }
+
+  function rememberDonor(name) {
+    const n = normalizeDonorName(name);
+    if (!n) return;
+    if (!state.donors) state.donors = [];
+    if (!findDonor(n)) {
+      state.donors.push(n);
+      state.donors.sort((a, b) => a.localeCompare(b));
+      saveState();
+    }
+  }
+
+  function updateDonorHint() {
+    const el = document.getElementById("donor");
+    const hint = document.getElementById("donor-new-hint");
+    if (!el || !hint) return;
+    const val = normalizeDonorName(el.value);
+    if (!val || findDonor(val)) {
+      hint.classList.add("hidden");
+      hint.textContent = "";
+      return;
+    }
+    hint.classList.remove("hidden");
+    hint.innerHTML = `New donor — <strong>${esc(val)}</strong> will be added when you save.`;
+  }
+
+  function buildSyntheticState() {
+    const balances = {};
+    ITEMS.forEach(i => { balances[i.id] = 0; });
+    const transactions = [];
+
+    const donations = [
+      { date: "2025-01-09", donor: "Angel Network", lines: [
+        { itemId: "nappy-bags", qty: 32, note: "pre-assembled — ready to deliver" },
+      ]},
+      { date: "2025-01-24", donor: "Neighbour — Retreat", lines: [
+        { itemId: "face-cloths", qty: 6 },
+        { itemId: "soap-moms", qty: 4 },
+        { itemId: "toothbrush", qty: 3 },
+      ]},
+      { date: "2025-02-06", donor: "Huggies / Dianna", lines: [
+        { itemId: "nappies", qty: 150, note: "bulk nappy delivery" },
+      ]},
+      { date: "2025-02-19", donor: "Knit for Love", lines: [
+        { itemId: "baby-gro", qty: 22 },
+        { itemId: "vest", qty: 18 },
+        { itemId: "knitted-blanket", qty: 14 },
+        { itemId: "cotton-hat", qty: 16 },
+        { itemId: "socks", qty: 12 },
+      ]},
+      { date: "2025-03-04", donor: "Zaida", lines: [
+        { itemId: "pads", qty: 4, packSize: 10, note: "mixed bag — counted packets" },
+        { itemId: "deo", qty: 12 },
+        { itemId: "wet-wipes", qty: 8 },
+        { itemId: "panties", qty: 6 },
+        { itemId: "breast-pads", qty: 5 },
+        { itemId: "tissues", qty: 4 },
+      ]},
+      { date: "2025-03-17", donor: "St Michael's — Mowbray", lines: [
+        { itemId: "leggings", qty: 35 },
+        { itemId: "t-shirts", qty: 20 },
+        { itemId: "socks", qty: 25 },
+        { itemId: "shorts", qty: 12 },
+        { itemId: "dress", qty: 6 },
+      ]},
+      { date: "2025-03-29", donor: "School hygiene drive", lines: [
+        { itemId: "toothbrush", qty: 45 },
+        { itemId: "toothpaste", qty: 40 },
+        { itemId: "tiny-lip-vaseline", qty: 15 },
+        { itemId: "soap-moms", qty: 20 },
+      ]},
+      { date: "2025-04-11", donor: "Retail surplus", lines: [
+        { itemId: "wet-wipes", qty: 48 },
+        { itemId: "baby-soap", qty: 25 },
+        { itemId: "shampoo", qty: 18 },
+        { itemId: "body-wash", qty: 12 },
+        { itemId: "body-lotion", qty: 10 },
+      ]},
+      { date: "2025-04-23", donor: "Anonymous", lines: [
+        { itemId: "hand-cream", qty: 5 },
+        { itemId: "tissues", qty: 8 },
+        { itemId: "panties", qty: 4 },
+      ]},
+      { date: "2025-05-07", donor: "Lions Club", lines: [
+        { itemId: "lions-packs", qty: 15 },
+      ]},
+      { date: "2025-05-21", donor: "Avo pack donation", lines: [
+        { itemId: "avo-packs", qty: 10 },
+      ]},
+      { date: "2025-06-02", donor: "Big moms drop — Gugulethu", lines: [
+        { itemId: "pads", qty: 6, packSize: 12 },
+        { itemId: "panties", qty: 30 },
+        { itemId: "deo", qty: 24 },
+        { itemId: "soap-moms", qty: 28 },
+        { itemId: "toothbrush", qty: 32 },
+        { itemId: "toothpaste", qty: 28 },
+        { itemId: "face-cloths", qty: 20 },
+        { itemId: "breast-pads", qty: 18 },
+      ]},
+      { date: "2025-06-18", donor: "Baby products — Mitchell's Plain", lines: [
+        { itemId: "nappies", qty: 40 },
+        { itemId: "receiving", qty: 10 },
+        { itemId: "face-cloth-baby", qty: 15 },
+        { itemId: "bibs", qty: 12 },
+        { itemId: "baby-wash-small", qty: 8 },
+      ]},
+      { date: "2025-07-08", donor: "Winter warmers", lines: [
+        { itemId: "thick-jerseys", qty: 18 },
+        { itemId: "fleece-gro", qty: 14 },
+        { itemId: "fleece-blanket", qty: 8 },
+        { itemId: "jerseys", qty: 10 },
+      ]},
+      { date: "2025-08-14", donor: "Cuppa kindness", lines: [
+        { itemId: "cup-of-soup-sachets", qty: 24 },
+        { itemId: "snacks", qty: 20 },
+        { itemId: "toiletry-bags", qty: 6 },
+      ]},
+      { date: "2025-09-03", donor: "Pads top-up (small)", lines: [
+        { itemId: "pads", qty: 2, packSize: 8, note: "almost out — small delivery" },
+      ]},
+      { date: "2025-09-22", donor: "Mitchell's Plain church", lines: [
+        { itemId: "baby-gro", qty: 40 },
+        { itemId: "vest", qty: 35 },
+        { itemId: "pack-bags", qty: 25 },
+        { itemId: "leggings", qty: 15 },
+      ]},
+      { date: "2025-10-15", donor: "Toys & bits", lines: [
+        { itemId: "toy-knitted", qty: 10 },
+        { itemId: "toy-plush", qty: 6 },
+        { itemId: "bits-n-bobs", qty: 8 },
+      ]},
+      { date: "2025-11-06", donor: "Year-end appeal", lines: [
+        { itemId: "pads", qty: 5, packSize: 12 },
+        { itemId: "nappies", qty: 60 },
+        { itemId: "baby-gro", qty: 18 },
+        { itemId: "vest", qty: 16 },
+        { itemId: "deo", qty: 15 },
+        { itemId: "wet-wipes", qty: 20 },
+        { itemId: "knitted-blanket", qty: 8 },
+        { itemId: "toothbrush", qty: 12 },
+        { itemId: "toothpaste", qty: 12 },
+        { itemId: "face-cloths", qty: 10 },
+      ]},
+      { date: "2025-12-04", donor: "Summer hats", lines: [
+        { itemId: "cotton-beanies", qty: 22 },
+        { itemId: "cotton-hat", qty: 14 },
+      ]},
+      { date: "2026-01-14", donor: "New year drop", lines: [
+        { itemId: "pads", qty: 5, packSize: 12 },
+        { itemId: "breast-pads", qty: 30 },
+        { itemId: "deo", qty: 15 },
+        { itemId: "panties", qty: 12 },
+      ]},
+      { date: "2026-02-28", donor: "Zimbabwe shipment prep", lines: [
+        { itemId: "soap-moms", qty: 16 },
+        { itemId: "toothbrush", qty: 14 },
+        { itemId: "toothpaste", qty: 14 },
+        { itemId: "face-cloths", qty: 12 },
+        { itemId: "wet-wipes", qty: 10 },
+        { itemId: "tissues", qty: 15 },
+        { itemId: "panties", qty: 8 },
+      ]},
+      { date: "2026-04-09", donor: "Quick top-up", lines: [
+        { itemId: "pads", qty: 1, packSize: 12 },
+        { itemId: "panties", qty: 4 },
+        { itemId: "hand-cream", qty: 3 },
+      ]},
+      { date: "2026-05-16", donor: "Corporate — nappies", lines: [
+        { itemId: "nappies", qty: 80 },
+        { itemId: "nappy-bags", qty: 12 },
+        { itemId: "aqueous", qty: 6 },
+        { itemId: "bum", qty: 6 },
+      ]},
+      { date: "2026-06-10", donor: "Neighbourhood drive", lines: [
+        { itemId: "moms-socks", qty: 14 },
+        { itemId: "preemie", qty: 5 },
+        { itemId: "mother-teresa", qty: 4 },
+        { itemId: "powder", qty: 3 },
+        { itemId: "vaseline", qty: 4 },
+      ]},
+    ];
+
+    donations.forEach((d, i) => {
+      const tx = { id: `seed-don-${i + 1}`, type: "donation", date: d.date, donor: d.donor, lines: [] };
+      for (const line of d.lines) {
+        const unitsAdded = donationUnitsAdded(line);
+        balances[line.itemId] = (balances[line.itemId] || 0) + unitsAdded;
+        tx.lines.push({
+          itemId: line.itemId,
+          qty: line.qty,
+          packSize: line.packSize,
+          note: line.note || "",
+          unitsAdded,
+        });
+      }
+      transactions.push(tx);
+    });
+
+    const donors = donations.map(d => normalizeDonorName(d.donor)).filter(Boolean)
+      .filter((d, i, arr) => arr.findIndex(x => donorMatches(x, d)) === i)
+      .sort((a, b) => a.localeCompare(b));
+
+    return {
+      balances,
+      readyPacks: { momPack: 0, babyPack: 0 },
+      transactions,
+      undoSnapshot: null,
+      sampleData: true,
+      packContext: "momPack",
+      donors,
+    };
+  }
+
+  function loadSampleData() {
+    if (!confirm("Replace all current data with sample donation history? You can Export first to keep a backup.")) return;
+    state = analyticsUpgradeState(buildSyntheticState());
+    analyticsTrack("sample_data_loaded", { transactionCount: state.transactions.length });
+    saveState();
+    view = "home";
+    form = {};
+    render();
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        ITEMS.forEach(i => {
+          if (parsed.balances[i.id] === undefined) parsed.balances[i.id] = 0;
+        });
+        if (!parsed.readyPacks) parsed.readyPacks = { momPack: 0, babyPack: 0 };
+        if (!parsed.transactions) parsed.transactions = [];
+        if (!parsed.packContext) parsed.packContext = "momPack";
+        if (!parsed.donors || !parsed.donors.length) {
+          parsed.donors = extractDonorsFromTransactions(parsed.transactions);
+        }
+        return parsed;
+      }
+    } catch (e) { /* no-op */ }
+    const seeded = buildSyntheticState();
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded)); } catch (e) { /* no-op */ }
+    return seeded;
+  }
+
+  function saveState() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* no-op */ }
+  }
+
+  function getSeason() {
+    const m = new Date().getMonth();
+    if (m >= 11 || m <= 2) return "summer";
+    if (m >= 5 && m <= 8) return "winter";
+    return "shoulder";
+  }
+
+  function isOutOfSeason(item) {
+    if (!item.seasonal) return false;
+    const s = getSeason();
+    if (s === "shoulder") return false;
+    return item.season !== s;
+  }
+
+  function getBalance(id) {
+    return state.balances[id] ?? 0;
+  }
+
+  function buildableCount(packKey) {
+    const recipe = RECIPES[packKey];
+    let min = Infinity;
+    for (const c of recipe.core) {
+      const stock = getBalance(c.itemId);
+      const n = Math.floor(stock / c.qty);
+      if (n < min) min = n;
+    }
+    return min === Infinity ? 0 : min;
+  }
+
+  function getLowStock() {
+    return ITEMS.filter(i => {
+      if (isOutOfSeason(i)) return false;
+      return getBalance(i.id) < i.threshold;
+    });
+  }
+
+  function getSurplusNudges() {
+    const nudges = [];
+    for (const packKey of ["momPack", "babyPack"]) {
+      const recipe = RECIPES[packKey];
+      for (const opt of recipe.optional) {
+        if (!opt.surplusDriven || !opt.itemId) continue;
+        const it = itemMap[opt.itemId];
+        if (it && getBalance(it.id) > it.threshold * SURPLUS_NUDGE_MULTIPLIER) {
+          if (!nudges.find(n => n.item.id === it.id)) {
+            nudges.push({
+              item: it,
+              packLabel: recipe.label,
+              label: opt.label || it.name,
+            });
+          }
+        }
+      }
+    }
+    return nudges;
+  }
+
+  function todayISO() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function formatDate(iso) {
+    const d = new Date(iso + "T12:00:00");
+    return d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  }
+
+  function formatToday() {
+    return formatDate(todayISO());
+  }
+
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+
+  function itemName(id) {
+    return itemMap[id]?.name || id;
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════
+  // LOCAL ANALYTICS — comprehensive, private, exportable, AI-ready
+  // ═══════════════════════════════════════════════════════════════════
+
+  var ANALYTICS_SCHEMA_VERSION = "1.0.0";
+  var ANALYTICS_MAX_EVENTS = 50000;
+
+  function analyticsId(prefix) {
+    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function analyticsUpgradeState(st) {
+    if (!st.analytics) st.analytics = {};
+    if (!st.analytics.schemaVersion) st.analytics.schemaVersion = ANALYTICS_SCHEMA_VERSION;
+    if (!st.analytics.installId) st.analytics.installId = analyticsId("install");
+    if (!Array.isArray(st.analytics.events)) st.analytics.events = [];
+    if (!st.analytics.firstSeenAt) st.analytics.firstSeenAt = new Date().toISOString();
+    if (typeof st.analytics.recordingEnabled !== "boolean") st.analytics.recordingEnabled = true;
+    st.analytics.lastSeenAt = new Date().toISOString();
+    return st;
+  }
+
+  function analyticsSafeText(text, max = 80) {
+    return String(text || "").replace(/\s+/g, " ").trim().slice(0, max);
+  }
+
+  function analyticsHash(str) {
+    str = String(str || "");
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
+    }
+    return (h >>> 0).toString(16);
+  }
+
+  function analyticsElementMeta(el) {
+    if (!el) return {};
+    const label = el.getAttribute("aria-label") || el.innerText || el.value || el.placeholder || "";
+    return {
+      tag: el.tagName ? el.tagName.toLowerCase() : "",
+      id: el.id || "",
+      name: el.name || "",
+      type: el.type || "",
+      classes: el.className && typeof el.className === "string" ? el.className.split(/\s+/).filter(Boolean).slice(0, 5) : [],
+      text: analyticsSafeText(label, 60),
+      dataGo: el.dataset?.go || "",
+    };
+  }
+
+  function analyticsFieldName(el) {
+    if (!el) return "unknown";
+    if (el.id) return el.id;
+    if (el.name) return el.name;
+    if (el.className && typeof el.className === "string") return el.className.split(/\s+/).filter(Boolean)[0] || "unknown";
+    return el.tagName ? el.tagName.toLowerCase() : "unknown";
+  }
+
+  function analyticsFieldValue(el) {
+    const type = el.type || el.tagName?.toLowerCase();
+    const raw = el.value ?? "";
+    if (type === "number") return { valueType: "number", value: raw === "" ? "" : Number(raw) };
+    if (type === "date") return { valueType: "date", value: raw };
+    if (el.tagName?.toLowerCase() === "select") return { valueType: "select", value: raw };
+    if (type === "checkbox" || type === "radio") return { valueType: type, checked: !!el.checked, value: raw };
+    return { valueType: "text", length: String(raw).length, hash: analyticsHash(raw), empty: !String(raw).trim() };
+  }
+
+  function analyticsOperationalSnapshot() {
+    return {
+      view,
+      transactionCount: state.transactions.length,
+      readyPacks: { ...state.readyPacks },
+      buildable: { momPack: buildableCount("momPack"), babyPack: buildableCount("babyPack") },
+      lowStockCount: getLowStock().length,
+      donorCount: getDonors().length,
+    };
+  }
+
+  function analyticsTrack(event, details = {}) {
+    try {
+      state = analyticsUpgradeState(state);
+      if (state.analytics.recordingEnabled === false && !details.forceRecord) return;
+      const e = {
+        eventId: analyticsId("evt"),
+        timestamp: new Date().toISOString(),
+        sessionId: ANALYTICS_SESSION_ID || "session_pending",
+        installId: state.analytics.installId,
+        event,
+        view,
+        flowId: analyticsCurrentFlow?.id || "",
+        flow: analyticsCurrentFlow?.flow || "",
+        details,
+      };
+      state.analytics.events.push(e);
+      if (state.analytics.events.length > ANALYTICS_MAX_EVENTS) {
+        state.analytics.events.splice(0, state.analytics.events.length - ANALYTICS_MAX_EVENTS);
+      }
+      state.analytics.lastSeenAt = e.timestamp;
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (err) { /* keep app usable */ }
+    } catch (err) { /* analytics must never break the app */ }
+  }
+
+  function setAnalyticsRecording(enabled) {
+    state = analyticsUpgradeState(state);
+    state.analytics.recordingEnabled = !!enabled;
+    state.analytics.recordingChangedAt = new Date().toISOString();
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (err) { /* keep app usable */ }
+    render();
+  }
+
+  function analyticsEventsForDate(dateISO) {
+    state = analyticsUpgradeState(state);
+    return (state.analytics.events || []).filter(e => String(e.timestamp || "").slice(0, 10) === dateISO);
+  }
+
+  function clearAnalyticsForDate(dateISO) {
+    state = analyticsUpgradeState(state);
+    if (!dateISO) { alert("Choose a date first."); return; }
+    const before = state.analytics.events.length;
+    const matching = analyticsEventsForDate(dateISO).length;
+    if (!matching) { alert(`No analytics events found for ${dateISO}.`); return; }
+    if (!confirm(`Delete ${matching} analytics event${matching === 1 ? "" : "s"} from ${dateISO}? This will not delete donations, packs, deliveries, stock, or backup data.`)) return;
+    state.analytics.events = state.analytics.events.filter(e => String(e.timestamp || "").slice(0, 10) !== dateISO);
+    state.analytics.lastClearedAt = new Date().toISOString();
+    state.analytics.lastClearedDate = dateISO;
+    state.analytics.lastClearedCount = before - state.analytics.events.length;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (err) { /* keep app usable */ }
+    alert(`Deleted ${state.analytics.lastClearedCount} analytics event${state.analytics.lastClearedCount === 1 ? "" : "s"} from ${dateISO}.`);
+    render();
+  }
+
+  function analyticsStartFlow(flowName, source = "navigation") {
+    analyticsCurrentFlow = { id: analyticsId("flow"), flow: flowName, startedAt: Date.now(), source };
+    analyticsTrack("flow_start", { flow: flowName, source, snapshot: analyticsOperationalSnapshot() });
+  }
+
+  function analyticsCompleteFlow(result = {}) {
+    if (!analyticsCurrentFlow) return;
+    const durationMs = Date.now() - analyticsCurrentFlow.startedAt;
+    analyticsTrack("flow_complete", { flow: analyticsCurrentFlow.flow, durationMs, result });
+    analyticsCurrentFlow = null;
+  }
+
+  function analyticsAbandonFlow(reason = "navigation") {
+    if (!analyticsCurrentFlow) return;
+    const durationMs = Date.now() - analyticsCurrentFlow.startedAt;
+    analyticsTrack("flow_abandoned", { flow: analyticsCurrentFlow.flow, durationMs, reason, formPreview: analyticsFormPreview() });
+    analyticsCurrentFlow = null;
+  }
+
+  function analyticsFormPreview() {
+    const preview = {};
+    try {
+      Object.entries(form || {}).forEach(([k, v]) => {
+        if (v == null) return;
+        if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") preview[k] = v;
+        else if (Array.isArray(v)) preview[k] = { type: "array", length: v.length };
+        else if (typeof v === "object") preview[k] = { type: "object", keys: Object.keys(v).slice(0, 12) };
+      });
+    } catch (e) { /* no-op */ }
+    return preview;
+  }
+
+  function analyticsAfterRender() {
+    if (analyticsCurrentView !== view) {
+      if (analyticsCurrentView) {
+        analyticsTrack("screen_exit", { from: analyticsCurrentView, durationMs: Date.now() - analyticsViewEnteredAt });
+      }
+      analyticsCurrentView = view;
+      analyticsViewEnteredAt = Date.now();
+      analyticsTrack("screen_view", { screen: view, snapshot: analyticsOperationalSnapshot() });
+      analyticsLastExposureSig = "";
+    }
+
+    if (errorMsg) {
+      const sig = `${view}|${errorMsg}`;
+      if (sig !== analyticsLastErrorSignature) {
+        analyticsTrack("error_shown", { message: errorMsg, formPreview: analyticsFormPreview() });
+        analyticsLastErrorSignature = sig;
+        analyticsLastErrorMessage = errorMsg;
+      }
+    } else {
+      if (analyticsLastErrorSignature) {
+        analyticsTrack("error_resolved", { previousMessage: analyticsLastErrorMessage || analyticsLastErrorSignature, formPreview: analyticsFormPreview() });
+      }
+      analyticsLastErrorSignature = "";
+      analyticsLastErrorMessage = "";
+    }
+
+    analyticsTrackUIExposure();
+  }
+
+  function analyticsControlKey(el) {
+    const meta = analyticsElementMeta(el);
+    return meta.id || meta.dataGo || meta.text || `${meta.tag}:${meta.type}:${meta.classes?.[0] || ""}`;
+  }
+
+  function analyticsVisibleControls() {
+    const controls = [];
+    document.querySelectorAll("button, summary, input, select, textarea, a").forEach(el => {
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden" || rect.width === 0 || rect.height === 0) return;
+      const meta = analyticsElementMeta(el);
+      controls.push({
+        key: analyticsControlKey(el),
+        tag: meta.tag,
+        id: meta.id,
+        type: meta.type,
+        text: meta.text,
+        dataGo: meta.dataGo,
+        top: Math.round(rect.top),
+        left: Math.round(rect.left),
+      });
+    });
+    return controls.slice(0, 120);
+  }
+
+  function analyticsTrackUIExposure() {
+    const controls = analyticsVisibleControls();
+    const sig = view + "|" + controls.map(c => c.key).join("|");
+    if (sig === analyticsLastExposureSig) return;
+    analyticsLastExposureSig = sig;
+    analyticsTrack("ui_exposure", { screen: view, controlCount: controls.length, controls });
+  }
+
+  function analyticsTransactionSummary(tx) {
+    const base = { txId: tx.id, type: tx.type, date: tx.date };
+    if (tx.type === "donation") {
+      return { ...base, donor: tx.donor || "", lineCount: tx.lines?.length || 0, unitsAdded: (tx.lines || []).reduce((a, l) => a + (Number(l.unitsAdded) || 0), 0), items: (tx.lines || []).map(l => ({ itemId: l.itemId, qty: l.qty, unitsAdded: l.unitsAdded })) };
+    }
+    if (tx.type === "build") {
+      return { ...base, packKey: tx.packKey, qty: tx.qty, packer: tx.packer, destination: tx.destination, optionalIncluded: tx.optionalIncluded || [], customExtraCount: tx.customExtras?.length || 0, substitutionCount: tx.substitutions?.length || 0, omissionCount: tx.omissions?.length || 0 };
+    }
+    if (tx.type === "deliver") {
+      return { ...base, deliverType: tx.deliverType, destination: tx.destination, packKey: tx.packKey || "", itemId: tx.itemId || "", qty: tx.qty };
+    }
+    if (tx.type === "recount") {
+      return { ...base, itemId: tx.itemId, oldQty: tx.oldQty, newQty: tx.newQty, variance: Number(tx.newQty) - Number(tx.oldQty), reason: tx.reason || "" };
+    }
+    return base;
+  }
+
+  function analyticsDerivedSummary() {
+    const events = state.analytics?.events || [];
+    const byEvent = {}, byScreen = {}, byFlow = {}, errors = {}, clicks = {};
+    const flowStarts = {}, completedDurations = [];
+    const fieldChanges = {}, fieldFocusDurations = {}, fieldAbandons = {}, timeBetweenFields = {};
+    const rageClicks = [], mouseHesitations = [], scrollDepthByScreen = {}, errorRecoveries = [];
+    const exposures = {}, clickKeys = {}, detailsToggles = {};
+
+    events.forEach(e => {
+      byEvent[e.event] = (byEvent[e.event] || 0) + 1;
+      byScreen[e.view || "unknown"] = (byScreen[e.view || "unknown"] || 0) + 1;
+      if (e.flow) byFlow[e.flow] = (byFlow[e.flow] || 0) + 1;
+      if (e.event === "error_shown") errors[e.details?.message || "unknown"] = (errors[e.details?.message || "unknown"] || 0) + 1;
+      if (e.event === "error_resolved") errorRecoveries.push({ view: e.view, message: e.details?.previousMessage || "", timestamp: e.timestamp });
+      if (e.event === "click") {
+        const k = e.details?.target?.id || e.details?.target?.text || e.details?.target?.dataGo || "unknown";
+        clicks[k] = (clicks[k] || 0) + 1;
+        clickKeys[k] = (clickKeys[k] || 0) + 1;
+      }
+      if (e.event === "ui_exposure") {
+        (e.details?.controls || []).forEach(c => {
+          const k = c.key || c.id || c.text || "unknown";
+          if (!exposures[k]) exposures[k] = { count: 0, screens: {}, sample: c };
+          exposures[k].count += 1;
+          exposures[k].screens[e.view || "unknown"] = (exposures[k].screens[e.view || "unknown"] || 0) + 1;
+        });
+      }
+      if (e.event === "details_toggled") {
+        const k = e.details?.summary || "unknown";
+        detailsToggles[k] = (detailsToggles[k] || 0) + 1;
+      }
+      if (e.event === "flow_start") flowStarts[e.details?.flow || e.flow || "unknown"] = (flowStarts[e.details?.flow || e.flow || "unknown"] || 0) + 1;
+      if (e.event === "flow_complete" && e.details?.durationMs) completedDurations.push({ flow: e.details.flow || e.flow, durationMs: e.details.durationMs });
+      if (e.event === "field_change") fieldChanges[e.details?.field || "unknown"] = (fieldChanges[e.details?.field || "unknown"] || 0) + 1;
+      if (e.event === "field_blur" && e.details?.durationMs) {
+        const f = e.details.field || "unknown";
+        if (!fieldFocusDurations[f]) fieldFocusDurations[f] = [];
+        fieldFocusDurations[f].push(e.details.durationMs);
+      }
+      if (e.event === "field_abandoned") {
+        const f = e.details?.field || "unknown";
+        fieldAbandons[f] = (fieldAbandons[f] || 0) + 1;
+      }
+      if (e.event === "time_between_fields") {
+        const k = `${e.details?.fromField || "unknown"}→${e.details?.toField || "unknown"}`;
+        if (!timeBetweenFields[k]) timeBetweenFields[k] = [];
+        timeBetweenFields[k].push(e.details?.durationMs || 0);
+      }
+      if (e.event === "rage_click") rageClicks.push({ view: e.view, target: e.details?.target, count: e.details?.count, windowMs: e.details?.windowMs, timestamp: e.timestamp });
+      if (e.event === "mouse_hesitation") mouseHesitations.push({ view: e.view, target: e.details?.target, durationMs: e.details?.durationMs, timestamp: e.timestamp });
+      if (e.event === "scroll_depth") {
+        const screen = e.view || "unknown";
+        scrollDepthByScreen[screen] = Math.max(scrollDepthByScreen[screen] || 0, e.details?.maxPct || e.details?.pct || 0);
+      }
+    });
+
+    const tx = state.transactions || [];
+    const txByType = {};
+    const optionUsage = {};
+    tx.forEach(t => {
+      txByType[t.type] = (txByType[t.type] || 0) + 1;
+      if (t.type === "build") {
+        const packKey = t.packKey || "unknown";
+        if (!optionUsage[packKey]) optionUsage[packKey] = { builds: 0, optionalIncluded: {}, customExtras: 0, substitutions: 0, omissions: 0 };
+        optionUsage[packKey].builds += 1;
+        (t.optionalIncluded || []).forEach(opt => {
+          optionUsage[packKey].optionalIncluded[opt] = (optionUsage[packKey].optionalIncluded[opt] || 0) + 1;
+        });
+        optionUsage[packKey].customExtras += t.customExtras?.length || 0;
+        optionUsage[packKey].substitutions += t.substitutions?.length || 0;
+        optionUsage[packKey].omissions += t.omissions?.length || 0;
+      }
+    });
+
+    const avg = vals => vals.length ? Math.round(vals.reduce((a,b)=>a+b,0) / vals.length) : 0;
+    const avgFieldFocusMs = Object.fromEntries(Object.entries(fieldFocusDurations).map(([k, vals]) => [k, avg(vals)]));
+    const avgTimeBetweenFieldsMs = Object.fromEntries(Object.entries(timeBetweenFields).map(([k, vals]) => [k, avg(vals)]));
+
+    const ignoredControls = Object.entries(exposures)
+      .filter(([k, v]) => v.count >= 1 && !clickKeys[k] && !["unknown"].includes(k))
+      .map(([k, v]) => ({ key: k, seen: v.count, screens: v.screens, sample: v.sample }))
+      .slice(0, 50);
+
+    const neverUsedOptions = {};
+    const alwaysUsedOptions = {};
+    Object.entries(RECIPES).forEach(([packKey, recipe]) => {
+      const usage = optionUsage[packKey] || { builds: 0, optionalIncluded: {} };
+      neverUsedOptions[packKey] = [];
+      alwaysUsedOptions[packKey] = [];
+      (recipe.optional || []).forEach(opt => {
+        const key = opt.itemId || opt.id || opt.label;
+        const count = usage.optionalIncluded[key] || 0;
+        if (usage.builds > 0 && count === 0) neverUsedOptions[packKey].push(key);
+        if (usage.builds > 0 && count === usage.builds) alwaysUsedOptions[packKey].push(key);
+      });
+    });
+
+    const confusionHotspots = [
+      ...mouseHesitations.map(h => ({ type: "mouse_hesitation", score: Math.round((h.durationMs || 0) / 100), target: h.target?.text || h.target?.id || h.target?.dataGo || "unknown", view: h.view })),
+      ...rageClicks.map(r => ({ type: "rage_click", score: (r.count || 0) * 10, target: r.target?.text || r.target?.id || r.target?.dataGo || "unknown", view: r.view })),
+      ...Object.entries(detailsToggles).filter(([, c]) => c >= 3).map(([target, c]) => ({ type: "repeated_toggle", score: c * 5, target, view: "various" })),
+      ...Object.entries(fieldAbandons).map(([target, c]) => ({ type: "field_abandoned", score: c * 8, target, view: "various" })),
+      ...Object.entries(errors).map(([target, c]) => ({ type: "error", score: c * 12, target, view: "various" })),
+    ].sort((a, b) => b.score - a.score).slice(0, 25);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      schemaVersion: ANALYTICS_SCHEMA_VERSION,
+      installId: state.analytics?.installId,
+      eventCount: events.length,
+      transactionCount: tx.length,
+      firstSeenAt: state.analytics?.firstSeenAt,
+      lastSeenAt: state.analytics?.lastSeenAt,
+      byEvent,
+      byScreen,
+      byFlow,
+      flowStarts,
+      completedDurations,
+      txByType,
+      errors,
+      errorRecoveries,
+      clicks,
+      fieldChanges,
+      avgFieldFocusMs,
+      fieldAbandons,
+      avgTimeBetweenFieldsMs,
+      rageClicks,
+      mouseHesitations,
+      scrollDepthByScreen,
+      ignoredControls,
+      optionUsage,
+      neverUsedOptions,
+      alwaysUsedOptions,
+      confusionHotspots,
+      operationalSnapshot: analyticsOperationalSnapshot(),
+    };
+  }
+
+  function analyticsFlattenDetails(details) {
+    try { return JSON.stringify(details || {}).replace(/\n/g, " "); }
+    catch (e) { return "{}"; }
+  }
+
+  function analyticsCsvEscape(v) {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+
+  function exportAnalyticsCSV() {
+    analyticsTrack("analytics_export_requested", { format: "csv" });
+    const rows = [["timestamp","session_id","install_id","event","view","flow","flow_id","details_json"]];
+    (state.analytics?.events || []).forEach(e => {
+      rows.push([e.timestamp, e.sessionId, e.installId, e.event, e.view, e.flow, e.flowId, analyticsFlattenDetails(e.details)]);
+    });
+    const csv = rows.map(r => r.map(analyticsCsvEscape).join(",")).join("\n");
+    downloadTextFile(csv, `zoe-analytics-${todayISO()}.csv`, "text/csv");
+  }
+
+  function exportAnalyticsJSON() {
+    analyticsTrack("analytics_export_requested", { format: "json" });
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      app: "Zoe Pack Manager",
+      analytics: state.analytics,
+      summary: analyticsDerivedSummary(),
+    };
+    downloadTextFile(JSON.stringify(payload, null, 2), `zoe-analytics-${todayISO()}.json`, "application/json");
+  }
+
+  function exportAIDataPack() {
+    analyticsTrack("analytics_export_requested", { format: "ai_data_pack" });
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      app: "Zoe Pack Manager",
+      purpose: "Local operational analytics and AI-ready improvement dataset",
+      schema: {
+        analyticsVersion: ANALYTICS_SCHEMA_VERSION,
+        notes: "All data is local to this browser/file unless exported manually. Use for usability analysis, workflow redesign, inventory intelligence, forecasting and future AI integrations.",
+      },
+      config: { packers: PACKERS, clinics: CLINICS, items: ITEMS, recipes: RECIPES, completeUnitItems: COMPLETE_UNIT_ITEMS },
+      state: {
+        balances: state.balances,
+        readyPacks: state.readyPacks,
+        donors: state.donors,
+        transactions: state.transactions,
+      },
+      analytics: state.analytics,
+      summary: analyticsDerivedSummary(),
+    };
+    downloadTextFile(JSON.stringify(payload, null, 2), `zoe-ai-data-pack-${todayISO()}.json`, "application/json");
+  }
+
+  function downloadTextFile(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // TRANSACTIONS
+  // ═══════════════════════════════════════════════════════════════════
+
+  function snapshotForUndo() {
+    return JSON.parse(JSON.stringify({
+      balances: state.balances,
+      readyPacks: state.readyPacks,
+      txCount: state.transactions.length,
+    }));
+  }
+
+  function beginTransaction() {
+    state.undoSnapshot = snapshotForUndo();
+  }
+
+  function finishTransaction(tx) {
+    state.transactions.push(tx);
+    analyticsTrack("transaction_commit", { transaction: analyticsTransactionSummary(tx), snapshot: analyticsOperationalSnapshot() });
+    if (["donation", "build", "deliver", "recount"].includes(tx.type)) {
+      analyticsCompleteFlow({ transactionType: tx.type, transactionId: tx.id });
+    }
+    saveState();
+  }
+
+  function undoLast() {
+    analyticsTrack("undo_clicked", { snapshot: analyticsOperationalSnapshot() });
+    if (!state.undoSnapshot) return;
+    const snap = state.undoSnapshot;
+    state.balances = snap.balances;
+    state.readyPacks = snap.readyPacks;
+    state.transactions = state.transactions.slice(0, snap.txCount);
+    state.undoSnapshot = null;
+    state.transactions.push({ id: uid(), type: "undo", date: todayISO() });
+    saveState();
+    render();
+  }
+
+  function commitDonation(donor, lines, date) {
+    beginTransaction();
+    const tx = { id: uid(), type: "donation", date: date || todayISO(), donor: donor || "", lines: [] };
+    for (const line of lines) {
+      const it = itemMap[line.itemId];
+      let add = line.qty;
+      if (it.unit === "packet" && line.packSize) add = line.qty * line.packSize;
+      else if (it.unit === "packet") add = line.qty * (it.packSize || 1);
+      state.balances[line.itemId] = getBalance(line.itemId) + add;
+      tx.lines.push({ itemId: line.itemId, qty: line.qty, packSize: line.packSize, note: line.note, unitsAdded: add });
+    }
+    finishTransaction(tx);
+    rememberDonor(donor);
+  }
+
+  function checkBuild(packKey, qty, optionalIncluded, customExtras, substitutions, omissions) {
+    const { usage } = computeBuildStockPlan(packKey, qty, optionalIncluded, customExtras, substitutions, omissions);
+    const shortages = [];
+    for (const [itemId, need] of Object.entries(usage)) {
+      if (need <= 0) continue;
+      const have = getBalance(itemId);
+      if (have < need) shortages.push({ name: itemName(itemId), need, have });
+    }
+    return shortages;
+  }
+
+  function getBuildStockErrorMessage() {
+    const qty = parseInt(form.qty, 10);
+    if (!qty || qty < 1) return "";
+    const included = Object.keys(form.optional || {}).filter(k => form.optional[k]);
+    const customExtras = (form.customExtras || []).filter(e => e.itemId);
+    const shortages = checkBuild(form.packKey, qty, included, customExtras, form.substitutions || [], form.omissions || []);
+    return shortages.length
+      ? "Not enough stock: " + shortages.map(s => `${s.name} (need ${s.need}, have ${s.have})`).join("; ")
+      : "";
+  }
+
+  function updateBuildErrorBannerLive() {
+    if (view !== "build") return;
+    // Only live-update the stock-shortage banner. Other errors remain tied to Save.
+    if (errorMsg && !errorMsg.startsWith("Not enough stock:")) return;
+    readBuildForm();
+    const next = getBuildStockErrorMessage();
+    errorMsg = next;
+    const box = document.getElementById("build-error");
+    if (!box) return;
+    if (next) {
+      box.textContent = next;
+      box.classList.remove("hidden");
+    } else {
+      box.textContent = "";
+      box.classList.add("hidden");
+    }
+  }
+
+  function commitBuild(packKey, qty, packer, destination, optionalIncluded, customExtras, substitutions, date, omissions) {
+    beginTransaction();
+    const normalizedExtras = (customExtras || []).map(e => ({
+      itemId: e.itemId,
+      qtyPerPack: parseInt(e.qtyPerPack, 10) || 1,
+    }));
+    const normalizedSubs = normalizeSubstitutions(substitutions);
+    const normalizedOmissions = normalizeOmissions(omissions);
+    const { usage } = computeBuildStockPlan(packKey, qty, optionalIncluded, normalizedExtras, normalizedSubs, normalizedOmissions);
+    const tx = {
+      id: uid(), type: "build", date: date || todayISO(),
+      packKey, qty, packer, destination,
+      optionalIncluded: [...optionalIncluded],
+      customExtras: normalizedExtras,
+      substitutions: normalizedSubs,
+      omissions: normalizedOmissions,
+    };
+    for (const [itemId, deduct] of Object.entries(usage)) {
+      if (deduct > 0) state.balances[itemId] = getBalance(itemId) - deduct;
+    }
+    state.readyPacks[packKey] = (state.readyPacks[packKey] || 0) + qty;
+    finishTransaction(tx);
+  }
+
+  function commitDeliverAssembled(packKey, qty, destination, date) {
+    if ((state.readyPacks[packKey] || 0) < qty) {
+      return `Only ${state.readyPacks[packKey] || 0} ${RECIPES[packKey].label}s ready.`;
+    }
+    beginTransaction();
+    state.readyPacks[packKey] -= qty;
+    finishTransaction({
+      id: uid(), type: "deliver", date, destination, packKey, qty, deliverType: "assembled",
+    });
+    return null;
+  }
+
+  function commitDeliverUnits(itemId, qty, destination, date) {
+    if (getBalance(itemId) < qty) {
+      return `Only ${getBalance(itemId)} ${itemName(itemId)} in stock.`;
+    }
+    beginTransaction();
+    state.balances[itemId] -= qty;
+    finishTransaction({
+      id: uid(), type: "deliver", date, destination, itemId, qty, deliverType: "completeUnit",
+    });
+    return null;
+  }
+
+  function commitRecount(itemId, newQty, reason, date) {
+    const oldQty = getBalance(itemId);
+    beginTransaction();
+    state.balances[itemId] = newQty;
+    finishTransaction({
+      id: uid(), type: "recount", date: date || todayISO(), itemId, oldQty, newQty, reason: reason || "",
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════════════
+
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  const ZOE_LOGO_B64 = "data:image/png;base64," + "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";
+
+  const VIEW_TITLES = {
+    donation: "Donation Arrived",
+    build: "We Packed Packs",
+    deliver: "Deliver Packs",
+    stock: "Stock Count",
+  };
+
+  function iconBagHeart() {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l-1.2 13H7.2L6 7z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M9 7V5.5a3 3 0 016 0V7" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M12 14.5c-.8-.7-1.5-1.5-2-2.2-.6.7-1.2 1.5-2 2.2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`;
+  }
+
+  function iconGift() {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="10" width="18" height="11" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M12 10v11M3 14h18" stroke="currentColor" stroke-width="1.5"/><path d="M12 10c-2-2.5-4.5-2.5-4.5 0S10 11.5 12 10s4.5-1.5 4.5 0-2.5-2.5-4.5 0" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`;
+  }
+
+  function iconTruck() {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 7h12v8H1z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M13 10h3.5L20 14v3h-7V10z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="5.5" cy="17.5" r="1.8" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="17" cy="17.5" r="1.8" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`;
+  }
+
+  function renderHeader() {
+    const isHome = view === "home";
+    const homeClass = isHome ? " app-header--home" : "";
+    let html = `<header class="app-header${homeClass}">`;
+    html += `<div class="header-row">`;
+    if (!isHome) {
+      html += `<button type="button" class="header-back" data-go="home" aria-label="Back to home">←</button>`;
+    } else {
+      html += `<span class="header-spacer"></span>`;
+    }
+    html += `<div class="header-brand"><img src="${ZOE_LOGO_B64}" alt="The Zoe Project" class="header-logo"></div>`;
+    html += `<span class="header-spacer"></span>`;
+    html += `</div>`;
+    if (isHome) {
+      html += `<p class="header-tagline">Educate | Empower | Nurture</p>`;
+    } else if (VIEW_TITLES[view]) {
+      html += `<h2 class="header-title">${esc(VIEW_TITLES[view])}</h2>`;
+    }
+    html += `<div class="header-date">${esc(formatToday())}</div>`;
+    html += `</header>`;
+    return html;
+  }
+
+  function render() {
+    const app = document.getElementById("app");
+    let body = "";
+    if (view === "home") body = renderHome();
+    else if (view === "donation") body = renderDonation();
+    else if (view === "build") body = renderBuild();
+    else if (view === "deliver") body = renderDeliver();
+    else if (view === "stock") body = renderStock();
+    app.innerHTML = renderHeader() + `<div class="view-content">` + body + `</div>`;
+    bindEvents();
+    analyticsAfterRender();
+    if (confirmAction) showConfirmModal();
+  }
+
+  function renderHome() {
+    const momB = buildableCount("momPack");
+    const babyB = buildableCount("babyPack");
+    const low = getLowStock();
+    const nudges = getSurplusNudges();
+    const readyMom = state.readyPacks.momPack || 0;
+    const readyBaby = state.readyPacks.babyPack || 0;
+    const canUndo = !!state.undoSnapshot;
+
+    let html = `
+      <p class="home-question">What happened today?</p>
+
+      <div class="home-actions">
+        <button type="button" class="home-action-btn home-action-btn--build" data-go="build">
+          <span class="home-action-icon">${iconBagHeart()}</span>
+          <span class="home-action-label">Packed packs</span>
+        </button>
+        <button type="button" class="home-action-btn home-action-btn--donation" data-go="donation">
+          <span class="home-action-icon">${iconGift()}</span>
+          <span class="home-action-label">Received donations</span>
+        </button>
+        <button type="button" class="home-action-btn home-action-btn--deliver" data-go="deliver">
+          <span class="home-action-icon">${iconTruck()}</span>
+          <span class="home-action-label">Delivered packs</span>
+        </button>
+      </div>
+
+      <details class="admin-panel">
+        <summary>Admin</summary>
+        <div class="admin-panel-grid">
+          <div class="admin-card">
+            <h3>Packs available</h3>
+            <div class="ready-line">Mom Packs: <strong>${readyMom}</strong> ready · <strong>${momB}</strong> can build</div>
+            <div class="ready-line">Baby Packs: <strong>${readyBaby}</strong> ready · <strong>${babyB}</strong> can build</div>
+          </div>`;
+
+    html += `<div class="admin-card"><h3>Stock attention</h3>`;
+    if (low.length) {
+      low.slice(0, 8).forEach(i => {
+        html += `<div class="low-item">${esc(i.name)} — LOW (${getBalance(i.id)} left)</div>`;
+      });
+      if (low.length > 8) html += `<div style="color:#888;font-size:0.9rem;">+ ${low.length - 8} more</div>`;
+    } else {
+      html += `<div style="color:#666;">No low stock flags.</div>`;
+    }
+    html += `</div>`;
+
+    if (nudges.length) {
+      html += `<div class="admin-card"><h3>Use-it-up nudges</h3>`;
+      nudges.forEach(n => { html += `<div class="nudge">${getBalance(n.item.id)} ${esc(n.item.name)} for ${esc(n.packLabel)}s</div>`; });
+      html += `</div>`;
+    }
+
+    html += `<div class="admin-card">
+        <h3>Controls</h3>
+        <div class="home-secondary"><button type="button" class="home-link" data-go="stock">Stock Count</button></div>
+        ${canUndo ? `<button type="button" class="home-undo" id="btn-undo">Undo last action</button>` : ``}
+      </div>
+      <div class="admin-card" style="grid-column: 1 / -1;">
+        <details class="stock-fold"><summary>View all stock levels</summary>
+          <div style="margin-top:12px;margin-bottom:8px;">
+            ${renderPackContextSelector("home-pack-context", getPackContext())}
+          </div>
+          <div class="stock-list">`;
+
+    const byCat = {};
+    ITEMS.forEach(i => {
+      if (getBalance(i.id) <= 0) return;
+      if (!byCat[i.category]) byCat[i.category] = [];
+      byCat[i.category].push(i);
+    });
+    const cats = sortCategoriesForPack(Object.keys(byCat), getPackContext());
+    if (!cats.length) html += `<em>No stock on hand.</em>`;
+    for (const cat of cats) {
+      html += `<strong>${esc(cat)}</strong><br>`;
+      byCat[cat].sort((a, b) => getBalance(b.id) - getBalance(a.id)).forEach(i => {
+        html += `${esc(i.name)}: ${getBalance(i.id)}<br>`;
+      });
+      html += `<br>`;
+    }
+    html += `</div></details></div></div></details>`;
+    html += renderFooter();
+    return html;
+  }
+
+  function renderFooter() {
+    return `<details class="footer">
+      <summary>Admin tools</summary>
+      <p>Your work saves automatically on this computer. Use Export Backup to keep a copy safe.</p>
+      <div class="footer-tools">
+        <button type="button" id="btn-export">Export Backup</button>
+        <button type="button" id="btn-import">Import Backup</button>
+        <button type="button" id="btn-sample">Load Sample Data</button>
+        <button type="button" id="btn-export-analytics-csv">Export Analytics CSV</button>
+        <button type="button" id="btn-export-analytics-json">Export Analytics JSON</button>
+        <button type="button" id="btn-export-ai-pack">Export AI Data Pack</button>
+      </div>
+      <div class="analytics-controls">
+        <div class="analytics-status">
+          <div><strong>Analytics recording</strong><br><span class="muted">Pause this while you test. Resume before your mom uses it.</span></div>
+          <span class="analytics-pill ${state.analytics?.recordingEnabled === false ? "analytics-pill-off" : "analytics-pill-on"}">${state.analytics?.recordingEnabled === false ? "Paused" : "Recording"}</span>
+        </div>
+        <button type="button" id="btn-toggle-analytics">${state.analytics?.recordingEnabled === false ? "Resume Analytics" : "Pause Analytics While I Test"}</button>
+        <div class="analytics-clear-row">
+          <div>
+            <label for="analytics-clear-date">Clear analytics from one day</label>
+            <input type="date" id="analytics-clear-date" value="${todayISO()}">
+          </div>
+          <button type="button" id="btn-clear-analytics-day" class="analytics-danger">Clear Day</button>
+        </div>
+      </div>
+      <div class="analytics-note"><strong>Local analytics:</strong> records screen flow, form friction, saves, errors, corrections and exports on this computer only. Pausing/clearing analytics never deletes operational records.</div>
+    </details>`;
+  }
+
+  function getDonationQtyErrors(lines) {
+    const errors = {};
+    lines.forEach((line, idx) => {
+      const qty = parseInt(line.qty, 10);
+      if (!qty || qty < 1) errors[idx] = "Please enter a quantity.";
+    });
+    return errors;
+  }
+
+  function renderDonation() {
+    if (!form.lines) form.lines = [{ itemId: sortItemsForPack(getPackContext())[0].id, qty: "", packSize: "", note: "" }];
+    if (!form.donationDate) form.donationDate = todayISO();
+    const packCtx = getPackContext();
+    let html = `
+      ${renderPackContextSelector("donation-pack-context", packCtx)}
+      <p style="color:#666;font-size:0.9rem;margin-top:0;">Helps sort the item list — doesn't affect what you can add.</p>
+      <label>Date</label>
+      <input type="date" id="donation-date" value="${esc(form.donationDate)}">
+      <label>Donor name (optional)</label>
+      <input type="text" id="donor" list="donor-suggestions" placeholder="e.g. Huggies / Dianna" value="${esc(form.donor || "")}" autocomplete="off">
+      <datalist id="donor-suggestions">
+        ${getDonors().map(d => `<option value="${esc(d)}">`).join("")}
+      </datalist>
+      <div id="donor-new-hint" class="donor-hint hidden"></div>
+      <div id="donation-lines">`;
+
+    const qtyErrors = form.donationQtyErrors || {};
+
+    form.lines.forEach((line, idx) => {
+      const it = itemMap[line.itemId];
+      const isPacket = it && it.unit === "packet";
+      const qtyErr = qtyErrors[idx];
+      const qtyClass = qtyErr ? " field-error-input" : "";
+      html += `<div class="donation-line" data-idx="${idx}">
+        <label>Item</label>
+        <select class="line-item" data-idx="${idx}">
+          ${itemOptions(line.itemId, packCtx)}
+        </select>
+        ${isPacket ? `
+          <div class="row">
+            <div><label>Packets</label><input type="number" class="line-qty${qtyClass}" data-idx="${idx}" min="1" value="${esc(String(line.qty || ""))}" placeholder="e.g. 14"></div>
+            <div><label>Per packet</label>
+              <select class="line-packsize" data-idx="${idx}">
+                ${[8,10,12,32].map(s => `<option value="${s}" ${String(line.packSize) === String(s) ? "selected" : ""}>${s}</option>`).join("")}
+              </select>
+            </div>
+          </div>` : `
+          <label>Quantity</label>
+          <input type="number" class="line-qty${qtyClass}" data-idx="${idx}" min="1" value="${esc(String(line.qty || ""))}" placeholder="How many?">`}
+        ${qtyErr ? `<div class="field-error" data-donation-error="${idx}">${esc(qtyErr)}</div>` : ""}
+        <label>Note (optional)</label>
+        <input type="text" class="line-note" data-idx="${idx}" value="${esc(line.note || "")}" placeholder="e.g. mixed donation">
+        ${form.lines.length > 1 ? `<button type="button" class="btn-small remove-line" data-idx="${idx}">Remove</button>` : ""}
+      </div>`;
+    });
+
+    html += `</div>
+      <button type="button" class="btn-small" id="add-line">+ Add another item</button>
+      ${errorMsg ? `<div class="error">${esc(errorMsg)}</div>` : ""}
+      <div class="actions"><button class="btn btn-primary" id="donation-save">Save Donation</button></div>
+      ${renderFooter()}`;
+    return html;
+  }
+
+  function renderBuild() {
+    if (!form.packKey) form.packKey = getPackContext();
+    if (!form.packer) form.packer = PACKERS[0];
+    if (!form.destination) form.destination = CLINICS[0];
+    if (!form.qty) form.qty = "";
+    if (!form.optional) {
+      form.optional = {};
+      initOptionalDefaults(form.packKey);
+    }
+    if (!form.customExtras) form.customExtras = [];
+    if (!form.substitutions) form.substitutions = [];
+    if (!form.omissions) form.omissions = [];
+    if (!form.buildDate) form.buildDate = todayISO();
+    if (!form.subLineErrors) form.subLineErrors = {};
+
+    const recipe = RECIPES[form.packKey];
+    const qty = parseInt(form.qty, 10) || 0;
+    form.subLineErrors = getSubstitutionLineErrors(qty, form.substitutions);
+    const included = Object.keys(form.optional).filter(k => form.optional[k]);
+    const customExtras = form.customExtras.filter(e => e.itemId);
+    const showAdvanced = included.length || customExtras.length || form.substitutions.length || (form.omissions || []).length;
+    if (form.addItemMode) return renderBuildAddItem();
+
+    let html = `<div class="form-shell">
+      <div class="screen-kicker">Pack creation</div>
+      <h2>Enter today’s packs</h2>
+      <p class="screen-subtitle">Record what was packed. The stock will update in the background.</p>`;
+
+    if (!recipe.confirmed) {
+      html += `<div class="banner banner-draft">Baby Pack recipe is a draft — please confirm with the volunteers what goes in each pack.</div>`;
+    }
+
+    html += `<div class="form-grid">
+      <div class="field-card">
+        <label>Packing for</label>
+        <select id="build-pack">
+          <option value="momPack" ${form.packKey === "momPack" ? "selected" : ""}>Mom Pack</option>
+          <option value="babyPack" ${form.packKey === "babyPack" ? "selected" : ""}>Baby Pack</option>
+        </select>
+      </div>
+      <div class="field-card">
+        <label>How many packs?</label>
+        <input type="number" id="build-qty" class="primary-number" min="1" value="${esc(String(form.qty))}" placeholder="0">
+      </div>
+      <div class="row">
+        <div class="field-card">
+          <label>Who packed?</label>
+          <select id="build-packer">${PACKERS.map(p => `<option ${form.packer === p ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>
+        </div>
+        <div class="field-card">
+          <label>Destination</label>
+          <select id="build-dest">${CLINICS.map(c => `<option ${form.destination === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+        </div>
+      </div>
+      <div class="field-card">
+        <label>Date packed</label>
+        <input type="date" id="build-date" value="${esc(form.buildDate)}">
+      </div>
+    </div>`;
+
+    if (qty > 0) {
+      html += `<div class="core-preview"><strong>Stock that will be used</strong><br>${formatBuildPreview(form.packKey, qty, included, customExtras, form.substitutions, true, form.omissions)}</div>`;
+    }
+
+    const advancedSummary = [];
+    const optionalCount = included.length;
+    const extraCount = form.customExtras.filter(e => e.itemId).length;
+    const subCount = form.substitutions.filter(s => s.insteadOf || s.substitute || s.packCount).length;
+    const omitCount = (form.omissions || []).filter(o => o.itemId || o.packCount).length;
+    if (optionalCount || extraCount) advancedSummary.push(`${optionalCount + extraCount} added item${optionalCount + extraCount !== 1 ? "s" : ""}`);
+    if (subCount) advancedSummary.push(`${subCount} swapped item${subCount !== 1 ? "s" : ""}`);
+    if (omitCount) advancedSummary.push(`${omitCount} left out item${omitCount !== 1 ? "s" : ""}`);
+
+    html += `<div class="add-item-strip">
+      ${advancedSummary.length ? `<span>${esc(advancedSummary.join(" · "))}</span>` : `<span>Nothing different added</span>`}
+      <button type="button" class="btn-small" id="open-add-item">+ Add something different</button>
+    </div>`;
+
+    html += `<div id="build-error" class="error ${errorMsg ? "" : "hidden"}">${errorMsg ? esc(errorMsg) : ""}</div>`;
+    html += `<div class="actions"><button class="btn btn-primary" id="build-save">Save packs</button></div>${renderFooter()}</div>`;
+    return html;
+  }
+
+
+  function renderBuildAddItem() {
+    if (!form.packKey) form.packKey = getPackContext();
+    if (!form.optional) { form.optional = {}; initOptionalDefaults(form.packKey); }
+    if (!form.customExtras) form.customExtras = [];
+    if (!form.substitutions) form.substitutions = [];
+    if (!form.omissions) form.omissions = [];
+    if (!form.addItemStep) form.addItemStep = "menu";
+
+    const recipe = RECIPES[form.packKey];
+    const qty = parseInt(form.qty, 10) || 0;
+    const included = Object.keys(form.optional).filter(k => form.optional[k]);
+    const customExtras = form.customExtras.filter(e => e.itemId);
+    form.subLineErrors = getSubstitutionLineErrors(qty, form.substitutions);
+
+    const backTop = `<button type="button" class="btn-small" id="add-item-done">← Back to packs</button>`;
+    const backToMenu = `<button type="button" class="btn-small" id="add-item-back-menu">← Back</button>`;
+
+    if (form.addItemStep === "menu") {
+      const addedCount = included.length + form.customExtras.filter(e => e.itemId).length;
+      const subCount = form.substitutions.filter(s => s.insteadOf || s.substitute || s.packCount).length;
+      const omitCount = (form.omissions || []).filter(o => o.itemId || o.packCount).length;
+      return `<div class="form-shell add-item-screen">
+        ${backTop}
+        <div class="screen-kicker">Add something different</div>
+        <h2>What happened?</h2>
+        <p class="screen-subtitle">Choose the plain-language option that matches today. If nothing changed, go back to packs.</p>
+        <div class="actions">
+          <button type="button" class="btn btn-secondary" id="choice-optional">We added something${addedCount ? ` (${addedCount})` : ""}</button>
+          <button type="button" class="btn btn-secondary" id="choice-substitution">We swapped something${subCount ? ` (${subCount})` : ""}</button>
+          <button type="button" class="btn btn-secondary" id="choice-leftout">We left something out${omitCount ? ` (${omitCount})` : ""}</button>
+          <button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button>
+        </div>
+        ${renderFooter()}
+      </div>`;
+    }
+
+    if (form.addItemStep === "optional") {
+      let html = `<div class="form-shell add-item-screen">
+        ${backToMenu}
+        <div class="screen-kicker">Added items</div>
+        <h2>What did you add?</h2>
+        <p class="screen-subtitle">Switch on anything that went into today’s packs.</p>
+        <div class="advanced-body always-visible">`;
+
+      recipe.optional.forEach(opt => {
+        const key = opt.itemId || opt.id;
+        const label = opt.label || itemName(opt.itemId);
+        const on = !!form.optional[key];
+        html += `<div class="toggle-row">
+          <label>${esc(label)}</label>
+          <button type="button" class="toggle-btn ${on ? "on" : ""}" data-opt="${esc(key)}">${on ? "Yes" : "No"}</button>
+        </div>`;
+      });
+
+      html += `</div><h3 style="margin-top:18px;">Not listed?</h3><p class="screen-subtitle">Add another item only if it is not shown above.</p><div id="custom-extras">`;
+      form.customExtras.forEach((extra, idx) => {
+        html += `<div class="custom-extra-line" data-ce-idx="${idx}">
+          <label>Item</label>
+          <select class="ce-item" data-ce-idx="${idx}">${itemOptions(extra.itemId, form.packKey, { recipeFirst: true })}</select>
+          <label>How many per pack?</label>
+          <input type="number" class="ce-qty" data-ce-idx="${idx}" min="1" value="${esc(String(extra.qtyPerPack || "1"))}" placeholder="e.g. 2">
+          <button type="button" class="btn-small remove-ce" data-ce-idx="${idx}" style="margin-top:8px;">Remove</button>
+        </div>`;
+      });
+      html += `</div><button type="button" class="btn-small" id="add-custom-extra">+ Add something not listed</button><div class="actions"><button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button></div>${renderFooter()}</div>`;
+      return html;
+    }
+
+    if (form.addItemStep === "extra") {
+      let html = `<div class="form-shell add-item-screen">
+        ${backToMenu}
+        <div class="screen-kicker">Extra item</div>
+        <h2>What extra item was added?</h2>
+        <p class="screen-subtitle">Use this for an item that is not part of the normal pack recipe.</p>
+        <div id="custom-extras">`;
+
+      form.customExtras.forEach((extra, idx) => {
+        html += `<div class="custom-extra-line" data-ce-idx="${idx}">
+          <label>Item</label>
+          <select class="ce-item" data-ce-idx="${idx}">${itemOptions(extra.itemId, form.packKey, { recipeFirst: true })}</select>
+          <label>How many per pack?</label>
+          <input type="number" class="ce-qty" data-ce-idx="${idx}" min="1" value="${esc(String(extra.qtyPerPack || "1"))}" placeholder="e.g. 2">
+          <button type="button" class="btn-small remove-ce" data-ce-idx="${idx}" style="margin-top:8px;">Remove</button>
+        </div>`;
+      });
+
+      html += `</div><button type="button" class="btn-small" id="add-custom-extra">+ Add another extra item</button>
+        <div class="actions"><button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button></div>${renderFooter()}</div>`;
+      return html;
+    }
+
+    if (form.addItemStep === "substitution") {
+      let html = `<div class="form-shell add-item-screen">
+        ${backToMenu}
+        <div class="screen-kicker">Swapped item</div>
+        <h2>What did you swap?</h2>
+        <p class="screen-subtitle">Use this when you used one item instead of another.</p>
+        <div id="substitutions">`;
+
+      form.substitutions.forEach((sub, idx) => {
+        const defaultQty = sub.insteadOf
+          ? String(recipeQtyPerPack(form.packKey, sub.insteadOf, included, customExtras))
+          : String(sub.qtyPerPack ?? "1");
+        const packErr = form.subLineErrors[idx];
+        html += `<div class="custom-extra-line sub-line" data-sub-idx="${idx}">
+          <label>Instead of</label>
+          <select class="sub-instead ${packErr ? "field-error-input" : ""}" data-sub-idx="${idx}"><option value="">—</option>${itemOptions(sub.insteadOf, form.packKey, { recipeFirst: true })}</select>
+          <label>We used</label>
+          <select class="sub-substitute ${packErr ? "field-error-input" : ""}" data-sub-idx="${idx}"><option value="">—</option>${itemOptions(sub.substitute, form.packKey, { recipeFirst: true })}</select>
+          <label>How many packs?</label>
+          <input type="number" class="sub-packs ${packErr ? "field-error-input" : ""}" data-sub-idx="${idx}" min="1" ${qty > 0 ? `max="${qty}"` : ""} value="${esc(String(sub.packCount ?? ""))}" placeholder="e.g. 3">
+          ${packErr ? `<div class="field-error" data-sub-error="${idx}">${esc(packErr)}</div>` : ""}
+          <label>How many per pack?</label>
+          <input type="number" class="sub-qty" data-sub-idx="${idx}" min="1" value="${esc(String(sub.qtyPerPack ?? defaultQty))}" placeholder="e.g. 2">
+          <button type="button" class="btn-small remove-sub" data-sub-idx="${idx}" style="margin-top:8px;">Remove</button>
+        </div>`;
+      });
+
+      html += `</div><button type="button" class="btn-small" id="add-substitution">+ Add another swap</button>
+        <div class="actions"><button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button></div>${renderFooter()}</div>`;
+      return html;
+    }
+
+    if (form.addItemStep === "omitted") {
+      let html = `<div class="form-shell add-item-screen">
+        ${backToMenu}
+        <div class="screen-kicker">Left something out</div>
+        <h2>What was left out?</h2>
+        <p class="screen-subtitle">Use this when some packs were made without an item.</p>
+        <div id="omissions">`;
+      form.omissions.forEach((omit, idx) => {
+        html += `<div class="custom-extra-line omission-line" data-omit-idx="${idx}">
+          <label>Item left out</label>
+          <select class="omit-item" data-omit-idx="${idx}">${itemOptions(omit.itemId, form.packKey, { recipeFirst: true })}</select>
+          <label>How many packs?</label>
+          <input type="number" class="omit-packs" data-omit-idx="${idx}" min="1" ${qty > 0 ? `max="${qty}"` : ""} value="${esc(String(omit.packCount ?? ""))}" placeholder="e.g. 3">
+          <label>How many per pack?</label>
+          <input type="number" class="omit-qty" data-omit-idx="${idx}" min="1" value="${esc(String(omit.qtyPerPack ?? "1"))}" placeholder="e.g. 1">
+          <button type="button" class="btn-small remove-omit" data-omit-idx="${idx}" style="margin-top:8px;">Remove</button>
+        </div>`;
+      });
+      html += `</div><button type="button" class="btn-small" id="add-omission">+ Add another item left out</button>
+        <div class="actions"><button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button></div>${renderFooter()}</div>`;
+      return html;
+    }
+
+    form.addItemStep = "menu";
+    return renderBuildAddItem();
+  }
+
+  function initOptionalDefaults(packKey) {
+    form.optional = {};
+    RECIPES[packKey].optional.forEach(opt => {
+      const key = opt.itemId || opt.id;
+      if (opt.defaultOff) {
+        form.optional[key] = false;
+      } else if (opt.surplusDriven && opt.itemId) {
+        const it = itemMap[opt.itemId];
+        form.optional[key] = it && getBalance(it.id) > it.threshold * SURPLUS_NUDGE_MULTIPLIER;
+      } else if (opt.decrement === false) {
+        form.optional[key] = true;
+      } else {
+        form.optional[key] = false;
+      }
+    });
+  }
+
+  function renderDeliver() {
+    if (!form.deliverTab) form.deliverTab = "assembled";
+    if (!form.deliverDate) form.deliverDate = todayISO();
+    if (!form.deliverDest) form.deliverDest = CLINICS[0];
+    if (!form.deliverPack) form.deliverPack = "momPack";
+    if (!form.deliverUnit) form.deliverUnit = COMPLETE_UNIT_ITEMS[0];
+
+    let html = `<div class="tabs">
+        <button type="button" class="tab ${form.deliverTab === "assembled" ? "active" : ""}" data-tab="assembled">Assembled packs</button>
+        <button type="button" class="tab ${form.deliverTab === "units" ? "active" : ""}" data-tab="units">Complete donated units</button>
+      </div>`;
+
+    if (form.deliverTab === "assembled") {
+      html += `
+        <label>Pack type</label>
+        <select id="del-pack">
+          <option value="momPack" ${form.deliverPack === "momPack" ? "selected" : ""}>Mom Pack (${state.readyPacks.momPack || 0} ready)</option>
+          <option value="babyPack" ${form.deliverPack === "babyPack" ? "selected" : ""}>Baby Pack (${state.readyPacks.babyPack || 0} ready)</option>
+        </select>
+        <label>How many?</label>
+        <input type="number" id="del-qty" min="1" value="${esc(String(form.deliverQty || ""))}" placeholder="e.g. 20">
+        <label>Destination</label>
+        <select id="del-dest">${CLINICS.map(c => `<option ${form.deliverDest === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+        <label>Date</label>
+        <input type="date" id="del-date" value="${esc(form.deliverDate)}">`;
+    } else {
+      html += `
+        <label>Item</label>
+        <select id="del-unit">
+          ${COMPLETE_UNIT_ITEMS.map(id => `<option value="${id}" ${form.deliverUnit === id ? "selected" : ""}>${esc(itemName(id))} (${getBalance(id)} in stock)</option>`).join("")}
+        </select>
+        <label>How many?</label>
+        <input type="number" id="del-unit-qty" min="1" value="${esc(String(form.deliverUnitQty || ""))}" placeholder="e.g. 12">
+        <label>Destination</label>
+        <select id="del-dest">${CLINICS.map(c => `<option ${form.deliverDest === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+        <label>Date</label>
+        <input type="date" id="del-date" value="${esc(form.deliverDate)}">`;
+    }
+
+    if (errorMsg) html += `<div class="error">${esc(errorMsg)}</div>`;
+    html += `<div class="actions"><button class="btn btn-primary" id="deliver-save">Confirm Delivery</button></div>${renderFooter()}`;
+    return html;
+  }
+
+  function renderStock() {
+    const packCtx = getPackContext();
+    const shortcuts = PACK_STOCK_SHORTCUTS[packCtx];
+    if (!form.stockItem || !itemMap[form.stockItem]) form.stockItem = shortcuts[0];
+    if (!form.stockDate) form.stockDate = todayISO();
+    let html = `<p style="color:#666;font-size:0.95rem;">Count one item at a time, whenever you like. No need to count everything.</p>
+      ${renderPackContextSelector("stock-pack-context", packCtx)}
+      <label>Date</label>
+      <input type="date" id="stock-date" value="${esc(form.stockDate)}">
+      <div class="shortcut-btns">
+        ${shortcuts.map(id => `<button type="button" class="stock-shortcut" data-id="${id}">${esc(itemName(id))}</button>`).join("")}
+      </div>
+      <label>Item</label>
+      <select id="stock-item">
+        ${itemOptions(form.stockItem, packCtx, { showBalance: true })}
+      </select>
+      <label>Physical count</label>
+      <input type="number" id="stock-count" min="0" value="${esc(String(form.stockCount ?? ""))}" placeholder="What you counted on the shelf">
+      <label>Reason (optional)</label>
+      <input type="text" id="stock-reason" value="${esc(form.stockReason || "")}" placeholder="e.g. counting correction">
+      ${errorMsg ? `<div class="error">${esc(errorMsg)}</div>` : ""}
+      <div class="actions"><button class="btn btn-primary" id="stock-save">Save Count</button></div>
+      ${renderFooter()}`;
+    return html;
+  }
+
+  function showConfirmModal() {
+    const existing = document.getElementById("modal-overlay");
+    if (existing) existing.remove();
+    const overlay = document.createElement("div");
+    overlay.id = "modal-overlay";
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `<div class="modal">
+      <h2>Please confirm</h2>
+      <div id="confirm-body">${confirmAction.summary}</div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="confirm-cancel">Go back</button>
+        <button class="btn btn-primary" id="confirm-ok">Yes, save</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById("confirm-cancel").onclick = () => {
+      analyticsTrack("confirm_modal_cancelled", { view, formPreview: analyticsFormPreview() });
+      overlay.remove();
+      confirmAction = null;
+    };
+    document.getElementById("confirm-ok").onclick = () => {
+      analyticsTrack("confirm_modal_accepted", { view, formPreview: analyticsFormPreview() });
+      const ok = confirmAction.run();
+      overlay.remove();
+      confirmAction = null;
+      if (ok !== false) {
+        form = {};
+        view = "home";
+        errorMsg = "";
+      }
+      render();
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // EVENTS
+  // ═══════════════════════════════════════════════════════════════════
+
+  function bindEvents() {
+    document.querySelectorAll("[data-go]").forEach(el => {
+      el.onclick = () => {
+        const nextView = el.dataset.go;
+        analyticsTrack("navigation_clicked", { from: view, to: nextView, target: analyticsElementMeta(el) });
+        if (nextView !== view && analyticsCurrentFlow && !["home"].includes(view)) analyticsAbandonFlow("navigated_away");
+        view = nextView;
+        form = {};
+        errorMsg = "";
+        if (["donation", "build", "deliver", "stock"].includes(view)) analyticsStartFlow(view, "navigation");
+        if (view === "build") {
+          form.packKey = getPackContext();
+          initOptionalDefaults(form.packKey);
+        }
+        render();
+      };
+    });
+
+    const undoBtn = document.getElementById("btn-undo");
+    if (undoBtn) undoBtn.onclick = () => { undoLast(); };
+
+    const expBtn = document.getElementById("btn-export");
+    if (expBtn) expBtn.onclick = exportBackup;
+
+    const impBtn = document.getElementById("btn-import");
+    if (impBtn) impBtn.onclick = () => document.getElementById("import-file").click();
+
+    const sampleBtn = document.getElementById("btn-sample");
+    if (sampleBtn) sampleBtn.onclick = () => { analyticsTrack("sample_data_clicked", {}); loadSampleData(); };
+
+    const analyticsCsvBtn = document.getElementById("btn-export-analytics-csv");
+    if (analyticsCsvBtn) analyticsCsvBtn.onclick = exportAnalyticsCSV;
+
+    const analyticsJsonBtn = document.getElementById("btn-export-analytics-json");
+    if (analyticsJsonBtn) analyticsJsonBtn.onclick = exportAnalyticsJSON;
+
+    const aiPackBtn = document.getElementById("btn-export-ai-pack");
+    if (aiPackBtn) aiPackBtn.onclick = exportAIDataPack;
+
+    const toggleAnalyticsBtn = document.getElementById("btn-toggle-analytics");
+    if (toggleAnalyticsBtn) toggleAnalyticsBtn.onclick = () => setAnalyticsRecording(!(state.analytics?.recordingEnabled !== false));
+
+    const clearAnalyticsDayBtn = document.getElementById("btn-clear-analytics-day");
+    if (clearAnalyticsDayBtn) clearAnalyticsDayBtn.onclick = () => {
+      const dateInput = document.getElementById("analytics-clear-date");
+      clearAnalyticsForDate(dateInput ? dateInput.value : todayISO());
+    };
+
+    document.querySelectorAll("details").forEach(d => {
+      if (!d.dataset.analyticsBound) {
+        d.dataset.analyticsBound = "1";
+        d.addEventListener("toggle", () => analyticsTrack("details_toggled", { open: d.open, summary: analyticsSafeText(d.querySelector("summary")?.innerText || "") }));
+      }
+    });
+
+    if (view === "donation") bindDonation();
+    if (view === "build") bindBuild();
+    if (view === "deliver") bindDeliver();
+    if (view === "stock") bindStock();
+    if (view === "home") bindPackContextSelector("home-pack-context");
+  }
+
+  function exportBackup() {
+    analyticsTrack("backup_export_requested", { transactionCount: state.transactions.length, analyticsEventCount: state.analytics?.events?.length || 0 });
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `zoe-backup-${todayISO()}.json`;
+    a.click();
+  }
+
+  document.getElementById("import-file").onchange = function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        if (!parsed.balances) throw new Error("Invalid backup file");
+        if (!confirm("This will replace all current data. Are you sure?")) return;
+        analyticsTrack("backup_import_started", {});
+        state = analyticsUpgradeState(parsed);
+        ITEMS.forEach(i => {
+          if (state.balances[i.id] === undefined) state.balances[i.id] = 0;
+        });
+        if (!state.readyPacks) state.readyPacks = { momPack: 0, babyPack: 0 };
+        if (!state.transactions) state.transactions = [];
+        if (!state.packContext) state.packContext = "momPack";
+        if (!state.donors || !state.donors.length) {
+          rebuildDonorsFromTransactions();
+        }
+        saveState();
+        view = "home";
+        form = {};
+        analyticsTrack("backup_import_success", { transactionCount: state.transactions.length });
+        render();
+      } catch (err) {
+        analyticsTrack("backup_import_failed", { message: err.message || String(err) });
+        alert("Could not read backup file. Please check the file and try again.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  function bindDonation() {
+    bindPackContextSelector("donation-pack-context", () => readDonationForm());
+    const donorEl = document.getElementById("donor");
+    if (donorEl) {
+      donorEl.oninput = updateDonorHint;
+      updateDonorHint();
+    }
+    document.getElementById("add-line").onclick = () => {
+      readDonationForm();
+      const qtyErrors = getDonationQtyErrors(form.lines);
+      if (Object.keys(qtyErrors).length) {
+        form.donationQtyErrors = qtyErrors;
+        errorMsg = "Please enter a quantity for each item before adding another.";
+        render();
+        document.querySelector(".field-error[data-donation-error]")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        return;
+      }
+      const first = sortItemsForPack(getPackContext())[0];
+      form.lines.push({ itemId: first.id, qty: "", packSize: "12", note: "" });
+      form.donationQtyErrors = {};
+      errorMsg = "";
+      render();
+    };
+    document.querySelectorAll(".remove-line").forEach(btn => {
+      btn.onclick = () => {
+        form.lines.splice(parseInt(btn.dataset.idx, 10), 1);
+        readDonationForm();
+        render();
+      };
+    });
+    document.querySelectorAll(".line-item").forEach(el => {
+      el.onchange = () => { readDonationForm(); render(); };
+    });
+    document.querySelectorAll(".line-qty").forEach(el => {
+      el.oninput = () => {
+        readDonationForm();
+        const idx = parseInt(el.dataset.idx, 10);
+        const qty = parseInt(el.value, 10);
+        if (form.donationQtyErrors && qty >= 1) {
+          delete form.donationQtyErrors[idx];
+          if (!Object.keys(form.donationQtyErrors).length) {
+            form.donationQtyErrors = {};
+            errorMsg = "";
+          }
+          render();
+        }
+      };
+    });
+    document.getElementById("donation-save").onclick = () => {
+      readDonationForm();
+      const qtyErrors = getDonationQtyErrors(form.lines);
+      if (Object.keys(qtyErrors).length) {
+        form.donationQtyErrors = qtyErrors;
+        errorMsg = "Please enter a quantity for each item.";
+        render();
+        document.querySelector(".field-error[data-donation-error]")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        return;
+      }
+      form.donationQtyErrors = {};
+      errorMsg = "";
+      const lines = [];
+      for (const line of form.lines) {
+        const qty = parseInt(line.qty, 10);
+        lines.push({ itemId: line.itemId, qty, packSize: line.packSize ? parseInt(line.packSize, 10) : undefined, note: line.note });
+      }
+      let summary = `<p><strong>Donation</strong> — ${esc(formatDate(form.donationDate))}</p>`;
+      if (form.donor) summary += `<p>From: ${esc(form.donor)}</p><ul>`;
+      else summary += `<ul>`;
+      lines.forEach(l => {
+        const it = itemMap[l.itemId];
+        let desc = `${esc(it.name)}: `;
+        if (it.unit === "packet" && l.packSize) desc += `${l.qty} packets × ${l.packSize} = ${l.qty * l.packSize} units`;
+        else desc += `${l.qty}`;
+        summary += `<li>${desc}</li>`;
+      });
+      summary += `</ul>`;
+      confirmAction = {
+        summary,
+        run: () => commitDonation(form.donor, lines, form.donationDate),
+      };
+      showConfirmModal();
+    };
+  }
+
+  function readDonationForm() {
+    form.donor = document.getElementById("donor")?.value || form.donor || "";
+    form.donationDate = document.getElementById("donation-date")?.value || form.donationDate || todayISO();
+    form.lines.forEach((line, idx) => {
+      const itemEl = document.querySelector(`.line-item[data-idx="${idx}"]`);
+      const qtyEl = document.querySelector(`.line-qty[data-idx="${idx}"]`);
+      const noteEl = document.querySelector(`.line-note[data-idx="${idx}"]`);
+      const packEl = document.querySelector(`.line-packsize[data-idx="${idx}"]`);
+      if (itemEl) line.itemId = itemEl.value;
+      if (qtyEl) line.qty = qtyEl.value;
+      if (noteEl) line.note = noteEl.value;
+      if (packEl) line.packSize = packEl.value;
+    });
+  }
+
+  function bindSubFieldValidation() {
+    const refresh = (scrollToError) => {
+      readBuildForm();
+      const qty = parseInt(form.qty, 10) || 0;
+      form.subLineErrors = getSubstitutionLineErrors(qty, form.substitutions);
+      render();
+      if (scrollToError) {
+        document.querySelector(".field-error[data-sub-error]")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    };
+    const onEnter = (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        refresh(true);
+      }
+    };
+    const buildQty = document.getElementById("build-qty");
+    if (buildQty) {
+      buildQty.onchange = () => refresh(false);
+      buildQty.onkeydown = onEnter;
+    }
+    document.querySelectorAll(".sub-packs").forEach(el => {
+      el.onchange = () => refresh(false);
+      el.onkeydown = onEnter;
+    });
+    document.querySelectorAll(".sub-instead, .sub-substitute").forEach(el => {
+      el.onchange = () => {
+        readBuildForm();
+        const idx = parseInt(el.dataset.subIdx, 10);
+        const sub = form.substitutions[idx];
+        if (sub?.insteadOf && el.classList.contains("sub-instead")) {
+          const included = Object.keys(form.optional).filter(k => form.optional[k]);
+          sub.qtyPerPack = String(recipeQtyPerPack(
+            form.packKey, sub.insteadOf, included, form.customExtras.filter(e => e.itemId)
+          ));
+        }
+        form.subLineErrors = getSubstitutionLineErrors(parseInt(form.qty, 10) || 0, form.substitutions);
+        render();
+      };
+    });
+  }
+
+  function bindBuild() {
+    const openAddItem = document.getElementById("open-add-item");
+    if (openAddItem) {
+      openAddItem.onclick = () => {
+        readBuildForm();
+        form.addItemMode = true;
+        form.addItemStep = "menu";
+        render();
+      };
+    }
+
+    const backMenu = document.getElementById("add-item-back-menu");
+    if (backMenu) {
+      backMenu.onclick = () => {
+        readBuildForm();
+        form.addItemStep = "menu";
+        render();
+      };
+    }
+
+    const choiceOptional = document.getElementById("choice-optional");
+    if (choiceOptional) choiceOptional.onclick = () => {
+      readBuildForm();
+      form.addItemStep = "optional";
+      render();
+    };
+
+    const choiceLeftOut = document.getElementById("choice-leftout");
+    if (choiceLeftOut) choiceLeftOut.onclick = () => {
+      readBuildForm();
+      form.addItemStep = "omitted";
+      if (!form.omissions) form.omissions = [];
+      if (!form.omissions.some(o => !o.itemId && !o.packCount)) {
+        form.omissions.push({ itemId: "", packCount: "", qtyPerPack: "1" });
+      }
+      render();
+    };
+
+    const choiceSubstitution = document.getElementById("choice-substitution");
+    if (choiceSubstitution) choiceSubstitution.onclick = () => {
+      readBuildForm();
+      form.addItemStep = "substitution";
+      if (!form.substitutions.some(s => !s.insteadOf && !s.substitute && !s.packCount)) {
+        form.substitutions.push({ insteadOf: "", substitute: "", packCount: "", qtyPerPack: "" });
+      }
+      render();
+    };
+
+    document.querySelectorAll("#add-item-done, #add-item-done-bottom").forEach(btn => {
+      btn.onclick = () => {
+        readBuildForm();
+        form.addItemMode = false;
+        form.addItemStep = null;
+        render();
+      };
+    });
+    const buildPackEl = document.getElementById("build-pack");
+    if (buildPackEl) buildPackEl.onchange = function() {
+      form.packKey = this.value;
+      setPackContext(form.packKey);
+      initOptionalDefaults(form.packKey);
+      readBuildForm();
+      render();
+    };
+    document.querySelectorAll(".toggle-btn").forEach(btn => {
+      btn.onclick = () => {
+        readBuildForm();
+        const k = btn.dataset.opt;
+        form.optional[k] = !form.optional[k];
+        render();
+      };
+    });
+    const addSub = document.getElementById("add-substitution");
+    if (addSub) {
+      addSub.onclick = () => {
+        readBuildForm();
+        form.substitutions.push({ insteadOf: "", substitute: "", packCount: "", qtyPerPack: "" });
+        render();
+      };
+    }
+    document.querySelectorAll(".remove-sub").forEach(btn => {
+      btn.onclick = () => {
+        readBuildForm();
+        form.substitutions.splice(parseInt(btn.dataset.subIdx, 10), 1);
+        render();
+      };
+    });
+    const addOmission = document.getElementById("add-omission");
+    if (addOmission) {
+      addOmission.onclick = () => {
+        readBuildForm();
+        if (!form.omissions) form.omissions = [];
+        form.omissions.push({ itemId: "", packCount: "", qtyPerPack: "1" });
+        render();
+      };
+    }
+    document.querySelectorAll(".remove-omit").forEach(btn => {
+      btn.onclick = () => {
+        readBuildForm();
+        form.omissions.splice(parseInt(btn.dataset.omitIdx, 10), 1);
+        render();
+      };
+    });
+    bindSubFieldValidation();
+    // If a stock-shortage warning is visible and the user changes anything that affects stock,
+    // update or hide the warning immediately without forcing them to press Save again.
+    document.querySelectorAll("#build-qty, #build-pack, .toggle-btn, .ce-item, .ce-qty, .sub-instead, .sub-substitute, .sub-packs, .sub-qty, .omit-item, .omit-packs, .omit-qty")
+      .forEach(el => {
+        el.addEventListener("input", updateBuildErrorBannerLive);
+        el.addEventListener("change", updateBuildErrorBannerLive);
+      });
+    const addCe = document.getElementById("add-custom-extra");
+    if (addCe) {
+      addCe.onclick = () => {
+        readBuildForm();
+        form.customExtras.push({ itemId: "cup-of-soup-sachets", qtyPerPack: "2" });
+        render();
+      };
+    }
+    document.querySelectorAll(".remove-ce").forEach(btn => {
+      btn.onclick = () => {
+        readBuildForm();
+        form.customExtras.splice(parseInt(btn.dataset.ceIdx, 10), 1);
+        render();
+      };
+    });
+    const buildSave = document.getElementById("build-save");
+    if (buildSave) buildSave.onclick = () => {
+      readBuildForm();
+      const qty = parseInt(form.qty, 10);
+      if (!qty || qty < 1) { errorMsg = "Please enter how many packs you built."; render(); return; }
+      const included = Object.keys(form.optional).filter(k => form.optional[k]);
+      const customExtras = form.customExtras.filter(e => e.itemId);
+      form.subLineErrors = getSubstitutionLineErrors(qty, form.substitutions);
+      if (Object.keys(form.subLineErrors).length) {
+        render();
+        document.querySelector(".field-error[data-sub-error]")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        return;
+      }
+      const dup = customExtras.map(e => e.itemId).filter((id, i, arr) => arr.indexOf(id) !== i);
+      if (dup.length) {
+        errorMsg = "Each extra item can only be added once. Remove the duplicate.";
+        render();
+        return;
+      }
+      const stockError = getBuildStockErrorMessage();
+      if (stockError) {
+        errorMsg = stockError;
+        render();
+        return;
+      }
+      const recipe = RECIPES[form.packKey];
+      let summary = `<p><strong>${qty} ${esc(recipe.label)}</strong> — ${esc(formatDate(form.buildDate))}<br>
+        Packed by ${esc(form.packer)} for ${esc(form.destination)}</p>`;
+      summary += `<div style="font-size:0.95rem;">${formatBuildPreview(form.packKey, qty, included, customExtras, form.substitutions, true, form.omissions)}</div>`;
+      for (const opt of recipe.optional) {
+        const key = opt.itemId || opt.id;
+        if (!included.includes(key)) continue;
+        if (opt.decrement && opt.itemId) continue;
+        summary += `<p style="margin:8px 0 0;font-size:0.95rem;">${esc(opt.label || itemName(opt.itemId))} included</p>`;
+      }
+      confirmAction = {
+        summary,
+        run: () => commitBuild(form.packKey, qty, form.packer, form.destination, included, customExtras, form.substitutions, form.buildDate, form.omissions),
+      };
+      showConfirmModal();
+    };
+  }
+
+  function readBuildForm() {
+    form.packKey = document.getElementById("build-pack")?.value || form.packKey;
+    form.buildDate = document.getElementById("build-date")?.value || form.buildDate || todayISO();
+    form.qty = document.getElementById("build-qty")?.value ?? form.qty;
+    form.packer = document.getElementById("build-packer")?.value || form.packer;
+    form.destination = document.getElementById("build-dest")?.value || form.destination;
+    (form.substitutions || []).forEach((sub, idx) => {
+      const insteadEl = document.querySelector(`.sub-instead[data-sub-idx="${idx}"]`);
+      const substituteEl = document.querySelector(`.sub-substitute[data-sub-idx="${idx}"]`);
+      const packsEl = document.querySelector(`.sub-packs[data-sub-idx="${idx}"]`);
+      const qtyEl = document.querySelector(`.sub-qty[data-sub-idx="${idx}"]`);
+      if (insteadEl) sub.insteadOf = insteadEl.value;
+      if (substituteEl) sub.substitute = substituteEl.value;
+      if (packsEl) sub.packCount = packsEl.value;
+      if (qtyEl) sub.qtyPerPack = qtyEl.value;
+    });
+    (form.customExtras || []).forEach((extra, idx) => {
+      const itemEl = document.querySelector(`.ce-item[data-ce-idx="${idx}"]`);
+      const qtyEl = document.querySelector(`.ce-qty[data-ce-idx="${idx}"]`);
+      if (itemEl) extra.itemId = itemEl.value;
+      if (qtyEl) extra.qtyPerPack = qtyEl.value;
+    });
+    (form.omissions || []).forEach((omit, idx) => {
+      const itemEl = document.querySelector(`.omit-item[data-omit-idx="${idx}"]`);
+      const packsEl = document.querySelector(`.omit-packs[data-omit-idx="${idx}"]`);
+      const qtyEl = document.querySelector(`.omit-qty[data-omit-idx="${idx}"]`);
+      if (itemEl) omit.itemId = itemEl.value;
+      if (packsEl) omit.packCount = packsEl.value;
+      if (qtyEl) omit.qtyPerPack = qtyEl.value;
+    });
+  }
+
+  function bindDeliver() {
+    document.querySelectorAll(".tab").forEach(tab => {
+      tab.onclick = () => { form.deliverTab = tab.dataset.tab; readDeliverForm(); render(); };
+    });
+    document.getElementById("deliver-save").onclick = () => {
+      readDeliverForm();
+      if (form.deliverTab === "assembled") {
+        const qty = parseInt(form.deliverQty, 10);
+        if (!qty || qty < 1) { errorMsg = "Please enter how many packs to deliver."; render(); return; }
+        const recipe = RECIPES[form.deliverPack];
+        const summary = `<p>Deliver <strong>${qty} ${esc(recipe.label)}</strong> to <strong>${esc(form.deliverDest)}</strong><br>${esc(formatDate(form.deliverDate))}</p>`;
+        confirmAction = {
+          summary,
+          run: () => {
+            const err = commitDeliverAssembled(form.deliverPack, qty, form.deliverDest, form.deliverDate);
+            if (err) { errorMsg = err; return false; }
+            return true;
+          },
+        };
+      } else {
+        const qty = parseInt(form.deliverUnitQty, 10);
+        if (!qty || qty < 1) { errorMsg = "Please enter how many to deliver."; render(); return; }
+        const summary = `<p>Deliver <strong>${qty} ${esc(itemName(form.deliverUnit))}</strong> to <strong>${esc(form.deliverDest)}</strong><br>${esc(formatDate(form.deliverDate))}</p>`;
+        confirmAction = {
+          summary,
+          run: () => {
+            const err = commitDeliverUnits(form.deliverUnit, qty, form.deliverDest, form.deliverDate);
+            if (err) { errorMsg = err; return false; }
+            return true;
+          },
+        };
+      }
+      showConfirmModal();
+    };
+  }
+
+  function readDeliverForm() {
+    form.deliverDate = document.getElementById("del-date")?.value || form.deliverDate;
+    form.deliverDest = document.getElementById("del-dest")?.value || form.deliverDest;
+    if (form.deliverTab === "assembled") {
+      form.deliverPack = document.getElementById("del-pack")?.value || form.deliverPack;
+      form.deliverQty = document.getElementById("del-qty")?.value ?? form.deliverQty;
+    } else {
+      form.deliverUnit = document.getElementById("del-unit")?.value || form.deliverUnit;
+      form.deliverUnitQty = document.getElementById("del-unit-qty")?.value ?? form.deliverUnitQty;
+    }
+  }
+
+  function bindStock() {
+    bindPackContextSelector("stock-pack-context", (packKey) => {
+      readStockForm();
+      const shortcuts = PACK_STOCK_SHORTCUTS[packKey];
+      if (!shortcuts.includes(form.stockItem)) form.stockItem = shortcuts[0];
+    });
+    document.querySelectorAll(".stock-shortcut").forEach(btn => {
+      btn.onclick = () => { form.stockItem = btn.dataset.id; readStockForm(); render(); };
+    });
+    document.getElementById("stock-item").onchange = function() {
+      form.stockItem = this.value;
+      render();
+    };
+    document.getElementById("stock-save").onclick = () => {
+      readStockForm();
+      const count = parseInt(form.stockCount, 10);
+      if (isNaN(count) || count < 0) { errorMsg = "Please enter the count you found on the shelf."; render(); return; }
+      const it = itemMap[form.stockItem];
+      const old = getBalance(form.stockItem);
+      const summary = `<p><strong>Recount</strong> — ${esc(formatDate(form.stockDate))}</p>
+        <p>Set <strong>${esc(it.name)}</strong> from ${old} to <strong>${count}</strong>${form.stockReason ? `<br>Reason: ${esc(form.stockReason)}` : ""}</p>`;
+      confirmAction = {
+        summary,
+        run: () => commitRecount(form.stockItem, count, form.stockReason, form.stockDate),
+      };
+      showConfirmModal();
+    };
+  }
+
+  function readStockForm() {
+    form.stockItem = document.getElementById("stock-item")?.value || form.stockItem;
+    form.stockDate = document.getElementById("stock-date")?.value || form.stockDate || todayISO();
+    form.stockCount = document.getElementById("stock-count")?.value ?? form.stockCount;
+    form.stockReason = document.getElementById("stock-reason")?.value || form.stockReason;
+  }
+
+
+  // Global analytics capture. This stays structural rather than visual: no screen recording, no third-party scripts.
+  function analyticsClickKey(target) {
+    const meta = analyticsElementMeta(target);
+    return meta.id || meta.dataGo || meta.text || `${meta.tag}:${meta.type}:${meta.classes?.[0] || ""}`;
+  }
+
+  function analyticsRecordClickBurst(target) {
+    const key = analyticsClickKey(target);
+    const now = Date.now();
+    if (!analyticsClickBurst[key]) analyticsClickBurst[key] = [];
+    analyticsClickBurst[key] = analyticsClickBurst[key].filter(t => now - t < 1500);
+    analyticsClickBurst[key].push(now);
+    if (analyticsClickBurst[key].length === 3) {
+      analyticsTrack("rage_click", { target: analyticsElementMeta(target), count: analyticsClickBurst[key].length, windowMs: now - analyticsClickBurst[key][0] });
+    }
+  }
+
+  function analyticsStartHoverTimer(target) {
+    const key = analyticsClickKey(target) + "|" + view;
+    if (analyticsHoverTimers.has(key) || analyticsHoverLogged.has(key)) return;
+    const startedAt = Date.now();
+    const timer = setTimeout(() => {
+      analyticsHoverTimers.delete(key);
+      analyticsHoverLogged.add(key);
+      analyticsTrack("mouse_hesitation", { target: analyticsElementMeta(target), durationMs: Date.now() - startedAt });
+    }, 1800);
+    analyticsHoverTimers.set(key, timer);
+  }
+
+  function analyticsClearHoverTimer(target) {
+    const key = analyticsClickKey(target) + "|" + view;
+    const timer = analyticsHoverTimers.get(key);
+    if (timer) clearTimeout(timer);
+    analyticsHoverTimers.delete(key);
+  }
+
+  document.addEventListener("mouseover", function(e) {
+    const target = e.target.closest("button, summary, input, select, textarea, a");
+    if (!target) return;
+    analyticsStartHoverTimer(target);
+  }, true);
+
+  document.addEventListener("mouseout", function(e) {
+    const target = e.target.closest("button, summary, input, select, textarea, a");
+    if (!target) return;
+    analyticsClearHoverTimer(target);
+  }, true);
+
+  document.addEventListener("click", function(e) {
+    const target = e.target.closest("button, summary, a, input, select, textarea");
+    if (!target) return;
+    analyticsClearHoverTimer(target);
+    analyticsRecordClickBurst(target);
+    analyticsTrack("click", { target: analyticsElementMeta(target) });
+  }, true);
+
+  document.addEventListener("focusin", function(e) {
+    const target = e.target;
+    if (!target || !["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
+    const field = analyticsFieldName(target);
+    const now = Date.now();
+    if (analyticsLastFieldFocus && analyticsLastFieldFocus.field !== field) {
+      analyticsTrack("time_between_fields", { fromField: analyticsLastFieldFocus.field, toField: field, durationMs: now - analyticsLastFieldFocus.at });
+    }
+    analyticsLastFieldFocus = { field, at: now };
+    analyticsFocusStartedAt[field] = now;
+    analyticsFieldState[field] = { startValue: JSON.stringify(analyticsFieldValue(target)), changed: false, focusedAt: now };
+    analyticsTrack("field_focus", { field, value: analyticsFieldValue(target), target: analyticsElementMeta(target) });
+  }, true);
+
+  document.addEventListener("focusout", function(e) {
+    const target = e.target;
+    if (!target || !["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
+    const field = analyticsFieldName(target);
+    const started = analyticsFocusStartedAt[field] || Date.now();
+    const durationMs = Date.now() - started;
+    const currentValue = analyticsFieldValue(target);
+    analyticsTrack("field_blur", { field, durationMs, value: currentValue, target: analyticsElementMeta(target) });
+    const fs = analyticsFieldState[field];
+    const empty = currentValue?.empty === true || currentValue?.value === "";
+    if (fs && !fs.changed && empty && durationMs > 700) {
+      analyticsTrack("field_abandoned", { field, durationMs, value: currentValue, target: analyticsElementMeta(target), reason: "focused_empty_field_left_unchanged" });
+    }
+    delete analyticsFocusStartedAt[field];
+    delete analyticsFieldState[field];
+  }, true);
+
+  document.addEventListener("change", function(e) {
+    const target = e.target;
+    if (!target || !["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
+    const field = analyticsFieldName(target);
+    if (analyticsFieldState[field]) analyticsFieldState[field].changed = true;
+    analyticsTrack("field_change", { field, value: analyticsFieldValue(target), target: analyticsElementMeta(target) });
+  }, true);
+
+  document.addEventListener("input", function(e) {
+    const target = e.target;
+    if (!target || !["INPUT", "TEXTAREA"].includes(target.tagName)) return;
+    const field = analyticsFieldName(target);
+    if (analyticsFieldState[field]) analyticsFieldState[field].changed = true;
+  }, true);
+
+  window.addEventListener("scroll", function() {
+    const now = Date.now();
+    const doc = document.documentElement;
+    const maxScroll = Math.max(1, doc.scrollHeight - window.innerHeight);
+    const pct = Math.max(0, Math.min(100, Math.round((window.scrollY / maxScroll) * 100)));
+    if (analyticsScrollState.view !== view) analyticsScrollState = { view, startedAt: now, maxPct: 0, lastPct: 0, lastAt: now, timer: null };
+    if (!analyticsScrollState.startedAt) {
+      analyticsScrollState.startedAt = now;
+      analyticsTrack("scroll_start", { pct });
+    }
+    if (pct > analyticsScrollState.maxPct) {
+      analyticsScrollState.maxPct = pct;
+      const crossed = Math.floor(pct / 25) * 25;
+      const prevCrossed = Math.floor((analyticsScrollState.lastPct || 0) / 25) * 25;
+      if (crossed > prevCrossed) analyticsTrack("scroll_depth", { pct, maxPct: analyticsScrollState.maxPct, crossed });
+    }
+    analyticsScrollState.lastPct = pct;
+    analyticsScrollState.lastAt = now;
+    if (analyticsScrollState.timer) clearTimeout(analyticsScrollState.timer);
+    analyticsScrollState.timer = setTimeout(() => {
+      analyticsTrack("scroll_end", { maxPct: analyticsScrollState.maxPct, durationMs: Date.now() - analyticsScrollState.startedAt });
+      analyticsScrollState.startedAt = 0;
+      analyticsScrollState.maxPct = pct;
+    }, 900);
+  }, { passive: true });
+
+  window.addEventListener("beforeunload", function() {
+    if (analyticsCurrentFlow) analyticsAbandonFlow("window_closed");
+    analyticsTrack("app_close", { view, snapshot: analyticsOperationalSnapshot() });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // INIT
+  // ═══════════════════════════════════════════════════════════════════
+
+  render();
+  </script>
+</body>
+</html>
