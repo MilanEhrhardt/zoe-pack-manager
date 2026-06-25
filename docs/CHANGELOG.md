@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Packing habit trend `topThreeInsights`: aggressive filter excludes low-confidence one-off patterns (e.g. 1/10 vs 0/10); raw `trendRows` and full `insights` unchanged for admin analysis; low-count copy uses “may not mean anything yet” instead of “much more common”
+
 ### Added
 
 - Packing Habits behavioural trend intelligence (Phase 2): windowed comparison of production build habits (recent vs previous 25/20/10 builds per pack); trend classification (new, emerging, strengthening, stable, weakening, disappearing, unstable); context-aware `likelyCause`; human insights in `packingHabits.insights`; `packingHabitTrends` in analytics summary; export-only, no volunteer UI

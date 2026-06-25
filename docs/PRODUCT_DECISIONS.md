@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Packing habit trend insight noise filter
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Filter `topThreeInsights` aggressively; keep full raw `trendRows` in export |
+| **Date** | 2026-06-25 |
+| **Context** | Phase 2 `topThreeInsights` surfaced low-confidence one-off patterns (e.g. 1/10 vs 0/10) with misleading “much more common” copy. |
+| **Decision** | `topThreeInsights` only includes insights where confidence is medium/high, OR recentCount ≥ 3, OR previousCount ≥ 3, OR \|deltaPercentage\| ≥ 30; explicitly excludes one-off patterns (recentCount ≤ 1 AND previousCount ≤ 1). Full `trends.trendRows` and `insights` arrays remain unfiltered in AI Data Pack. Low-count emerging/strengthening copy says “may not mean anything yet” instead of “much more common.” |
+| **Reasoning** | Ops summary should highlight actionable patterns; Milan retains full technical data for analysis. |
+| **Alternatives Considered** | **Filter all insights** — rejected; loses admin audit trail. **Raise window minimum to 25** — rejected; sandbox has insufficient history. |
+| **Status** | Accepted |
+
 ### Packing habits behavioural trends (Phase 2, export only)
 
 | Field | Content |
