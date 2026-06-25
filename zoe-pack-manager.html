@@ -2524,11 +2524,11 @@
       if (p.type === "substitution") {
         volunteerText = `${replacementNameStr} replaced ${itemNameStr} in ${count} of the last ${denominator} ${packLabel}s.`;
       } else if (p.type === "optional_usage") {
-        volunteerText = `${itemNameStr} was included in ${count} of the last ${denominator} ${packLabel}s.`;
+        volunteerText = `${itemNameStr} ${habitWasWere(itemNameStr)} included in ${count} of the last ${denominator} ${packLabel}s.`;
       } else if (p.type === "custom_extra") {
-        volunteerText = `${itemNameStr} were added to ${count} of the last ${denominator} ${packLabel}s.`;
+        volunteerText = `${itemNameStr} ${habitWasWere(itemNameStr)} added to ${count} of the last ${denominator} ${packLabel}s.`;
       } else if (p.type === "omission") {
-        volunteerText = `${itemNameStr} was left out of ${count} of the last ${denominator} ${packLabel}s.`;
+        volunteerText = `${itemNameStr} ${habitWasWere(itemNameStr)} left out of ${count} of the last ${denominator} ${packLabel}s.`;
       }
 
       const adminText = `${volunteerText.slice(0, -1)} (${percentage}%). ${recommendation}`;
@@ -2760,6 +2760,17 @@
     });
   }
 
+  function habitItemIsPlural(name) {
+    const n = String(name || "").trim();
+    if (!n) return false;
+    const lower = n.toLowerCase();
+    return lower.endsWith("s") && !lower.endsWith("ss") && !lower.endsWith("us");
+  }
+
+  function habitWasWere(name) {
+    return habitItemIsPlural(name) ? "were" : "was";
+  }
+
   function habitDescribePatternWindow(comparison, which) {
     const packLabel = RECIPES[comparison.packKey]?.label || comparison.packKey;
     const count = which === "recent" ? comparison.recentCount : comparison.previousCount;
@@ -2772,15 +2783,22 @@
       return `${replacementNameStr} replaced ${itemNameStr} in ${count} of the last ${denom} ${packLabel}s`;
     }
     if (comparison.type === "optional_usage") {
-      return `${itemNameStr} was included in ${count} of the last ${denom} ${packLabel}s`;
+      return `${itemNameStr} ${habitWasWere(itemNameStr)} included in ${count} of the last ${denom} ${packLabel}s`;
     }
     if (comparison.type === "custom_extra") {
-      return `${itemNameStr} were added to ${count} of the last ${denom} ${packLabel}s`;
+      return `${itemNameStr} ${habitWasWere(itemNameStr)} added to ${count} of the last ${denom} ${packLabel}s`;
     }
     if (comparison.type === "omission") {
-      return `${itemNameStr} was left out of ${count} of the last ${denom} ${packLabel}s`;
+      return `${itemNameStr} ${habitWasWere(itemNameStr)} left out of ${count} of the last ${denom} ${packLabel}s`;
     }
     return `${itemNameStr} in ${count} of the last ${denom} ${packLabel}s`;
+  }
+
+  function habitDescribePreviousWindow(comparison) {
+    const packLabel = RECIPES[comparison.packKey]?.label || comparison.packKey;
+    const count = comparison.previousCount;
+    const denom = comparison.previousDenominator;
+    return `this happened in ${count} of the previous ${denom} ${packLabel}s`;
   }
 
   function habitCauseHumanLabel(cause, comparison) {
@@ -2852,11 +2870,19 @@
     let top = ranked.slice(0, 3).filter(e => e.score > 0);
     if (!top.length) top = [{ cause: "unknown", score: 1 }];
     const total = top.reduce((s, e) => s + e.score, 0);
-    return top.map(e => ({
+    const mapped = top.map(e => ({
       cause: e.cause,
-      confidence: Math.round((e.score / total) * 100) / 100,
+      rawConfidence: e.score / total,
       reason: reasons[e.cause] || "Insufficient evidence to identify a specific cause.",
     }));
+    let allocated = 0;
+    return mapped.map((e, i) => {
+      const confidence = i < mapped.length - 1
+        ? Math.round(e.rawConfidence * 100) / 100
+        : Math.round((1 - allocated) * 100) / 100;
+      if (i < mapped.length - 1) allocated += confidence;
+      return { cause: e.cause, confidence, reason: e.reason };
+    });
   }
 
   function computeHabitConfidenceProbability(comparison, trend, evidence, possibleCauses) {
@@ -2878,7 +2904,7 @@
 
   function habitConfidenceBandFromProbability(probability) {
     if (probability >= 0.70) return "high";
-    if (probability >= 0.40) return "medium";
+    if (probability >= 0.55) return "medium";
     return "low";
   }
 
@@ -2907,9 +2933,8 @@
     const pp = comparison.previousPercent;
     const delta = comparison.deltaPercent;
     const totalObs = rc + pc;
-    const occurrenceWord = (n) => (n === 1 ? "occurrence" : "occurrences");
 
-    let base = `This behaviour occurred ${rc} ${occurrenceWord(rc)} during the most recent ${rd} ${packLabel}s (${rp}%), compared with ${pc} ${occurrenceWord(pc)} in the previous ${pd} (${pp}%).`;
+    let base = `This behaviour appeared in ${rc} of the most recent ${rd} ${packLabel}s (${rp}%), compared with ${pc} of the previous ${pd} (${pp}%).`;
 
     if (trend === "too_early_to_tell") {
       return `${base} With only ${totalObs} total observations across both windows, it is too early to draw a firm conclusion.`;
@@ -2970,7 +2995,7 @@
     const top = possibleCauses[0];
     if (!top) return "No clear explanation stands out from the available evidence.";
     if (top.cause === "unknown" && top.confidence >= 0.4) {
-      return `The most likely explanation is that we do not yet know. ${top.reason}`;
+      return "There is no clear explanation yet.";
     }
     const label = habitCauseHumanLabel(top.cause, comparison);
     const qualifier = top.confidence >= 0.5 ? "The most likely reason is that" : "One possible reason is that";
@@ -2979,7 +3004,7 @@
 
   function generateHabitInsightText(comparison, trend, evidence, trendReason, possibleCauses, insightQualityScore) {
     const factsRecent = habitDescribePatternWindow(comparison, "recent");
-    const factsPrevious = habitDescribePatternWindow(comparison, "previous");
+    const factsPrevious = habitDescribePreviousWindow(comparison);
     let headline = "I noticed a change.";
     if (trend === "too_early_to_tell") headline = "I noticed something starting to appear.";
     else if (trend === "established") headline = "I noticed something that has become normal.";
@@ -2993,7 +3018,7 @@
     return [
       headline,
       `${factsRecent}.`,
-      `Previously, ${factsPrevious.charAt(0).toLowerCase() + factsPrevious.slice(1)}.`,
+      `Previously, ${factsPrevious}.`,
       interpretation,
       explanation,
       action,
@@ -3185,7 +3210,7 @@
       excludedTesterBuildCount: events.excludedTesterBuildCount,
       windows: trends.windows,
       observations: enrichedObservations,
-      insights: trends.insights,
+      allInsights: trends.insights,
       trends,
     };
   }
