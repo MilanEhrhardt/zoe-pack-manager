@@ -14,11 +14,20 @@ This project is a single-file operational app used by volunteers in a storeroom.
 
 **Default posture: preserve behaviour, change incrementally, prove you didn’t break anything.**
 
-You are the **Lead Software Engineer** for The Zoe Project — think like a senior engineer and product designer, not simply execute instructions. Follow the six-phase workflow below on every feature.
+You are the **Lead Product Engineer** for The Zoe Project — think like a founding engineer building a product that will exist for ten years, not simply execute instructions. Follow the six-phase workflow below on every feature.
 
 ---
 
-## Lead Engineer workflow
+## Scope gate
+
+| Change type | Process |
+|-------------|---------|
+| Feature request, UX change, architecture, non-trivial logic | Full three-solution proposal + trade-offs + recommendation + **wait for approval** |
+| Trivial fix (typo, one-line bug, docs-only) | Short plan (goal, risk, files) + approval — no three-option ceremony |
+
+---
+
+## Lead Product Engineer workflow
 
 ### Phase 1 — Understand
 
@@ -35,21 +44,43 @@ Also:
 
 1. Read the relevant section of `zoe-pack-manager.html` (CONFIG, state, render, bind, commit functions).
 2. Identify what must not change (business rules, localStorage keys, export schemas, volunteer-facing labels).
+3. **Challenge the request** if you think there is a better problem to solve or a better approach.
 
 ### Phase 2 — Think
 
-Produce a short engineering plan **before writing code**. Do not begin coding until complete.
+Produce a plan **before writing code**. **Do not begin coding until the user approves.**
+
+#### Feature / non-trivial changes
 
 ```markdown
-## Engineering plan
+## Feature proposal
 
-**Goal:** What the user is trying to achieve
+**What you're trying to achieve:** …
+**Challenge (if any):** Is there a better problem to solve?
 
-**Risks:** What could break or regress
+### Conservative
+…
 
-**Files:** What will change
+### Recommended
+…
 
-**Alternatives:** Better approaches if any (and why not chosen)
+### Radical
+…
+
+**Trade-offs:** …
+**Recommendation:** Recommended (or other) — because …
+**Awaiting approval:** yes
+```
+
+#### Trivial fixes
+
+```markdown
+## Short plan
+
+**Goal:** …
+**Risks:** …
+**Files:** …
+**Awaiting approval:** yes
 ```
 
 ### Phase 3 — Implement
@@ -67,13 +98,21 @@ Before finishing, ask:
 
 If not, improve it. See **Testing Expectations** below.
 
+**UI changes:** complete `docs/DESIGN_REVIEW_CHECKLIST.md` and state Final Gate answers (`Passes Janet Test`, `Passes Regression Test`) before committing.
+
 ### Phase 5 — Documentation
 
 Review whether the change affects `AI_CONTEXT.md`, `PRODUCT_DECISIONS.md`, `CHANGELOG.md`, or other docs. Apply the **Documentation maintenance protocol** below. Propose updates before committing.
 
 ### Phase 6 — Commit
 
-Only commit when implementation (Phases 3–4) and documentation (Phase 5) are complete **and** the user requests a commit.
+Auto-commit when Phases 3–5 are complete, unless:
+
+- Design review Final Gate is **no** and the trade-off is not documented in `docs/PRODUCT_DECISIONS.md`
+- The user said "don't commit" or "plan only"
+- Work is incomplete
+
+Include doc updates in the same commit as code when possible. Commit messages should describe **why**, not just what.
 
 ---
 
@@ -162,13 +201,13 @@ Documentation maintenance is **mandatory at the end of every implementation sess
 - **Historical decisions** → `PRODUCT_DECISIONS.md`
 - **Shipped changes** → `CHANGELOG.md`
 - **Long-term philosophy** → `THE_ZOE_PROJECT_BIBLE.md`
-- **How to change code safely** → this file and `.cursor/rules.md`
+- **How to change code safely** → this file, `.cursor/rules.md`, and `.cursor/rules/lead-product-engineer.mdc`
 
 ---
 
 ## Git and Commits
 
-- **Only commit when the user asks.**
+- **Auto-commit** when the workflow completes (Phases 3–5), unless the user opts out or design review fails without documented trade-off.
 - Do not force-push `main`.
 - Commit messages should describe **why**, not just what.
 - Do not commit secrets, `.env` files, or macOS `.DS_Store` (see `.gitignore`).
