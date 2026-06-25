@@ -348,6 +348,29 @@
       font-family: inherit;
     }
     .toggle-btn.on { background: var(--zoe-purple); color: #fff; border-color: var(--zoe-purple); }
+    .common-extras {
+      margin-top: 20px;
+      padding: 16px 18px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.62);
+    }
+    .common-extras h3 {
+      margin: 0 0 4px;
+      font-size: 1.05rem;
+      color: var(--zoe-purple);
+    }
+    .common-extras .screen-subtitle { margin: 0 0 12px; }
+    .add-item-strip {
+      margin-top: 20px;
+      padding: 14px 0 0;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .add-item-strip span { color: var(--text-muted); font-size: 0.95rem; }
     .banner, .error {
       border-radius: var(--radius-sm);
       padding: 14px 16px;
@@ -2080,6 +2103,24 @@
     return html;
   }
 
+  function renderRecipeOptionalToggles(packKey) {
+    const recipe = RECIPES[packKey];
+    let html = `<div class="common-extras">
+      <h3>Did you include these?</h3>
+      <p class="screen-subtitle">Tap Yes for anything extra that went into each pack.</p>`;
+    recipe.optional.forEach(opt => {
+      const key = opt.itemId || opt.id;
+      const label = opt.label || itemName(opt.itemId);
+      const on = !!form.optional[key];
+      html += `<div class="toggle-row">
+        <label>${esc(label)}</label>
+        <button type="button" class="toggle-btn ${on ? "on" : ""}" data-opt="${esc(key)}">${on ? "Yes" : "No"}</button>
+      </div>`;
+    });
+    html += `</div>`;
+    return html;
+  }
+
   function renderBuild() {
     if (!form.packKey) form.packKey = getPackContext();
     if (!form.packer) form.packer = PACKERS[0];
@@ -2144,22 +2185,23 @@
       html += `<div class="core-preview"><strong>Stock that will be used</strong><br>${formatBuildPreview(form.packKey, qty, included, customExtras, form.substitutions, true, form.omissions)}</div>`;
     }
 
+    html += renderRecipeOptionalToggles(form.packKey);
+
     const advancedSummary = [];
-    const optionalCount = included.length;
     const extraCount = form.customExtras.filter(e => e.itemId).length;
     const subCount = form.substitutions.filter(s => s.insteadOf || s.substitute || s.packCount).length;
     const omitCount = (form.omissions || []).filter(o => o.itemId || o.packCount).length;
-    if (optionalCount || extraCount) advancedSummary.push(`${optionalCount + extraCount} added item${optionalCount + extraCount !== 1 ? "s" : ""}`);
+    if (extraCount) advancedSummary.push(`${extraCount} unlisted extra${extraCount !== 1 ? "s" : ""}`);
     if (subCount) advancedSummary.push(`${subCount} swapped item${subCount !== 1 ? "s" : ""}`);
     if (omitCount) advancedSummary.push(`${omitCount} left out item${omitCount !== 1 ? "s" : ""}`);
 
     html += `<div class="add-item-strip">
-      ${advancedSummary.length ? `<span>${esc(advancedSummary.join(" · "))}</span>` : `<span>Nothing different added</span>`}
-      <button type="button" class="btn-small" id="open-add-item">+ Add something different</button>
+      <span>${advancedSummary.length ? esc(advancedSummary.join(" · ")) : "Something else happened?"}</span>
+      <button type="button" class="btn-small" id="open-add-item">+ Something else happened</button>
     </div>`;
 
     html += `<div id="build-error" class="error ${errorMsg ? "" : "hidden"}">${errorMsg ? esc(errorMsg) : ""}</div>`;
-    html += `<div class="actions"><button class="btn btn-primary" id="build-save">Save packs</button></div>${renderFooter()}</div>`;
+    html += `<div class="actions"><button class="btn btn-primary" id="build-save">Save packs</button></div></div>`;
     return html;
   }
 
@@ -2172,6 +2214,12 @@
     if (!form.omissions) form.omissions = [];
     if (!form.addItemStep) form.addItemStep = "menu";
 
+    if (form.addItemStep === "optional") {
+      form.addItemMode = false;
+      form.addItemStep = null;
+      return renderBuild();
+    }
+
     const recipe = RECIPES[form.packKey];
     const qty = parseInt(form.qty, 10) || 0;
     const included = Object.keys(form.optional).filter(k => form.optional[k]);
@@ -2182,54 +2230,21 @@
     const backToMenu = `<button type="button" class="btn-small" id="add-item-back-menu">← Back</button>`;
 
     if (form.addItemStep === "menu") {
-      const addedCount = included.length + form.customExtras.filter(e => e.itemId).length;
+      const extraCount = form.customExtras.filter(e => e.itemId).length;
       const subCount = form.substitutions.filter(s => s.insteadOf || s.substitute || s.packCount).length;
       const omitCount = (form.omissions || []).filter(o => o.itemId || o.packCount).length;
       return `<div class="form-shell add-item-screen">
         ${backTop}
-        <div class="screen-kicker">Add something different</div>
+        <div class="screen-kicker">Something else happened</div>
         <h2>What happened?</h2>
-        <p class="screen-subtitle">Choose the plain-language option that matches today. If nothing changed, go back to packs.</p>
+        <p class="screen-subtitle">Use these only for swaps, items left out, or extras not listed on the main screen.</p>
         <div class="actions">
-          <button type="button" class="btn btn-secondary" id="choice-optional">We added something${addedCount ? ` (${addedCount})` : ""}</button>
-          <button type="button" class="btn btn-secondary" id="choice-substitution">We swapped something${subCount ? ` (${subCount})` : ""}</button>
+          <button type="button" class="btn btn-secondary" id="choice-substitution">We swapped an item${subCount ? ` (${subCount})` : ""}</button>
           <button type="button" class="btn btn-secondary" id="choice-leftout">We left something out${omitCount ? ` (${omitCount})` : ""}</button>
+          <button type="button" class="btn btn-secondary" id="choice-extra">We added something not listed${extraCount ? ` (${extraCount})` : ""}</button>
           <button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button>
         </div>
-        ${renderFooter()}
       </div>`;
-    }
-
-    if (form.addItemStep === "optional") {
-      let html = `<div class="form-shell add-item-screen">
-        ${backToMenu}
-        <div class="screen-kicker">Added items</div>
-        <h2>What did you add?</h2>
-        <p class="screen-subtitle">Switch on anything that went into today’s packs.</p>
-        <div class="advanced-body always-visible">`;
-
-      recipe.optional.forEach(opt => {
-        const key = opt.itemId || opt.id;
-        const label = opt.label || itemName(opt.itemId);
-        const on = !!form.optional[key];
-        html += `<div class="toggle-row">
-          <label>${esc(label)}</label>
-          <button type="button" class="toggle-btn ${on ? "on" : ""}" data-opt="${esc(key)}">${on ? "Yes" : "No"}</button>
-        </div>`;
-      });
-
-      html += `</div><h3 style="margin-top:18px;">Not listed?</h3><p class="screen-subtitle">Add another item only if it is not shown above.</p><div id="custom-extras">`;
-      form.customExtras.forEach((extra, idx) => {
-        html += `<div class="custom-extra-line" data-ce-idx="${idx}">
-          <label>Item</label>
-          <select class="ce-item" data-ce-idx="${idx}">${itemOptions(extra.itemId, form.packKey, { recipeFirst: true })}</select>
-          <label>How many per pack?</label>
-          <input type="number" class="ce-qty" data-ce-idx="${idx}" min="1" value="${esc(String(extra.qtyPerPack || "1"))}" placeholder="e.g. 2">
-          <button type="button" class="btn-small remove-ce" data-ce-idx="${idx}" style="margin-top:8px;">Remove</button>
-        </div>`;
-      });
-      html += `</div><button type="button" class="btn-small" id="add-custom-extra">+ Add something not listed</button><div class="actions"><button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button></div>${renderFooter()}</div>`;
-      return html;
     }
 
     if (form.addItemStep === "extra") {
@@ -2251,7 +2266,7 @@
       });
 
       html += `</div><button type="button" class="btn-small" id="add-custom-extra">+ Add another extra item</button>
-        <div class="actions"><button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button></div>${renderFooter()}</div>`;
+        <div class="actions"><button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button></div></div>`;
       return html;
     }
 
@@ -2283,7 +2298,7 @@
       });
 
       html += `</div><button type="button" class="btn-small" id="add-substitution">+ Add another swap</button>
-        <div class="actions"><button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button></div>${renderFooter()}</div>`;
+        <div class="actions"><button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button></div></div>`;
       return html;
     }
 
@@ -2306,7 +2321,7 @@
         </div>`;
       });
       html += `</div><button type="button" class="btn-small" id="add-omission">+ Add another item left out</button>
-        <div class="actions"><button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button></div>${renderFooter()}</div>`;
+        <div class="actions"><button type="button" class="btn btn-primary" id="add-item-done-bottom">Done</button></div></div>`;
       return html;
     }
 
@@ -2705,10 +2720,13 @@
       };
     }
 
-    const choiceOptional = document.getElementById("choice-optional");
-    if (choiceOptional) choiceOptional.onclick = () => {
+    const choiceExtra = document.getElementById("choice-extra");
+    if (choiceExtra) choiceExtra.onclick = () => {
       readBuildForm();
-      form.addItemStep = "optional";
+      form.addItemStep = "extra";
+      if (!form.customExtras.some(e => !e.itemId)) {
+        form.customExtras.push({ itemId: "cup-of-soup-sachets", qtyPerPack: "2" });
+      }
       render();
     };
 

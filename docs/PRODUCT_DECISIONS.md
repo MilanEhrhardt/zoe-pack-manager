@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Pack Creation screen redesign (common extras on main screen)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Move recipe optional toggles to the main Pack Creation screen; narrow “Add something different” to swaps, omissions, and unlisted extras only; remove admin footer from build/add-item views |
+| **Date** | 2026-06-24 |
+| **Context** | June user testing showed common extras (deo, tissues, wet wipes, hand cream) buried behind three taps in the add-item subflow. Analytics showed friction on `add-item-done-bottom` and admin distraction during packing. |
+| **Decision** | Ship the **Recommended** option from the Pack Creation redesign plan: render/bind/CSS only — no changes to `commitBuild`, `checkBuild`, or stock logic. Remove `choice-optional` menu path (redirect legacy `addItemStep === "optional"` to main screen). Add `choice-extra` for unlisted custom extras. |
+| **Reasoning** | Restores the quick multi-select happy path Janet/Judy need without repeating the rejected “Today's Changes” one-by-one pattern. Rare exceptions stay in a slimmer subflow. |
+| **Alternatives Considered** | **Conservative:** copy/label tweaks only — extras still two taps away. **Radical:** wizard or one-item-per-screen — rejected; repeats failed Today's Changes UX. |
+| **Status** | Accepted |
+
 ### Lead Product Engineer workflow
 
 | Field | Content |

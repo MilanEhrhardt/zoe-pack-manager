@@ -51,7 +51,7 @@ Home screen actions volunteers use:
 
 ### Packing
 
-Build Mom Pack or Baby Pack: qty, packer, destination, optional toggles (deo, tissues, wet wipes, hand cream, etc.), and “add something different” for substitutions/extras when needed.
+Build Mom Pack or Baby Pack: qty, packer, destination, then **“Did you include these?”** Yes/No toggles for recipe optionals (deo, tissues, wet wipes, hand cream, etc.) on the main screen. **“+ Something else happened”** opens a slim subflow for swaps, items left out, or unlisted extras only.
 
 ### Donations
 
@@ -87,13 +87,13 @@ Count one item at a time; optional reason for correction.
 
 The previous experimental **"Today's Changes"** build was rejected because it broke the quick multi-select flow for common extra items like deodorant, tissues, wet wipes and hand cream.
 
-The stable reference is the **analytics rollback add-items build** (originally `zoe-pack-manager-analytics-rollback-add-items.html`; now canonical as `zoe-pack-manager.html`). It includes local analytics instrumentation and the “+ Add something different” packing subflow.
+The canonical app is `zoe-pack-manager.html`. Pack Creation now shows common optional toggles on the main screen (June 2026 redesign). The add-item subflow is reserved for swaps, omissions, and unlisted extras.
 
 ---
 
 ## Current Priority
 
-Restore and protect the stable packing flow before any new redesign work.
+Field-validate the redesigned Pack Creation flow with Janet and Judy; then donation and deliver flows.
 
 ---
 
@@ -124,15 +124,15 @@ See also `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
 
 ## Current UX Problems
 
-- **Add-item / “something different” subflow** caused friction in June 2024 user testing (hesitation, repeated clicks, abandoned builds) — improve carefully without removing the flow
+- **Add-item subflow** — slimmed to exceptions only (swaps, omissions, unlisted extras); monitor June-style friction on Done/back navigation
 - **Donation and deliver flows** were not exercised in the same test session — need dedicated validation
-- **Admin/export controls** can distract during active packing if too prominent on build screen
+- **Admin/export** removed from build screen; still on home — confirm volunteers can find backup when needed
 
 ---
 
 ## Deferred Ideas
 
-- Major build-screen redesign (wizard, collapsed accordions) until stable flow is proven in the field
+- Major build-screen wizard or collapsed accordions
 - “Today's Changes” style UX
 - Dashboards, charts, or table-heavy views for volunteers
 
@@ -158,7 +158,7 @@ See also `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
 
 ## Active Experiments
 
-None. Stabilisation phase — no active UX experiments on the canonical build.
+None. Pack Creation redesign shipped (render-only); awaiting volunteer field validation.
 
 ---
 
@@ -167,13 +167,13 @@ None. Stabilisation phase — no active UX experiments on the canonical build.
 | Decision | Status |
 |----------|--------|
 | Reject “Today's Changes” build | **Rejected** — broke quick optional-item toggles |
-| Canonical app = analytics rollback add-items build | **Accepted** — `zoe-pack-manager.html` |
+| Canonical app = `zoe-pack-manager.html` | **Accepted** |
+| Pack Creation: common extras on main screen | **Accepted** — see `PRODUCT_DECISIONS.md` |
 | Documentation-first AI workflow | **Accepted** — read this file before coding |
 | Lead Engineer six-phase workflow | **Superseded** — see Lead Product Engineer workflow |
 | Lead Product Engineer workflow | **Accepted** — three-solution proposals, approval gate, auto-commit; see `.cursor/rules.md` |
-| Redesign before stable packing proven | **Deferred** |
 
-Full decision log: `docs/PRODUCT_DECISIONS.md` (to be populated).
+Full decision log: `docs/PRODUCT_DECISIONS.md`.
 
 ---
 
