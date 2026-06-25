@@ -96,6 +96,10 @@ See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 **Phase 3B (shipped):** A read-only **belief scaffolding layer** consumes `itemConfidence`, `packingHabits`, and `operationalIntelligence` to export structured `beliefs` with types (`item_balance`, `shortage`, `habit`, `recipe_alignment`, `readiness`), deterministic `confidenceProbability` with caps, supporting/contradicting evidence, and actionability (`observe_only`, `monitor`; no `ready_for_review` on synthetic data or when impact readiness is false). Exported as `beliefEngine` in AI Data Pack; analytics summary includes `beliefEngineSummary`. **Not SPE, not recommendations, not volunteer-facing** — defines where future reasoning will live while staying cautious. Janet sees nothing new.
 
+### Operational Memory Layer (Phase 3C — export only)
+
+**Phase 3C (shipped):** A read-only **operational memory layer** consolidates repeated signals from upstream layers into stable recall objects with `memoryId`, `memoryType`, `status`, `firstSeen`/`lastSeen`, and cautious reasoning ("the system remembers…"). Memory types: `stock_memory`, `habit_memory`, `recipe_memory`, `donation_memory`, `confidence_memory`, `readiness_memory`. Exported as `operationalMemory` in AI Data Pack; analytics summary includes `operationalMemorySummary`. Memories are **derived at export time** from transaction history — not persisted across sessions. **Not SPE, not recommendations, not volunteer-facing.** Janet sees nothing new.
+
 See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 ## Design Principles

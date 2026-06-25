@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Operational memory layer (Phase 3C, export only)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Read-only operational memory in export and analytics summary only; no volunteer UI, no SPE, no persistence in Phase 3C |
+| **Date** | 2026-06-25 |
+| **Context** | Phase 3B beliefs answer "what do we currently believe?" at export time. Ops and future SPE need stable recall objects answering "what should the system remember as an ongoing fact?" — with `firstSeen`/`lastSeen`, bounded memory types, and cautious copy distinct from beliefs. |
+| **Decision** | Add Phase 3C pipeline: `computeOperationalMemory(ctx)` consuming `itemConfidence`, `packingHabits`, `operationalIntelligence`, optional `beliefEngine`, and `synthetic`. Builders: stock, habit, recipe, donation (max 2), confidence, readiness memories. Export `operationalMemory` in AI Data Pack; analytics summary includes `operationalMemorySummary`. Memories derived at export from transaction history — not persisted across sessions. `readyForOperationalRecall: false` on synthetic data. Cautious copy — the system remembers, evidence suggests, observe only. No localStorage schema change. No changes to commit flows, stock math, recipes, render functions, or volunteer UI. |
+| **Reasoning** | Separates recall scaffolding from epistemic beliefs and quantity measurements. Gives future layers a stable memory vocabulary without alarming Janet or overclaiming from sparse data. |
+| **Alternatives Considered** | **Persisted memory store** — deferred to Phase 3D+. **Fold into belief engine** — rejected; beliefs and memories serve different questions. **Volunteer-facing memory** — rejected. |
+| **Status** | Accepted |
+
 ### Belief engine framework (Phase 3B, export only)
 
 | Field | Content |

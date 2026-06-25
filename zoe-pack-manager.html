@@ -1785,6 +1785,11 @@
       synthetic: !!state.sampleData,
     });
     const beliefEngineSummary = beliefEngineSummaryConcise(beliefEngine);
+    const operationalMemory = opts.operationalMemory || computeOperationalMemory({
+      itemConfidence, packingHabits: packingHabitsFull, operationalIntelligence, beliefEngine,
+      synthetic: !!state.sampleData,
+    });
+    const operationalMemorySummary = operationalMemorySummaryConcise(operationalMemory);
 
     return {
       generatedAt: new Date().toISOString(),
@@ -1821,6 +1826,7 @@
       packingHabitTrends,
       operationalIntelligenceSummary,
       beliefEngineSummary,
+      operationalMemorySummary,
       ...sessionBreakdown,
     };
   }
@@ -1866,6 +1872,9 @@
     const beliefEngine = computeBeliefEngine({
       itemConfidence, packingHabits, operationalIntelligence, synthetic: !!state.sampleData,
     });
+    const operationalMemory = computeOperationalMemory({
+      itemConfidence, packingHabits, operationalIntelligence, beliefEngine, synthetic: !!state.sampleData,
+    });
     const payload = {
       exportedAt: new Date().toISOString(),
       app: "Zoe Pack Manager",
@@ -1896,8 +1905,9 @@
       packingHabits,
       operationalIntelligence,
       beliefEngine,
+      operationalMemory,
       analytics: state.analytics,
-      summary: analyticsDerivedSummary({ itemConfidence, packingHabits, operationalIntelligence, beliefEngine }),
+      summary: analyticsDerivedSummary({ itemConfidence, packingHabits, operationalIntelligence, beliefEngine, operationalMemory }),
     };
     downloadTextFile(JSON.stringify(payload, null, 2), `zoe-ai-data-pack-${todayISO()}.json`, "application/json");
   }
@@ -4659,6 +4669,506 @@
         beliefId: b.beliefId,
         status: b.status,
         confidenceProbability: b.confidenceProbability,
+      })),
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // OPERATIONAL MEMORY — Phase 3C layer (export / ops only)
+  // ═══════════════════════════════════════════════════════════════════
+
+  const OM_MODEL_VERSION = "3C.1";
+  const OM_BANNED_COPY = /\b(ai|algorithm|detected|recommendation|should|must|proven|guaranteed|decision|optimis[ez]ation|optimisation|change recipe)\b/gi;
+
+  function omCopySafe(text) {
+    if (!text) return "";
+    return String(text).replace(OM_BANNED_COPY, m => {
+      const lower = m.toLowerCase();
+      const map = {
+        ai: "analysis", algorithm: "pattern", detected: "observed", recommendation: "note",
+        should: "may", must: "may", proven: "supported", guaranteed: "likely", decision: "view",
+        optimization: "review", optimisation: "review", optimize: "review", optimise: "review",
+        "change recipe": "review pack contents",
+      };
+      return map[lower] || "note";
+    });
+  }
+
+  function omConfidenceBand(p) {
+    if (p < 0.25) return "very_low";
+    if (p < 0.45) return "low";
+    if (p < 0.70) return "moderate";
+    return "high";
+  }
+
+  function computeMemoryConfidence(inputs) {
+    inputs = inputs || {};
+    let p = 0.35;
+    if (inputs.multipleSources) p += 0.10;
+    if (inputs.sufficientHistory) p += 0.10;
+    if (inputs.strongItemConfidence) p += 0.08;
+    if (inputs.repeatedPattern) p += 0.10;
+    if (inputs.operationalRelevance) p += 0.07;
+    if (inputs.longObservationWindow) p += 0.05;
+    if (inputs.synthetic) p -= 0.08;
+    if (inputs.impactReadinessFalse) p -= 0.10;
+    if (inputs.earlyEvidence) p -= 0.12;
+    if (inputs.fewRecounts) p -= 0.08;
+    if (inputs.singlePackerDominance) p -= 0.06;
+    if (inputs.weakBabyPackHistory) p -= 0.05;
+    if (inputs.insufficientEvidence) p = Math.min(p, 0.25);
+    else if (inputs.earlyEvidence) p = Math.min(p, 0.55);
+    if (inputs.synthetic) p = Math.min(p, 0.65);
+    if (inputs.impactReadinessFalse) p = Math.min(p, 0.70);
+    return Math.max(0, Math.min(1, Math.round(p * 100) / 100));
+  }
+
+  function buildMemoryCtx(deps) {
+    return {
+      itemConfidence: deps.itemConfidence,
+      packingHabits: deps.packingHabits,
+      operationalIntelligence: deps.operationalIntelligence,
+      beliefEngine: deps.beliefEngine || null,
+      synthetic: deps.synthetic != null ? deps.synthetic : !!state.sampleData,
+    };
+  }
+
+  function omImpactReady(ctx) {
+    return !!(ctx.operationalIntelligence?.impactReadiness?.readyForImpactJudgement);
+  }
+
+  function omReadinessInputs(ctx) {
+    const oi = ctx.operationalIntelligence || {};
+    const ir = oi.impactReadiness || {};
+    return {
+      synthetic: ctx.synthetic,
+      impactReadinessFalse: !ir.readyForImpactJudgement,
+      fewRecounts: (state.transactions || []).filter(t => t.type === "recount").length < 5,
+      weakBabyPackHistory: (oi.buildImpact?.byPackKey || []).find(p => p.packKey === "babyPack")?.productionPacksCreated < 10,
+      singlePackerDominance: (ir.blockers || []).some(b => /one packer dominates/i.test(b)),
+      sufficientHistory: (oi.summary?.productionPacksCreated ?? 0) >= 50,
+    };
+  }
+
+  function omMakeMemory(partial, ctx) {
+    const confidenceProbability = partial.confidenceProbability;
+    const confidenceBand = partial.confidenceBand || omConfidenceBand(confidenceProbability);
+    return {
+      memoryId: partial.memoryId,
+      memoryType: partial.memoryType,
+      subject: partial.subject,
+      status: partial.status,
+      confidenceBand,
+      confidenceProbability,
+      firstSeen: partial.firstSeen || null,
+      lastSeen: partial.lastSeen || null,
+      evidence: (partial.evidence || []).map(omCopySafe),
+      reasoning: omCopySafe(partial.reasoning || ""),
+      limitations: (partial.limitations || []).map(omCopySafe),
+    };
+  }
+
+  function omBelief(ctx, beliefId) {
+    return (ctx.beliefEngine?.beliefs || []).find(b => b.beliefId === beliefId) || null;
+  }
+
+  function omItemDates(itemId) {
+    const dates = [];
+    (state.transactions || []).forEach(tx => {
+      if (tx.type === "undo") return;
+      if (tx.type === "recount" && tx.itemId === itemId) dates.push(tx.date);
+      if (tx.type === "donation") {
+        (tx.lines || []).forEach(line => { if (line.itemId === itemId) dates.push(tx.date); });
+      }
+      if (tx.type === "build") {
+        const { usage } = opConsumptionFromBuild(tx);
+        if (usage[itemId] > 0) dates.push(tx.date);
+        normalizeSubstitutions(tx.substitutions || []).forEach(sub => {
+          if (sub.insteadOf === itemId || sub.substitute === itemId) dates.push(tx.date);
+        });
+      }
+    });
+    const sorted = dates.filter(Boolean).sort();
+    return { firstSeen: sorted[0] || null, lastSeen: sorted[sorted.length - 1] || null };
+  }
+
+  function omDaysSince(dateStr) {
+    if (!dateStr) return Infinity;
+    return opDaysBetween(dateStr, todayISO());
+  }
+
+  function omLongWindow(firstSeen, lastSeen) {
+    if (!firstSeen || !lastSeen) return false;
+    return opDaysBetween(firstSeen, lastSeen) >= 30;
+  }
+
+  function computeStockMemories(ctx) {
+    const memories = [];
+    const ri = omReadinessInputs(ctx);
+    const itemId = "pads";
+    const risk = (ctx.operationalIntelligence?.stockRisk || []).find(r => r.itemId === itemId);
+    const shortageBelief = omBelief(ctx, `shortage:${itemId}`);
+    const balanceBelief = omBelief(ctx, `item_balance:${itemId}`);
+    if (!risk && !shortageBelief && !balanceBelief) return memories;
+
+    const isCore = (risk?.recipeRoles || []).some(role => role.role === "core");
+    const dates = omItemDates(itemId);
+    let status = "insufficient_evidence";
+    if (risk?.zeroStock && isCore) status = "active";
+    else if (risk?.lowStock && isCore) status = "active";
+    else if (risk?.riskBand === "critical" || risk?.riskBand === "high") status = "active";
+    else if (risk?.recentSubstitutionTouches >= 2) status = "emerging";
+    else if (risk && risk.balance > risk.threshold * 1.5 && !risk.zeroStock) status = "resolved";
+    else if (omDaysSince(dates.lastSeen) > 90 && risk && !risk.lowStock && !risk.zeroStock) status = "stale";
+
+    const evidence = [];
+    if (risk?.zeroStock) evidence.push(`${risk.itemName} balance is zero.`);
+    if (risk?.lowStock) evidence.push(`${risk.itemName} is below threshold (${risk.balance} vs ${risk.threshold}).`);
+    if (isCore) evidence.push("Pads is a core Mom Pack item.");
+    if (shortageBelief) evidence.push(...(shortageBelief.supportingEvidence || []).slice(0, 2));
+    if (balanceBelief) evidence.push(...(balanceBelief.supportingEvidence || []).slice(0, 1));
+
+    const confInputs = {
+      ...ri,
+      multipleSources: evidence.length >= 2,
+      strongItemConfidence: balanceBelief?.confidenceBand === "moderate" || balanceBelief?.confidenceBand === "high",
+      operationalRelevance: isCore,
+      repeatedPattern: (risk?.recentSubstitutionTouches || 0) >= 2,
+      longObservationWindow: omLongWindow(dates.firstSeen, dates.lastSeen),
+      insufficientEvidence: status === "insufficient_evidence",
+      earlyEvidence: status === "emerging",
+    };
+    memories.push(omMakeMemory({
+      memoryId: "stock_memory:pads:constraint",
+      memoryType: "stock_memory",
+      subject: { itemId, itemName: itemName(itemId) },
+      status,
+      confidenceProbability: computeMemoryConfidence(confInputs),
+      firstSeen: dates.firstSeen,
+      lastSeen: dates.lastSeen,
+      evidence,
+      reasoning: "The system remembers Pads as an ongoing stock constraint in Mom Pack operations. Evidence suggests shelf availability may need monitoring — observe only.",
+      limitations: ctx.synthetic ? ["Limited by synthetic sample data."] : ["Derived at export time; not a persisted memory store."],
+    }, ctx));
+    return memories;
+  }
+
+  function computeHabitMemories(ctx) {
+    const memories = [];
+    const ri = omReadinessInputs(ctx);
+
+    const subImpact = (ctx.operationalIntelligence?.substitutionImpact || []).find(s =>
+      s.packKey === "momPack" && s.insteadOfItemId === "pads" && s.substituteItemId === "breast-pads"
+    );
+    const subObs = (ctx.packingHabits?.observations || []).find(o =>
+      o.type === "substitution" && o.packKey === "momPack" && o.itemId === "pads" && o.replacementItemId === "breast-pads"
+    );
+    const subBelief = omBelief(ctx, "habit:substitution:momPack:pads:breast-pads");
+
+    if (subImpact || subObs || subBelief) {
+      const packsAffected = subImpact?.packsAffected || subObs?.count || 0;
+      const firstSeen = subImpact?.firstSeen || subObs?.firstSeen || null;
+      const lastSeen = subImpact?.lastSeen || subObs?.lastSeen || null;
+      let status = "insufficient_evidence";
+      if (packsAffected < 3 && !subObs) status = "insufficient_evidence";
+      else if (subObs?.trend === "declining") status = "stale";
+      else if (subObs?.trend === "established" || packsAffected >= 5) status = "active";
+      else status = "emerging";
+
+      const evidence = [];
+      if (subImpact) evidence.push(`${subImpact.substituteItemName} substituted for ${subImpact.insteadOfItemName} in ${subImpact.packsAffected} Mom Pack records.`);
+      if (subObs?.volunteerText) evidence.push(subObs.volunteerText);
+      if (subBelief) evidence.push(...(subBelief.supportingEvidence || []).slice(0, 1));
+
+      memories.push(omMakeMemory({
+        memoryId: "habit_memory:substitution:momPack:pads:breast-pads",
+        memoryType: "habit_memory",
+        subject: {
+          type: "substitution", packKey: "momPack", packLabel: "Mom Pack",
+          itemId: "pads", itemName: itemName("pads"),
+          replacementItemId: "breast-pads", replacementItemName: itemName("breast-pads"),
+        },
+        status,
+        confidenceProbability: computeMemoryConfidence({
+          ...ri, multipleSources: evidence.length >= 2, repeatedPattern: packsAffected >= 3,
+          operationalRelevance: true, earlyEvidence: status === "emerging",
+          insufficientEvidence: status === "insufficient_evidence",
+          longObservationWindow: omLongWindow(firstSeen, lastSeen),
+        }),
+        firstSeen, lastSeen, evidence,
+        reasoning: "The system remembers Breast Pads may replace Pads in some Mom Packs. Evidence suggests an emerging packing pattern — observe only, not a recipe note.",
+        limitations: ["Habit memory describes observed practice, not volunteer instructions."],
+      }, ctx));
+    }
+
+    const deoOpt = (ctx.operationalIntelligence?.optionalImpact || []).find(o =>
+      o.packKey === "momPack" && o.itemId === "deo"
+    );
+    const deoObs = (ctx.packingHabits?.observations || []).find(o =>
+      o.type === "optional_usage" && o.packKey === "momPack" && o.itemId === "deo"
+    );
+    if (deoOpt || (deoObs && deoObs.percentage >= 40)) {
+      const inclusionRate = deoOpt?.inclusionRateByPacks ?? (deoObs ? deoObs.percentage / 100 : 0);
+      const firstSeen = deoObs?.firstSeen || null;
+      const lastSeen = deoObs?.lastSeen || null;
+      let status = "insufficient_evidence";
+      if ((deoObs?.denominator || 0) < 5 && !deoOpt) status = "insufficient_evidence";
+      else if (inclusionRate >= 0.7 && deoObs?.evidence === "sufficient") status = "active";
+      else if (inclusionRate >= 0.4) status = "emerging";
+
+      const evidence = [];
+      if (deoOpt) evidence.push(`Deo included in ${Math.round(inclusionRate * 100)}% of Mom Pack records.`);
+      if (deoObs?.volunteerText) evidence.push(deoObs.volunteerText);
+
+      memories.push(omMakeMemory({
+        memoryId: "habit_memory:optional_usage:momPack:deo",
+        memoryType: "habit_memory",
+        subject: { type: "optional_usage", packKey: "momPack", packLabel: "Mom Pack", itemId: "deo", itemName: itemName("deo") },
+        status,
+        confidenceProbability: computeMemoryConfidence({
+          ...ri, multipleSources: evidence.length >= 2, repeatedPattern: inclusionRate >= 0.5,
+          earlyEvidence: status === "emerging", insufficientEvidence: status === "insufficient_evidence",
+          longObservationWindow: omLongWindow(firstSeen, lastSeen),
+        }),
+        firstSeen, lastSeen, evidence,
+        reasoning: "The system remembers Deo as a commonly included optional in Mom Packs. Evidence suggests recurring optional usage — monitor only.",
+        limitations: ["Optional habit memory does not alter pack recipes."],
+      }, ctx));
+    }
+
+    return memories;
+  }
+
+  function computeRecipeMemories(ctx) {
+    const memories = [];
+    const ri = omReadinessInputs(ctx);
+    const packKey = "babyPack";
+    const recipe = RECIPES[packKey];
+    if (!recipe || recipe.confirmed) return memories;
+
+    const belief = omBelief(ctx, `recipe_alignment:${packKey}`);
+    const prodBuilds = (ctx.operationalIntelligence?.buildImpact?.byPackKey || []).find(p => p.packKey === packKey);
+    const buildDates = (state.transactions || []).filter(t => t.type === "build" && t.packKey === packKey && !isTesterUser(t.packer))
+      .map(t => t.date).filter(Boolean).sort();
+    const firstSeen = buildDates[0] || null;
+    const lastSeen = buildDates[buildDates.length - 1] || null;
+
+    const evidence = ["Baby Pack is marked unconfirmed in configuration."];
+    if (belief) evidence.push(...(belief.supportingEvidence || []).slice(0, 1));
+    if (prodBuilds?.productionPacksCreated) evidence.push(`${prodBuilds.productionPacksCreated} production Baby Packs recorded.`);
+
+    memories.push(omMakeMemory({
+      memoryId: "recipe_memory:babyPack:unconfirmed",
+      memoryType: "recipe_memory",
+      subject: { packKey, packLabel: recipe.label, confirmed: false },
+      status: "active",
+      confidenceProbability: computeMemoryConfidence({
+        ...ri, multipleSources: evidence.length >= 1, insufficientEvidence: false,
+        weakBabyPackHistory: (prodBuilds?.productionPacksCreated || 0) < 10,
+      }),
+      firstSeen: firstSeen || new Date().toISOString().slice(0, 10),
+      lastSeen: lastSeen || new Date().toISOString().slice(0, 10),
+      evidence,
+      reasoning: "The system remembers Baby Pack recipe contents are not yet confirmed. Not enough evidence to treat this recipe as settled — observe only.",
+      limitations: ["Recipe memory does not alter pack configuration."],
+    }, ctx));
+    return memories;
+  }
+
+  function computeDonationMemories(ctx) {
+    const memories = [];
+    const donations = [...(ctx.operationalIntelligence?.donationImpact || [])]
+      .map(d => ({ donation: d, maxEnable: opDonationMaxEnablement(d) }))
+      .filter(x => x.maxEnable >= 5)
+      .sort((a, b) => b.maxEnable - a.maxEnable)
+      .slice(0, 2);
+
+    donations.forEach(({ donation: d, maxEnable }) => {
+      const topLine = [...(d.lines || [])].sort((a, b) => opDonationLineMaxEnablement(b) - opDonationLineMaxEnablement(a))[0];
+      if (!topLine) return;
+      const itemId = topLine.itemId;
+      const dates = { firstSeen: d.date, lastSeen: d.date };
+      memories.push(omMakeMemory({
+        memoryId: `donation_memory:${itemId}:${d.date}`,
+        memoryType: "donation_memory",
+        subject: { itemId, itemName: itemName(itemId), donor: d.donor, date: d.date },
+        status: maxEnable >= 10 ? "active" : "emerging",
+        confidenceProbability: computeMemoryConfidence({
+          ...omReadinessInputs(ctx), operationalRelevance: true, repeatedPattern: false,
+          insufficientEvidence: maxEnable < 5,
+        }),
+        firstSeen: dates.firstSeen, lastSeen: dates.lastSeen,
+        evidence: [`Donation on ${d.date} from ${d.donor || "unknown donor"} may enable up to ${maxEnable} packs (estimated).`],
+        reasoning: `The system remembers a meaningful donation of ${itemName(itemId)}. Evidence suggests it may have enabled packing capacity — observe only.`,
+        limitations: ["Donation enablement is an estimate, not a guarantee."],
+      }, ctx));
+    });
+    return memories;
+  }
+
+  function computeConfidenceMemories(ctx) {
+    const memories = [];
+    const ri = omReadinessInputs(ctx);
+    const ir = ctx.operationalIntelligence?.impactReadiness || {};
+    const confSummary = buildConfidenceSummary(ctx.itemConfidence || []);
+    const lowRatio = (ctx.itemConfidence || []).length > 0
+      ? (confSummary.volunteer.uncertain + confSummary.volunteer.needs_checking) / ctx.itemConfidence.length
+      : 1;
+
+    if (!ir.readyForImpactJudgement || lowRatio > 0.3 || ri.fewRecounts) {
+      let status = "active";
+      if (ctx.synthetic && (ctx.operationalIntelligence?.summary?.productionPacksCreated || 0) === 0) status = "insufficient_evidence";
+      else if ((ir.readinessScore || 0) >= 50 && (ir.readinessScore || 0) < 70) status = "emerging";
+
+      const evidence = (ir.blockers || []).slice(0, 3);
+      if (lowRatio > 0.3) evidence.push(`${Math.round(lowRatio * 100)}% of items have low volunteer confidence.`);
+      if (ri.fewRecounts) evidence.push("Few physical recounts recorded.");
+
+      memories.push(omMakeMemory({
+        memoryId: "confidence_memory:system:immaturity",
+        memoryType: "confidence_memory",
+        subject: { scope: "system_confidence" },
+        status,
+        confidenceProbability: computeMemoryConfidence({
+          ...ri, multipleSources: evidence.length >= 2,
+          insufficientEvidence: status === "insufficient_evidence",
+          impactReadinessFalse: !ir.readyForImpactJudgement,
+        }),
+        firstSeen: (state.transactions || []).map(t => t.date).filter(Boolean).sort()[0] || null,
+        lastSeen: todayISO(),
+        evidence,
+        reasoning: "The system remembers confidence across the storeroom is still immature. Evidence suggests more recounts and production history are needed — observe only.",
+        limitations: ["Confidence memory reflects export-time signals, not volunteer messaging."],
+      }, ctx));
+    }
+    return memories;
+  }
+
+  function computeReadinessMemories(ctx) {
+    const memories = [];
+    const ri = omReadinessInputs(ctx);
+    const ir = ctx.operationalIntelligence?.impactReadiness || {};
+    const readinessBelief = omBelief(ctx, "readiness:overall");
+    let status = "emerging";
+    if (ctx.synthetic) status = "insufficient_evidence";
+    else if (ir.readyForImpactJudgement) status = "active";
+    else if ((ir.blockers || []).length >= 3) status = "insufficient_evidence";
+
+    const evidence = (ir.blockers || []).slice(0, 3);
+    if (readinessBelief) evidence.push(...(readinessBelief.supportingEvidence || []).slice(0, 2));
+
+    memories.push(omMakeMemory({
+      memoryId: "readiness_memory:overall",
+      memoryType: "readiness_memory",
+      subject: { scope: "operational_readiness" },
+      status,
+      confidenceProbability: computeMemoryConfidence({
+        ...ri, multipleSources: evidence.length >= 1,
+        insufficientEvidence: status === "insufficient_evidence",
+        impactReadinessFalse: !ir.readyForImpactJudgement,
+      }),
+      firstSeen: (state.transactions || []).map(t => t.date).filter(Boolean).sort()[0] || null,
+      lastSeen: todayISO(),
+      evidence,
+      reasoning: ctx.synthetic
+        ? "The system remembers operational readiness is limited by synthetic sample data. Observe only."
+        : "The system remembers impact judgement is not ready yet. Evidence suggests continued data collection — monitor only.",
+      limitations: ["Readiness memory is observation-only scaffolding."],
+    }, ctx));
+    return memories;
+  }
+
+  function omCountBy(items, keyFn) {
+    const counts = {};
+    items.forEach(item => {
+      const k = keyFn(item);
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    return counts;
+  }
+
+  function omReadyForOperationalRecall(memories, ctx) {
+    if (ctx.synthetic) return false;
+    if (!omImpactReady(ctx)) return false;
+    if (memories.some(m => m.status === "insufficient_evidence" && m.confidenceBand === "very_low")) return false;
+    const avg = memories.length
+      ? memories.reduce((s, m) => s + m.confidenceProbability, 0) / memories.length
+      : 0;
+    return avg >= 0.45;
+  }
+
+  function omBuildMemorySummary(memories, ctx) {
+    const sorted = [...memories].sort((a, b) => b.confidenceProbability - a.confidenceProbability);
+    const uncertain = [...memories].sort((a, b) => a.confidenceProbability - b.confidenceProbability);
+    return {
+      totalMemories: memories.length,
+      byType: omCountBy(memories, m => m.memoryType),
+      byStatus: omCountBy(memories, m => m.status),
+      byConfidenceBand: omCountBy(memories, m => m.confidenceBand),
+      activeMemories: memories.filter(m => m.status === "active").map(m => ({
+        memoryId: m.memoryId, memoryType: m.memoryType, status: m.status,
+      })),
+      emergingMemories: memories.filter(m => m.status === "emerging").map(m => ({
+        memoryId: m.memoryId, memoryType: m.memoryType, status: m.status,
+      })),
+      topMemories: sorted.slice(0, 5).map(m => ({
+        memoryId: m.memoryId, memoryType: m.memoryType, subject: m.subject,
+        status: m.status, confidenceProbability: m.confidenceProbability,
+      })),
+      highestUncertaintyMemories: uncertain.slice(0, 5).map(m => ({
+        memoryId: m.memoryId, memoryType: m.memoryType, status: m.status,
+        confidenceProbability: m.confidenceProbability,
+      })),
+      readyForOperationalRecall: omReadyForOperationalRecall(memories, ctx),
+    };
+  }
+
+  function computeOperationalMemory(deps) {
+    const ctx = buildMemoryCtx(deps || {});
+    const memories = [
+      ...computeStockMemories(ctx),
+      ...computeHabitMemories(ctx),
+      ...computeRecipeMemories(ctx),
+      ...computeDonationMemories(ctx),
+      ...computeConfidenceMemories(ctx),
+      ...computeReadinessMemories(ctx),
+    ].slice(0, 10);
+    const limitations = [
+      "Memories are export-only recall objects, not volunteer instructions.",
+      "Memories are derived at export time from transaction history — not persisted across sessions.",
+      ctx.synthetic ? "Synthetic sample data limits memory confidence." : null,
+      !omImpactReady(ctx) ? "Impact readiness gate is closed — memories remain cautious." : null,
+    ].filter(Boolean);
+    return {
+      generatedAt: new Date().toISOString(),
+      modelVersion: OM_MODEL_VERSION,
+      dataQuality: { synthetic: ctx.synthetic, productionOnlyDefault: true },
+      memories,
+      summary: omBuildMemorySummary(memories, ctx),
+      limitations,
+    };
+  }
+
+  function operationalMemorySummaryConcise(operationalMemory) {
+    if (!operationalMemory) return null;
+    const memories = operationalMemory.memories || [];
+    const sorted = [...memories].sort((a, b) => b.confidenceProbability - a.confidenceProbability);
+    const uncertain = [...memories].sort((a, b) => a.confidenceProbability - b.confidenceProbability);
+    return {
+      totalMemories: memories.length,
+      readyForOperationalRecall: operationalMemory.summary?.readyForOperationalRecall ?? false,
+      activeMemoryCount: memories.filter(m => m.status === "active").length,
+      emergingMemoryCount: memories.filter(m => m.status === "emerging").length,
+      topThreeMemories: sorted.slice(0, 3).map(m => ({
+        memoryId: m.memoryId,
+        memoryType: m.memoryType,
+        status: m.status,
+        confidenceProbability: m.confidenceProbability,
+      })),
+      highestUncertaintyMemories: uncertain.slice(0, 3).map(m => ({
+        memoryId: m.memoryId,
+        status: m.status,
+        confidenceProbability: m.confidenceProbability,
       })),
     };
   }
