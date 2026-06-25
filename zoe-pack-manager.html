@@ -2681,37 +2681,11 @@
     return "early";
   }
 
-  function habitTrendReason(trend, evidence, comparison) {
-    if (trend === "too_early_to_tell") {
-      return "We have started to see this, but it is too early to tell whether it means anything.";
-    }
-    if (trend === "emerging" && evidence === "early") {
-      if (comparison.deltaPercent >= 5) {
-        return "Behaviour has increased recently, but there are not yet enough observations to know whether this is sustained.";
-      }
-      return "Behaviour has changed recently, but there are not yet enough observations to know whether this is sustained.";
-    }
-    if (trend === "emerging") {
-      return "This behaviour appears to be increasing, but we need more packs before calling it established.";
-    }
-    if (trend === "established") {
-      return "This has become an established packing habit across recent production builds.";
-    }
-    if (trend === "declining" && evidence === "early") {
-      return "This behaviour appears less common recently, but there are not yet enough observations to be sure.";
-    }
-    if (trend === "declining") {
-      return "This behaviour appears to be declining across recent production builds.";
-    }
-    return "No meaningful change detected across the comparison windows.";
-  }
-
   function computeHabitTrendClassification(comparison) {
     const evidence = computeHabitEvidenceStage(comparison);
     const delta = comparison.deltaPercent;
     const absDelta = Math.abs(delta);
     const recentPasses = passesPackingHabitThreshold(comparison.recentCount, comparison.recentDenominator);
-    const previousPasses = passesPackingHabitThreshold(comparison.previousCount, comparison.previousDenominator);
     let trend;
 
     if (evidence === "too_early" && absDelta < 15) {
@@ -2725,7 +2699,8 @@
         trend = "emerging";
       }
     } else if (delta <= -5) {
-      if (previousPasses || comparison.previousCount >= PACKING_HABIT_MIN_COUNT) {
+      if (passesPackingHabitThreshold(comparison.previousCount, comparison.previousDenominator)
+        || comparison.previousCount >= PACKING_HABIT_MIN_COUNT) {
         trend = "declining";
       } else {
         trend = "emerging";
@@ -2735,9 +2710,7 @@
     } else {
       trend = "stable";
     }
-
-    const trendReason = habitTrendReason(trend, evidence, comparison);
-    return { trend, evidence, trendReason };
+    return { trend, evidence };
   }
 
   function habitReplayItemZeroDates(itemId, transactions) {
@@ -2787,70 +2760,6 @@
     });
   }
 
-  function detectHabitLikelyCause(comparison, trend, evidence, transactions) {
-    const stockItemId = comparison.type === "substitution" ? comparison.itemId : comparison.itemId;
-    const start = comparison.recentStartDate;
-    const end = comparison.recentEndDate;
-
-    if (itemReachedZeroDuringWindow(stockItemId, start, end, transactions)) {
-      return "stock_shortage";
-    }
-    if (habitRecentRecountDiscrepancy(stockItemId, start, end, transactions)) {
-      return "recount_discrepancy";
-    }
-    const itemMeta = itemMap[comparison.itemId];
-    if (itemMeta?.seasonal) {
-      return "seasonality";
-    }
-    if (comparison.type === "substitution" && comparison.recentPercent >= 70) {
-      return "recipe_change_candidate";
-    }
-    if (comparison.type === "optional_usage"
-      && (trend === "emerging" || trend === "established")
-      && evidence !== "too_early"
-      && !itemReachedZeroDuringWindow(stockItemId, start, end, transactions)) {
-      return "volunteer_preference";
-    }
-    return "none";
-  }
-
-  function habitLikelyCauseText(likelyCause) {
-    if (likelyCause === "stock_shortage") {
-      return "This is probably caused by stock availability rather than volunteer preference.";
-    }
-    if (likelyCause === "recount_discrepancy") {
-      return "A recent count didn't match what we expected.";
-    }
-    if (likelyCause === "seasonality") {
-      return "This item is seasonal — the timing may explain the change.";
-    }
-    if (likelyCause === "recipe_change_candidate") {
-      return "This substitution is common enough to review the written recipe.";
-    }
-    if (likelyCause === "volunteer_preference") {
-      return "This looks like a growing volunteer preference.";
-    }
-    return "No clear cause identified.";
-  }
-
-  function habitTrendConfidence(comparison, trend, evidence, likelyCause) {
-    if (trend === "too_early_to_tell" || evidence === "too_early") return "low";
-    let score = 0;
-    if (comparison.windowSize >= 25) score += 2;
-    else if (comparison.windowSize >= 20) score += 1;
-    else if (comparison.windowSize <= 10) score -= 1;
-    if (evidence === "sufficient") score += 1;
-    if (["emerging", "established", "declining"].includes(trend) && Math.abs(comparison.deltaPercent) >= 15) {
-      score += 1;
-    }
-    if (likelyCause && likelyCause !== "none") score += 1;
-    if (comparison.recentCount + comparison.previousCount < 6) score -= 1;
-    if (trend === "stable" && comparison.windowSize >= 20) score += 1;
-    if (score >= 3) return "high";
-    if (score >= 1) return "medium";
-    return "low";
-  }
-
   function habitDescribePatternWindow(comparison, which) {
     const packLabel = RECIPES[comparison.packKey]?.label || comparison.packKey;
     const count = which === "recent" ? comparison.recentCount : comparison.previousCount;
@@ -2874,50 +2783,233 @@
     return `${itemNameStr} in ${count} of the last ${denom} ${packLabel}s`;
   }
 
-  function generateHabitInsightText(comparison, trend, evidence, trendReason, likelyCause) {
+  function habitCauseHumanLabel(cause, comparison) {
+    const itemLabel = itemName(comparison.type === "substitution" ? comparison.itemId : comparison.itemId);
+    if (cause === "stock_shortage") return `${itemLabel} may have been unavailable on the shelf`;
+    if (cause === "recount_discrepancy") return "a recent stock count did not match expectations";
+    if (cause === "seasonality") return "seasonal timing may be influencing packing choices";
+    if (cause === "recipe_change_candidate") return "the written recipe may no longer match storeroom practice";
+    if (cause === "volunteer_preference") return "volunteers may be developing a packing preference";
+    return "we cannot yet attribute this to a single cause";
+  }
+
+  function computeHabitCauseProbabilities(comparison, trend, evidence, transactions) {
+    const stockItemId = comparison.itemId;
+    const stockItemName = itemName(stockItemId);
+    const start = comparison.recentStartDate;
+    const end = comparison.recentEndDate;
+    const scores = {
+      stock_shortage: 0,
+      recount_discrepancy: 0,
+      volunteer_preference: 0,
+      seasonality: 0,
+      recipe_change_candidate: 0,
+      unknown: 1,
+    };
+    const reasons = {};
+
+    if (itemReachedZeroDuringWindow(stockItemId, start, end, transactions)) {
+      scores.stock_shortage += 5;
+      reasons.stock_shortage = `${stockItemName} reached zero during the recent window.`;
+    }
+    if (habitRecentRecountDiscrepancy(stockItemId, start, end, transactions)) {
+      scores.recount_discrepancy += 4;
+      reasons.recount_discrepancy = `A recent count for ${stockItemName} did not match what we expected.`;
+    }
+    if (itemMap[comparison.itemId]?.seasonal) {
+      scores.seasonality += 3;
+      reasons.seasonality = `${itemName(comparison.itemId)} is seasonal — the timing may explain the change.`;
+    }
+    if (comparison.type === "substitution") {
+      if (comparison.recentPercent >= 70) scores.recipe_change_candidate += 3;
+      else if (comparison.recentPercent >= 40) scores.recipe_change_candidate += 1;
+      if (comparison.deltaPercent >= 5) scores.recipe_change_candidate += 1;
+      if (scores.recipe_change_candidate > 0) {
+        reasons.recipe_change_candidate = `This substitution appeared in ${comparison.recentCount} of ${comparison.recentDenominator} recent packs (${comparison.recentPercent}%).`;
+      }
+    }
+    if (comparison.type === "optional_usage"
+      && (trend === "emerging" || trend === "established")
+      && evidence !== "too_early"
+      && !itemReachedZeroDuringWindow(stockItemId, start, end, transactions)) {
+      scores.volunteer_preference += 2;
+      reasons.volunteer_preference = "No stock shortage alone fully explains this pattern.";
+    }
+    if (comparison.deltaPercent >= 10 && (trend === "emerging" || trend === "established")) {
+      scores.volunteer_preference += 1;
+    }
+    if (evidence === "too_early" || evidence === "early") {
+      scores.unknown += 3;
+      reasons.unknown = "There is not yet enough evidence to attribute this to a single cause.";
+    } else {
+      scores.unknown += 1;
+      reasons.unknown = "Other factors may still be contributing.";
+    }
+
+    const ranked = Object.entries(scores)
+      .map(([cause, score]) => ({ cause, score }))
+      .sort((a, b) => b.score - a.score);
+    let top = ranked.slice(0, 3).filter(e => e.score > 0);
+    if (!top.length) top = [{ cause: "unknown", score: 1 }];
+    const total = top.reduce((s, e) => s + e.score, 0);
+    return top.map(e => ({
+      cause: e.cause,
+      confidence: Math.round((e.score / total) * 100) / 100,
+      reason: reasons[e.cause] || "Insufficient evidence to identify a specific cause.",
+    }));
+  }
+
+  function computeHabitConfidenceProbability(comparison, trend, evidence, possibleCauses) {
+    const totalObs = comparison.recentCount + comparison.previousCount;
+    let p = 0;
+    if (evidence === "sufficient") p += 0.30;
+    else if (evidence === "early") p += 0.15;
+    else p += 0.05;
+    p += (comparison.windowSize / 25) * 0.25;
+    p += Math.min(1, totalObs / 12) * 0.20;
+    p += Math.min(1, Math.abs(comparison.deltaPercent) / 40) * 0.15;
+    const unknownConf = (possibleCauses.find(c => c.cause === "unknown") || {}).confidence || 0.3;
+    p += (1 - unknownConf) * 0.10;
+    if (trend === "established") p += 0.15;
+    if (trend === "too_early_to_tell") p *= 0.5;
+    if (trend === "stable" && evidence === "sufficient") p += 0.10;
+    return Math.round(Math.min(1, Math.max(0, p)) * 100) / 100;
+  }
+
+  function habitConfidenceBandFromProbability(probability) {
+    if (probability >= 0.70) return "high";
+    if (probability >= 0.40) return "medium";
+    return "low";
+  }
+
+  function computeInsightQuality(comparison, evidence, confidenceProbability, possibleCauses) {
+    const evidenceScore = evidence === "sufficient" ? 1 : evidence === "early" ? 0.5 : 0.2;
+    const obsScore = Math.min(1, (comparison.recentCount + comparison.previousCount) / 12);
+    const windowScore = comparison.windowSize / 25;
+    const unknownConf = (possibleCauses.find(c => c.cause === "unknown") || {}).confidence || 0.5;
+    const causeScore = 1 - unknownConf;
+    return Math.round(evidenceScore * 40 + obsScore * 20 + windowScore * 20 + causeScore * 20);
+  }
+
+  function habitBeliefFromWindow(count, denominator, evidence) {
+    const stageWeight = evidence === "sufficient" ? 1 : evidence === "early" ? 0.6 : 0.3;
+    const pct = denominator > 0 ? count / denominator : 0;
+    return Math.round(Math.min(1, pct * stageWeight) * 100) / 100;
+  }
+
+  function buildTrendReason(comparison, trend, evidence) {
     const packLabel = RECIPES[comparison.packKey]?.label || comparison.packKey;
-    const itemNameStr = comparison.type === "optional_usage"
-      ? recipeOptionalLabel(comparison.packKey, comparison.itemId)
-      : itemName(comparison.itemId);
-    const recentLine = habitDescribePatternWindow(comparison, "recent");
-    const previousLine = habitDescribePatternWindow(comparison, "previous");
-    const causeLine = habitLikelyCauseText(likelyCause);
-    let text = "";
+    const rc = comparison.recentCount;
+    const pc = comparison.previousCount;
+    const rd = comparison.recentDenominator;
+    const pd = comparison.previousDenominator;
+    const rp = comparison.recentPercent;
+    const pp = comparison.previousPercent;
+    const delta = comparison.deltaPercent;
+    const totalObs = rc + pc;
+    const occurrenceWord = (n) => (n === 1 ? "occurrence" : "occurrences");
+
+    let base = `This behaviour occurred ${rc} ${occurrenceWord(rc)} during the most recent ${rd} ${packLabel}s (${rp}%), compared with ${pc} ${occurrenceWord(pc)} in the previous ${pd} (${pp}%).`;
 
     if (trend === "too_early_to_tell") {
-      text = `I noticed something starting to appear.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\n${trendReason}`;
-    } else if (trend === "emerging") {
-      text = `I noticed a change.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\n${trendReason}`;
-      if (evidence === "sufficient" && comparison.deltaPercent >= 5) {
-        text += "\n\nThis has become much more common.";
-      }
-    } else if (trend === "established") {
-      text = `I noticed something that has become normal.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\n${trendReason}`;
-    } else if (trend === "declining") {
-      text = `I noticed a change.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\n${trendReason}`;
-    } else if (trend === "stable") {
-      text = `${itemNameStr} continue to appear in about the same share of ${packLabel}s. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} did; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. ${trendReason}`;
-      if (comparison.type === "optional_usage") {
-        text = `${itemNameStr} continue to be included in about the same share of ${packLabel}s. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} included them; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. ${trendReason}`;
-      } else if (comparison.type === "substitution") {
-        const replacementNameStr = itemName(comparison.replacementItemId);
-        text = `${replacementNameStr} replacing ${itemNameStr} has stayed remarkably consistent. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} did; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. ${trendReason}`;
-      }
+      return `${base} With only ${totalObs} total observations across both windows, it is too early to draw a firm conclusion.`;
     }
+    if (trend === "stable") {
+      return `${base} The change of ${delta >= 0 ? "+" : ""}${delta} percentage points is within normal variation.`;
+    }
+    if (trend === "emerging") {
+      const dir = delta > 0 ? "increase" : "change";
+      const suffix = evidence === "early"
+        ? ` Although this represents a noticeable ${dir} of ${Math.abs(delta)} percentage points, there are still too few observations to conclude that this has become a consistent packing habit.`
+        : ` This ${dir} of ${Math.abs(delta)} percentage points is becoming more consistent across recent packs.`;
+      return base + suffix;
+    }
+    if (trend === "established") {
+      return `${base} At ${rp}% of recent packs, this pattern now appears consistent enough to treat as an established habit.`;
+    }
+    if (trend === "declining") {
+      const suffix = evidence === "early"
+        ? ` This decrease of ${Math.abs(delta)} percentage points is visible, but more packs are needed before treating it as a sustained decline.`
+        : ` This decrease of ${Math.abs(delta)} percentage points suggests the pattern is becoming less common.`;
+      return base + suffix;
+    }
+    return base;
+  }
 
-    if (trend !== "stable" && trend !== "too_early_to_tell" && causeLine && likelyCause !== "none") {
-      text += `\n\n${causeLine}`;
+  function habitSuggestedAction(trend, evidence, insightQualityScore) {
+    if (insightQualityScore < 20 || trend === "too_early_to_tell") return "No action recommended yet.";
+    if (trend === "established") return "Consider reviewing whether the written recipe still matches storeroom practice.";
+    if (trend === "declining" && evidence === "sufficient") return "Worth watching over the next few packing sessions.";
+    if (trend === "stable") return "No action recommended.";
+    return "No action recommended yet.";
+  }
+
+  function habitInterpretationText(trend, evidence) {
+    if (trend === "too_early_to_tell") {
+      return "We have started to observe this behaviour, but we cannot yet determine whether it represents a genuine trend.";
     }
-    return text;
+    if (trend === "emerging" && evidence === "early") {
+      return "This may be an emerging packing habit, although there is not yet enough evidence to know whether it will continue.";
+    }
+    if (trend === "emerging") {
+      return "This appears to be an emerging packing habit that is gaining consistency across recent builds.";
+    }
+    if (trend === "established") {
+      return "This appears to have become a consistent packing habit in recent production builds.";
+    }
+    if (trend === "declining" && evidence === "early") {
+      return "This pattern may be fading, although there is not yet enough evidence to be certain.";
+    }
+    if (trend === "declining") {
+      return "This pattern appears to be declining across recent production builds.";
+    }
+    return "This pattern has remained broadly consistent across both comparison windows.";
+  }
+
+  function habitPossibleExplanationText(possibleCauses, comparison) {
+    const top = possibleCauses[0];
+    if (!top) return "No clear explanation stands out from the available evidence.";
+    if (top.cause === "unknown" && top.confidence >= 0.4) {
+      return `The most likely explanation is that we do not yet know. ${top.reason}`;
+    }
+    const label = habitCauseHumanLabel(top.cause, comparison);
+    const qualifier = top.confidence >= 0.5 ? "The most likely reason is that" : "One possible reason is that";
+    return `${qualifier} ${label}. ${top.reason}`;
+  }
+
+  function generateHabitInsightText(comparison, trend, evidence, trendReason, possibleCauses, insightQualityScore) {
+    const factsRecent = habitDescribePatternWindow(comparison, "recent");
+    const factsPrevious = habitDescribePatternWindow(comparison, "previous");
+    let headline = "I noticed a change.";
+    if (trend === "too_early_to_tell") headline = "I noticed something starting to appear.";
+    else if (trend === "established") headline = "I noticed something that has become normal.";
+    else if (trend === "stable") headline = "This has stayed remarkably consistent.";
+    else if (trend === "declining") headline = "I noticed a change.";
+
+    const interpretation = habitInterpretationText(trend, evidence);
+    const explanation = habitPossibleExplanationText(possibleCauses, comparison);
+    const action = habitSuggestedAction(trend, evidence, insightQualityScore);
+
+    return [
+      headline,
+      `${factsRecent}.`,
+      `Previously, ${factsPrevious.charAt(0).toLowerCase() + factsPrevious.slice(1)}.`,
+      interpretation,
+      explanation,
+      action,
+    ].join("\n\n");
   }
 
   function habitInsightQualifiesForTopSummary(insight) {
     if (insight.trend === "too_early_to_tell") return false;
+    if (insight.insightQualityScore < 20) return false;
+    if (insight.confidenceProbability < 0.20 && insight.recentCount + insight.previousCount <= 1) return false;
     if (insight.recentCount <= 1 && insight.previousCount <= 1) return false;
-    if (insight.confidence === "medium" || insight.confidence === "high") return true;
+    if (insight.confidenceBand === "medium" || insight.confidenceBand === "high") return true;
     if (insight.recentCount >= 3) return true;
     if (insight.previousCount >= 3) return true;
     if (Math.abs(insight.deltaPercentage) >= 30) return true;
+    if (insight.insightQualityScore >= 40) return true;
     return false;
   }
 
@@ -2925,8 +3017,26 @@
     return (insights || []).filter(habitInsightQualifiesForTopSummary);
   }
 
+  function habitInsightSortKey(insight) {
+    return [
+      insight.insightQualityScore || 0,
+      insight.confidenceProbability || 0,
+      (insight.recentCount || 0) + (insight.previousCount || 0),
+      insight.windowSize || 0,
+    ];
+  }
+
+  function compareHabitInsights(a, b) {
+    const ka = habitInsightSortKey(a);
+    const kb = habitInsightSortKey(b);
+    for (let i = 0; i < ka.length; i++) {
+      if (kb[i] !== ka[i]) return kb[i] - ka[i];
+    }
+    return 0;
+  }
+
   function generateHabitInsights(trendRows) {
-    const insights = trendRows
+    return trendRows
       .filter(r => r.recentCount > 0 || r.previousCount > 0)
       .map(r => ({
         type: r.type,
@@ -2939,32 +3049,39 @@
         trendReason: r.trendReason,
         recentCount: r.recentCount,
         previousCount: r.previousCount,
+        windowSize: r.windowSize,
         deltaPercentage: r.deltaPercent,
-        confidence: r.confidence,
-        likelyCause: r.likelyCause,
+        confidenceBand: r.confidenceBand,
+        confidenceProbability: r.confidenceProbability,
+        insightQualityScore: r.insightQualityScore,
+        possibleCauses: r.possibleCauses,
+        belief: r.belief,
+        beliefPrevious: r.beliefPrevious,
+        beliefDelta: r.beliefDelta,
         volunteerText: r.insightText,
       }))
-      .sort((a, b) => {
-        const trendRank = {
-          established: 0, emerging: 1, declining: 2, stable: 3, too_early_to_tell: 4,
-        };
-        const ra = trendRank[a.trend] ?? 9;
-        const rb = trendRank[b.trend] ?? 9;
-        if (ra !== rb) return ra - rb;
-        return Math.abs(b.deltaPercentage) - Math.abs(a.deltaPercentage);
-      });
-    return insights;
+      .sort(compareHabitInsights);
   }
 
   function packingHabitTrendSummary(events, transactions) {
     const windows = deriveHistoricalHabitWindows(events.productionBuilds);
     const comparisons = compareHabitWindows(windows);
     const trendRows = comparisons.map(c => {
-      const { trend, evidence, trendReason } = computeHabitTrendClassification(c);
-      const likelyCause = detectHabitLikelyCause(c, trend, evidence, transactions);
-      const confidence = habitTrendConfidence(c, trend, evidence, likelyCause);
-      const insightText = generateHabitInsightText(c, trend, evidence, trendReason, likelyCause);
-      return { ...c, trend, evidence, trendReason, likelyCause, confidence, insightText };
+      const { trend, evidence } = computeHabitTrendClassification(c);
+      const possibleCauses = computeHabitCauseProbabilities(c, trend, evidence, transactions);
+      const confidenceProbability = computeHabitConfidenceProbability(c, trend, evidence, possibleCauses);
+      const confidenceBand = habitConfidenceBandFromProbability(confidenceProbability);
+      const trendReason = buildTrendReason(c, trend, evidence);
+      const insightQualityScore = computeInsightQuality(c, evidence, confidenceProbability, possibleCauses);
+      const belief = confidenceProbability;
+      const beliefPrevious = habitBeliefFromWindow(c.previousCount, c.previousDenominator, evidence);
+      const beliefDelta = Math.round((belief - beliefPrevious) * 100) / 100;
+      const insightText = generateHabitInsightText(c, trend, evidence, trendReason, possibleCauses, insightQualityScore);
+      return {
+        ...c, trend, evidence, trendReason, possibleCauses,
+        confidenceBand, confidenceProbability, insightQualityScore,
+        belief, beliefPrevious, beliefDelta, insightText,
+      };
     });
     const insights = generateHabitInsights(trendRows);
     const counts = {
@@ -2997,8 +3114,10 @@
         evidence: i.evidence,
         trendReason: i.trendReason,
         volunteerText: i.volunteerText,
-        confidence: i.confidence,
-        likelyCause: i.likelyCause,
+        confidenceBand: i.confidenceBand,
+        confidenceProbability: i.confidenceProbability,
+        insightQualityScore: i.insightQualityScore,
+        possibleCauses: i.possibleCauses,
         recentCount: i.recentCount,
         previousCount: i.previousCount,
         deltaPercentage: i.deltaPercentage,
@@ -3030,8 +3149,13 @@
           recentCount: null,
           recentPercentage: null,
           deltaPercentage: null,
-          likelyCause: null,
-          confidence: null,
+          possibleCauses: [],
+          confidenceBand: null,
+          confidenceProbability: null,
+          insightQualityScore: null,
+          belief: null,
+          beliefPrevious: null,
+          beliefDelta: null,
           insufficientHistory: true,
         };
       }
@@ -3045,8 +3169,13 @@
         recentCount: t.recentCount,
         recentPercentage: t.recentPercent,
         deltaPercentage: t.deltaPercent,
-        likelyCause: t.likelyCause,
-        confidence: t.confidence,
+        possibleCauses: t.possibleCauses,
+        confidenceBand: t.confidenceBand,
+        confidenceProbability: t.confidenceProbability,
+        insightQualityScore: t.insightQualityScore,
+        belief: t.belief,
+        beliefPrevious: t.beliefPrevious,
+        beliefDelta: t.beliefDelta,
         insufficientHistory: false,
       };
     });

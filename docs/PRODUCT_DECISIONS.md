@@ -48,16 +48,16 @@ Copy this block for each new decision:
 | **Alternatives Considered** | **Filter all insights** — rejected; loses admin audit trail. **Raise window minimum to 25** — rejected; sandbox has insufficient history. |
 | **Status** | Accepted |
 
-### Packing habits behavioural trends (Phase 2, export only)
+### Packing habits behavioural trends (Phase 2 / 2.1, export only)
 
 | Field | Content |
 |-------|---------|
 | **Decision** | Windowed habit trend analysis in export and analytics summary only; no volunteer UI in Phase 2 |
 | **Date** | 2026-06-25 |
 | **Context** | Phase 1 describes what habits exist. Ops and future SPE need to know whether behaviour is emerging, strengthening, stable, weakening, or disappearing — without Bayesian models, RL, or volunteer-facing dashboards. |
-| **Decision** | Add Phase 2 pipeline after Phase 1: `deriveHistoricalHabitWindows` → `compareHabitWindows` → `computeHabitTrend` → `generateHabitInsights` → `packingHabitTrendSummary`. Per packKey, compare non-overlapping recent/previous windows (25/25, else 20/20, else 10/10). Classify trends by percentage-point deltas. Evidence-based `likelyCause` (stock shortage, recount discrepancy, seasonality, recipe change candidate, volunteer preference, or none). Extend `packingHabits.observations` with trend fields; add `packingHabits.insights`; analytics summary includes `packingHabitTrends`. Excludes Milan tester builds. Human language only. No localStorage schema change. No changes to stock math, recipes, or volunteer UI. |
-| **Reasoning** | Smallest step from description to interpretation; deterministic and testable; feeds SPE recipe-importance and ops review without alarming Janet. |
-| **Alternatives Considered** | **Fold trends into Phase 1 observations only** — rejected; loses insight narrative and summary counts. **Persist rolling habit state** — rejected; schema change forbidden. **Bayesian/RL models** — explicitly deferred. |
+| **Decision** | Add Phase 2 pipeline after Phase 1: `deriveHistoricalHabitWindows` → `compareHabitWindows` → `computeHabitTrendClassification` → `computeHabitCauseProbabilities` → `buildTrendReason` → `generateHabitInsights` → `packingHabitTrendSummary`. Per packKey, compare non-overlapping recent/previous windows (25/25, else 20/20, else 10/10). Classify trends by percentage-point deltas. Probabilistic `possibleCauses` (stock shortage, recount discrepancy, seasonality, recipe change candidate, volunteer preference, unknown — 1–3 ranked, confidences sum to 1.0). `confidenceBand` + `confidenceProbability`; `insightQualityScore` for ranking; `belief` / `beliefPrevious` / `beliefDelta` (belief = confidenceProbability until Phase 3). Five-section human insights. Extend `packingHabits.observations` with trend fields; add `packingHabits.insights`; analytics summary includes `packingHabitTrends`. Excludes Milan tester builds. Human language only. No localStorage schema change. No changes to stock math, recipes, or volunteer UI. |
+| **Reasoning** | Smallest step from description to interpretation; deterministic and testable; feeds SPE recipe-importance and ops review without alarming Janet. Phase 2.1 improves epistemic honesty without changing volunteer workflows. |
+| **Alternatives Considered** | **Fold trends into Phase 1 observations only** — rejected; loses insight narrative and summary counts. **Persist rolling habit state** — rejected; schema change forbidden. **Bayesian/RL models** — explicitly deferred to Phase 3. **Single winning cause** — rejected in 2.1; multiple hypotheses coexist with weighted confidence. |
 | **Status** | Accepted |
 
 ### Packing habits intelligence (Phase 1, export only)
