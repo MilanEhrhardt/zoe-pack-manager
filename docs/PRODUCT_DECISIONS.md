@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Milan tester analytics separation
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Add Milan as packer option; tag tester sessions in analytics without deleting data |
+| **Date** | 2026-06-25 |
+| **Context** | Developer testing (Milan) polluted volunteer usability analysis. Full login/auth is out of scope. |
+| **Decision** | Milan appears in the existing packer dropdown. `isTesterUser("Milan")` tags analytics events and AI Data Pack exports with `sessionUser`, `currentSelectedUser`, `isTesterSession`. Summary splits `productionVolunteerSessions`, `testerSessions`, `unknownSessions`. No passwords, accounts, or auth. Stock and pack logic unchanged. |
+| **Reasoning** | Smallest safe separation: one extra dropdown name, additive analytics fields, future exports can exclude tester sessions. Janet/Judy workflow unchanged — no “admin login” language. |
+| **Alternatives Considered** | **devMode toggle** — rejected for now; easy to forget. **Separate app build** — rejected; too heavy. **Delete tester analytics** — rejected; Milan needs history for debugging. |
+| **Status** | Accepted |
+
 ### SPE is a future intelligence layer, not a Phase 1 UI feature
 
 | Field | Content |

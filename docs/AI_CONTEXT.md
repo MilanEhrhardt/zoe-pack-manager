@@ -127,8 +127,9 @@ See also `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
 - **Single file:** `zoe-pack-manager.html` — HTML, CSS, and JavaScript in one document
 - **Persistence:** browser `localStorage` (auto-save on this computer)
 - **Offline:** no server, install, or internet required for daily use
-- **Analytics:** local event logging with JSON/CSV export for user-testing analysis (Mission Control dashboard reads exports)
+- **Analytics:** local event logging with JSON/CSV export for user-testing analysis (Mission Control dashboard reads exports). Key events record `sessionUser`, `currentSelectedUser`, and `isTesterSession`. Summary splits sessions into production volunteer, tester, and unknown. **Milan** is a tester identity — select as packer when testing; data is retained but separable in exports.
 - **Backup:** manual export/import from hidden admin area
+- **Packers:** Janet, Judy (volunteers); Milan (tester — analytics tagged `isTesterSession` when selected)
 
 ---
 
@@ -182,6 +183,7 @@ None. Pack Creation redesign shipped (render-only); awaiting volunteer field val
 | Pack Creation: common extras on main screen | **Accepted** — see `PRODUCT_DECISIONS.md` |
 | Entry screen Increment A (four verbs, no dashboard) | **Accepted** — Increment B (Today loop) deferred |
 | SPE documented, implementation deferred | **Deferred** — see `PRODUCT_DECISIONS.md` |
+| Milan tester analytics separation | **Accepted** — see `PRODUCT_DECISIONS.md` |
 | Documentation-first AI workflow | **Accepted** — read this file before coding |
 | Lead Engineer six-phase workflow | **Superseded** — see Lead Product Engineer workflow |
 | Lead Product Engineer workflow | **Accepted** — three-solution proposals, approval gate, auto-commit; see `.cursor/rules.md` |
