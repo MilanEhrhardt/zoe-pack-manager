@@ -4677,7 +4677,7 @@
   // OPERATIONAL MEMORY — Phase 3C layer (export / ops only)
   // ═══════════════════════════════════════════════════════════════════
 
-  const OM_MODEL_VERSION = "3C.1";
+  const OM_MODEL_VERSION = "3C.1.1";
   const OM_BANNED_COPY = /\b(ai|algorithm|detected|recommendation|should|must|proven|guaranteed|decision|optimis[ez]ation|optimisation|change recipe)\b/gi;
 
   function omCopySafe(text) {
@@ -4720,7 +4720,20 @@
     else if (inputs.earlyEvidence) p = Math.min(p, 0.55);
     if (inputs.synthetic) p = Math.min(p, 0.65);
     if (inputs.impactReadinessFalse) p = Math.min(p, 0.70);
+    if (inputs.configFact) p = Math.max(p, 0.35);
     return Math.max(0, Math.min(1, Math.round(p * 100) / 100));
+  }
+
+  function omDedupeStrings(arr) {
+    const seen = new Set();
+    const out = [];
+    (arr || []).forEach(s => {
+      const key = String(s || "").trim();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(s);
+    });
+    return out;
   }
 
   function buildMemoryCtx(deps) {
@@ -4762,9 +4775,9 @@
       confidenceProbability,
       firstSeen: partial.firstSeen || null,
       lastSeen: partial.lastSeen || null,
-      evidence: (partial.evidence || []).map(omCopySafe),
+      evidence: omDedupeStrings((partial.evidence || []).map(omCopySafe)),
       reasoning: omCopySafe(partial.reasoning || ""),
-      limitations: (partial.limitations || []).map(omCopySafe),
+      limitations: omDedupeStrings((partial.limitations || []).map(omCopySafe)),
     };
   }
 
@@ -4920,18 +4933,24 @@
       if (deoOpt) evidence.push(`Deo included in ${Math.round(inclusionRate * 100)}% of Mom Pack records.`);
       if (deoObs?.volunteerText) evidence.push(deoObs.volunteerText);
 
+      const deoConf = computeMemoryConfidence({
+        ...ri, multipleSources: evidence.length >= 2, repeatedPattern: inclusionRate >= 0.5,
+        earlyEvidence: status === "emerging", insufficientEvidence: status === "insufficient_evidence",
+        longObservationWindow: omLongWindow(firstSeen, lastSeen),
+      });
+      const deoBand = omConfidenceBand(deoConf);
+      const deoReasoning = status === "active" && (deoBand === "moderate" || deoBand === "high") && deoObs?.evidence === "sufficient"
+        ? "The system remembers Deo as a commonly included optional in Mom Packs. Evidence suggests recurring optional usage — monitor only."
+        : "The system has started seeing Deo included in Mom Packs, but there is not enough evidence yet to treat it as a stable habit.";
+
       memories.push(omMakeMemory({
         memoryId: "habit_memory:optional_usage:momPack:deo",
         memoryType: "habit_memory",
         subject: { type: "optional_usage", packKey: "momPack", packLabel: "Mom Pack", itemId: "deo", itemName: itemName("deo") },
         status,
-        confidenceProbability: computeMemoryConfidence({
-          ...ri, multipleSources: evidence.length >= 2, repeatedPattern: inclusionRate >= 0.5,
-          earlyEvidence: status === "emerging", insufficientEvidence: status === "insufficient_evidence",
-          longObservationWindow: omLongWindow(firstSeen, lastSeen),
-        }),
+        confidenceProbability: deoConf,
         firstSeen, lastSeen, evidence,
-        reasoning: "The system remembers Deo as a commonly included optional in Mom Packs. Evidence suggests recurring optional usage — monitor only.",
+        reasoning: deoReasoning,
         limitations: ["Optional habit memory does not alter pack recipes."],
       }, ctx));
     }
@@ -4957,19 +4976,27 @@
     if (belief) evidence.push(...(belief.supportingEvidence || []).slice(0, 1));
     if (prodBuilds?.productionPacksCreated) evidence.push(`${prodBuilds.productionPacksCreated} production Baby Packs recorded.`);
 
+    const babyConf = computeMemoryConfidence({
+      ...ri,
+      multipleSources: evidence.length >= 1,
+      insufficientEvidence: false,
+      configFact: true,
+      weakBabyPackHistory: false,
+    });
+    const historyNote = (prodBuilds?.productionPacksCreated || 0) >= 10
+      ? "Production history exists, but operational conclusions about recipe alignment remain limited — observe only."
+      : "There is not enough production history to draw operational conclusions — observe only.";
+
     memories.push(omMakeMemory({
       memoryId: "recipe_memory:babyPack:unconfirmed",
       memoryType: "recipe_memory",
       subject: { packKey, packLabel: recipe.label, confirmed: false },
       status: "active",
-      confidenceProbability: computeMemoryConfidence({
-        ...ri, multipleSources: evidence.length >= 1, insufficientEvidence: false,
-        weakBabyPackHistory: (prodBuilds?.productionPacksCreated || 0) < 10,
-      }),
+      confidenceProbability: babyConf,
       firstSeen: firstSeen || new Date().toISOString().slice(0, 10),
       lastSeen: lastSeen || new Date().toISOString().slice(0, 10),
       evidence,
-      reasoning: "The system remembers Baby Pack recipe contents are not yet confirmed. Not enough evidence to treat this recipe as settled — observe only.",
+      reasoning: `The system remembers that Baby Pack is marked unconfirmed. ${historyNote}`,
       limitations: ["Recipe memory does not alter pack configuration."],
     }, ctx));
     return memories;
@@ -4987,11 +5014,12 @@
       const topLine = [...(d.lines || [])].sort((a, b) => opDonationLineMaxEnablement(b) - opDonationLineMaxEnablement(a))[0];
       if (!topLine) return;
       const itemId = topLine.itemId;
+      const donationId = d.donationId || d.id || `${d.date}-${d.donor || "unknown"}`;
       const dates = { firstSeen: d.date, lastSeen: d.date };
       memories.push(omMakeMemory({
-        memoryId: `donation_memory:${itemId}:${d.date}`,
+        memoryId: `donation_memory:${itemId}:${donationId}`,
         memoryType: "donation_memory",
-        subject: { itemId, itemName: itemName(itemId), donor: d.donor, date: d.date },
+        subject: { itemId, itemName: itemName(itemId), donor: d.donor, date: d.date, donationId },
         status: maxEnable >= 10 ? "active" : "emerging",
         confidenceProbability: computeMemoryConfidence({
           ...omReadinessInputs(ctx), operationalRelevance: true, repeatedPattern: false,

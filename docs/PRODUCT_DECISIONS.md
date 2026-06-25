@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Operational memory polish (Phase 3C.1)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Small corrective patch to `operationalMemory` export only |
+| **Date** | 2026-06-25 |
+| **Context** | First AI Data Pack exports showed duplicate donation memory IDs, repeated evidence lines, Baby Pack config memory scored too low, and Deo optional copy overclaimed on insufficient evidence. |
+| **Decision** | Use `donation_memory:{itemId}:{donationId}` for unique IDs; dedupe `evidence[]` in `omMakeMemory()`; apply `configFact` confidence floor (0.35) for Baby Pack unconfirmed; use cautious Deo copy unless status is `active` with moderate+ confidence. Model version `3C.1.1`. No other layer changes. |
+| **Reasoning** | Keeps memory export trustworthy without widening scope or touching volunteer flows. |
+| **Alternatives Considered** | **Aggregate same-day donations** — deferred; donationId is simpler. **Change belief engine** — out of scope. |
+| **Status** | Accepted |
+
 ### Operational memory layer (Phase 3C, export only)
 
 | Field | Content |

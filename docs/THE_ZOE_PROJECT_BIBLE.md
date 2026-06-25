@@ -100,6 +100,8 @@ See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 **Phase 3C (shipped):** A read-only **operational memory layer** consolidates repeated signals from upstream layers into stable recall objects with `memoryId`, `memoryType`, `status`, `firstSeen`/`lastSeen`, and cautious reasoning ("the system remembers…"). Memory types: `stock_memory`, `habit_memory`, `recipe_memory`, `donation_memory`, `confidence_memory`, `readiness_memory`. Exported as `operationalMemory` in AI Data Pack; analytics summary includes `operationalMemorySummary`. Memories are **derived at export time** from transaction history — not persisted across sessions. **Not SPE, not recommendations, not volunteer-facing.** Janet sees nothing new.
 
+**Phase 3C.1 (shipped):** Polish patch — unique donation memory IDs (`donationId`), deduped evidence arrays, config-fact confidence floor for Baby Pack unconfirmed, cautious Deo optional copy on early evidence.
+
 See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 ## Design Principles
