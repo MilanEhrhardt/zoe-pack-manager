@@ -132,6 +132,18 @@ Copy this block for each new decision:
 | **Alternatives Considered** | **Recency-only labels** — rejected as too coarse. **Volunteer UI in Phase 1** — rejected; Increment B deferred until field validation. **Persisted belief state** — rejected; schema migration risk. |
 | **Status** | Accepted |
 
+### Exposure Tracking v1 (ignored visible controls)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Per-control exposure analytics for high-value controls only; no volunteer UI |
+| **Date** | 2026-06-25 |
+| **Context** | Batch `ui_exposure` snapshots list visible controls but cannot distinguish dwell time or click outcome. Need “seen but not clicked” signal for usability analysis without contaminating data with admin utilities Janet is not expected to use. |
+| **Decision** | Add `IntersectionObserver`-based per-control `ui_exposure` events (`controlId`, `label`, `visibleMs`, `clicked`, `screen`) with 750ms minimum dwell. Log on viewport exit, screen change, or click. High-value controls only: home verbs, pack creation (optional toggles, save, exceptions), stock count fields. Admin export/backup/import tracked only when visible inside opened **Need something else?** on home — not footer admin on other screens. Summary: `ignoredVisibleControls` (production default), `productionIgnoredVisibleControls`, `testerIgnoredVisibleControls`. Raw events preserved for tester sessions. Legacy batch `analyticsTrackUIExposure` unchanged. Analytics schema 1.2.0. No localStorage schema migration. No stock/recipe/commit/volunteer workflow changes. |
+| **Reasoning** | Measures meaningful ignored controls for Janet's daily path. IntersectionObserver naturally excludes collapsed admin. Production-default summary keeps Milan test sessions separable without deleting data. |
+| **Alternatives Considered** | **Track all buttons** — rejected; noisy dataset. **Track footer admin everywhere** — rejected; contaminates volunteer usability signal. **Replace batch exposure** — rejected; keep backward compatibility. |
+| **Status** | Accepted |
+
 ### Milan tester analytics separation
 
 | Field | Content |

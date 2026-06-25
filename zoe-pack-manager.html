@@ -918,7 +918,7 @@
 
   const itemMap = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 
-  var ANALYTICS_SCHEMA_VERSION = "1.1.0";
+  var ANALYTICS_SCHEMA_VERSION = "1.2.0";
   var ANALYTICS_MAX_EVENTS = 50000;
 
   let state = loadState();
@@ -944,6 +944,30 @@
   const analyticsHoverTimers = new Map();
   const analyticsHoverLogged = new Set();
   let analyticsScrollState = { view: "", startedAt: 0, maxPct: 0, lastPct: 0, lastAt: 0, timer: null };
+
+  const EXPOSURE_MIN_VISIBLE_MS = 750;
+  const EXPOSURE_CONTROL_LABELS = {
+    home_packed_packs: "We packed packs",
+    home_donation_arrived: "A donation arrived",
+    home_delivered_packs: "We delivered packs",
+    home_counted_again: "I counted something again",
+    home_need_something_else: "Need something else?",
+    home_view_stock_levels: "View all stock levels",
+    admin_export_ai_pack: "Export AI Data Pack",
+    admin_export_backup: "Export Backup",
+    admin_import_backup: "Import Backup",
+    build_optional_toggles: "Did you include these?",
+    build_save_packs: "Save packs",
+    build_something_different: "Something was different",
+    build_substitution_controls: "Swapped items",
+    build_omission_controls: "Left out items",
+    build_custom_extra_controls: "Extra items",
+    stock_item_selector: "Item",
+    stock_count_input: "Physical count",
+    stock_save_correction: "Save Count",
+  };
+  let analyticsExposureObserver = null;
+  const analyticsExposurePending = new Map();
 
   let analyticsSessionUser = "";
 
@@ -975,6 +999,7 @@
   const ANALYTICS_USER_EVENTS = new Set([
     "app_open", "screen_view", "flow_start", "transaction_commit",
     "flow_complete", "analytics_export_requested", "ai_data_pack_export_requested",
+    "ui_exposure",
   ]);
 
   analyticsTrack("app_open", {
@@ -1558,6 +1583,7 @@
 
   function analyticsAfterRender() {
     if (analyticsCurrentView !== view) {
+      analyticsExposureFlushScreenExit();
       if (analyticsCurrentView) {
         analyticsTrack("screen_exit", { from: analyticsCurrentView, durationMs: Date.now() - analyticsViewEnteredAt });
       }
@@ -1583,6 +1609,160 @@
     }
 
     analyticsTrackUIExposure();
+    analyticsExposureBind();
+  }
+
+  function analyticsExposureKey(controlId, screen) {
+    return `${screen}|${controlId}`;
+  }
+
+  function analyticsExposureLabel(el, controlId) {
+    const attr = el.getAttribute("data-exposure-label");
+    if (attr) return attr;
+    return EXPOSURE_CONTROL_LABELS[controlId] || analyticsSafeText(el.textContent, 80);
+  }
+
+  function analyticsExposureVisibleMs(entry) {
+    if (!entry || !entry.visibleSince) return 0;
+    return Date.now() - entry.visibleSince;
+  }
+
+  function analyticsExposureFlushEntry(entry, clicked) {
+    if (!entry || entry.flushed) return;
+    const visibleMs = analyticsExposureVisibleMs(entry);
+    if (visibleMs < EXPOSURE_MIN_VISIBLE_MS) {
+      entry.visibleSince = null;
+      return;
+    }
+    entry.flushed = true;
+    analyticsTrack("ui_exposure", {
+      screen: entry.screen,
+      controlId: entry.controlId,
+      label: entry.label,
+      visibleMs,
+      clicked: !!clicked,
+    });
+  }
+
+  function analyticsExposureFlushScreenExit() {
+    const exitingScreen = analyticsCurrentView;
+    if (!exitingScreen) return;
+    const toDelete = [];
+    analyticsExposurePending.forEach((entry, key) => {
+      if (entry.screen !== exitingScreen) return;
+      if (entry.visibleSince && !entry.flushed) analyticsExposureFlushEntry(entry, false);
+      toDelete.push(key);
+    });
+    toDelete.forEach(k => analyticsExposurePending.delete(k));
+  }
+
+  function analyticsExposureOnIntersect(entries) {
+    const now = Date.now();
+    entries.forEach(ioEntry => {
+      const el = ioEntry.target;
+      const controlId = el.getAttribute("data-track-exposure");
+      if (!controlId) return;
+      const screen = view;
+      const key = analyticsExposureKey(controlId, screen);
+      if (ioEntry.isIntersecting && ioEntry.intersectionRatio > 0) {
+        let entry = analyticsExposurePending.get(key);
+        if (!entry || entry.flushed || entry.el !== el) {
+          entry = {
+            el,
+            controlId,
+            label: analyticsExposureLabel(el, controlId),
+            screen,
+            visibleSince: now,
+            flushed: false,
+          };
+          analyticsExposurePending.set(key, entry);
+        } else if (!entry.visibleSince) {
+          entry.visibleSince = now;
+        }
+      } else {
+        const entry = analyticsExposurePending.get(key);
+        if (entry && entry.el === el && entry.visibleSince && !entry.flushed) {
+          analyticsExposureFlushEntry(entry, false);
+          analyticsExposurePending.delete(key);
+        }
+      }
+    });
+  }
+
+  function analyticsExposureOnClick(target) {
+    const el = target.closest("[data-track-exposure]");
+    if (!el) return;
+    const controlId = el.getAttribute("data-track-exposure");
+    const key = analyticsExposureKey(controlId, view);
+    const entry = analyticsExposurePending.get(key);
+    if (!entry || entry.el !== el || entry.flushed) return;
+    const visibleMs = analyticsExposureVisibleMs(entry);
+    if (visibleMs < EXPOSURE_MIN_VISIBLE_MS) return;
+    entry.flushed = true;
+    analyticsTrack("ui_exposure", {
+      screen: entry.screen,
+      controlId: entry.controlId,
+      label: entry.label,
+      visibleMs,
+      clicked: true,
+    });
+    analyticsExposurePending.delete(key);
+  }
+
+  function analyticsExposureBind() {
+    if (analyticsExposureObserver) analyticsExposureObserver.disconnect();
+    const staleKeys = [];
+    analyticsExposurePending.forEach((entry, key) => {
+      if (entry.screen === view && entry.visibleSince && !entry.flushed) {
+        analyticsExposureFlushEntry(entry, false);
+      }
+      if (entry.screen === view) staleKeys.push(key);
+    });
+    staleKeys.forEach(k => analyticsExposurePending.delete(k));
+    if (typeof IntersectionObserver === "undefined") return;
+    analyticsExposureObserver = new IntersectionObserver(analyticsExposureOnIntersect, { threshold: 0.01 });
+    document.querySelectorAll("[data-track-exposure]").forEach(el => analyticsExposureObserver.observe(el));
+  }
+
+  function analyticsIgnoredVisibleControlsFromEvents(events, opts) {
+    opts = opts || {};
+    const groups = {};
+    (events || []).forEach(e => {
+      if (e.event !== "ui_exposure") return;
+      const d = e.details || {};
+      if (!d.controlId || typeof d.visibleMs !== "number" || d.visibleMs < EXPOSURE_MIN_VISIBLE_MS) return;
+      const isTester = !!e.isTesterSession;
+      if (opts.productionOnly && isTester) return;
+      if (opts.testerOnly && !isTester) return;
+      const screen = d.screen || e.view || "unknown";
+      const gk = `${screen}|${d.controlId}`;
+      if (!groups[gk]) {
+        groups[gk] = {
+          controlId: d.controlId,
+          screen,
+          label: d.label || EXPOSURE_CONTROL_LABELS[d.controlId] || d.controlId,
+          exposures: 0,
+          ignored: 0,
+          visibleMsTotal: 0,
+        };
+      }
+      const g = groups[gk];
+      g.exposures += 1;
+      if (!d.clicked) g.ignored += 1;
+      g.visibleMsTotal += d.visibleMs;
+      if (d.label) g.label = d.label;
+    });
+    return Object.values(groups)
+      .map(g => ({
+        controlId: g.controlId,
+        screen: g.screen,
+        label: g.label,
+        exposures: g.exposures,
+        ignored: g.ignored,
+        ignoredRate: g.exposures ? Math.round((g.ignored / g.exposures) * 100) / 100 : 0,
+        averageVisibleMs: g.exposures ? Math.round(g.visibleMsTotal / g.exposures) : 0,
+      }))
+      .sort((a, b) => b.ignored - a.ignored || b.exposures - a.exposures);
   }
 
   function analyticsControlKey(el) {
@@ -1790,6 +1970,8 @@
       synthetic: !!state.sampleData,
     });
     const operationalMemorySummary = operationalMemorySummaryConcise(operationalMemory);
+    const productionIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { productionOnly: true });
+    const testerIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { testerOnly: true });
 
     return {
       generatedAt: new Date().toISOString(),
@@ -1816,6 +1998,9 @@
       mouseHesitations,
       scrollDepthByScreen,
       ignoredControls,
+      ignoredVisibleControls: productionIgnoredVisibleControls,
+      productionIgnoredVisibleControls,
+      testerIgnoredVisibleControls,
       optionUsage,
       neverUsedOptions,
       alwaysUsedOptions,
@@ -5295,15 +5480,16 @@
     return html;
   }
 
-  function renderAdminToolsBody() {
+  function renderAdminToolsBody(trackExposure) {
+    const exp = (id, label) => trackExposure ? ` data-track-exposure="${id}" data-exposure-label="${label}"` : "";
     return `<p>Your work saves automatically on this computer. Use Export Backup to keep a copy safe.</p>
       <div class="footer-tools">
-        <button type="button" id="btn-export">Export Backup</button>
-        <button type="button" id="btn-import">Import Backup</button>
+        <button type="button" id="btn-export"${exp("admin_export_backup", "Export Backup")}>Export Backup</button>
+        <button type="button" id="btn-import"${exp("admin_import_backup", "Import Backup")}>Import Backup</button>
         <button type="button" id="btn-sample">Load Sample Data</button>
         <button type="button" id="btn-export-analytics-csv">Export Analytics CSV</button>
         <button type="button" id="btn-export-analytics-json">Export Analytics JSON</button>
-        <button type="button" id="btn-export-ai-pack">Export AI Data Pack</button>
+        <button type="button" id="btn-export-ai-pack"${exp("admin_export_ai_pack", "Export AI Data Pack")}>Export AI Data Pack</button>
       </div>
       <div class="analytics-controls">
         <div class="analytics-status">
@@ -5325,7 +5511,7 @@
   function renderHomeMore() {
     const canUndo = !!state.undoSnapshot;
     let html = `<div class="home-more-wrap"><details class="home-more">
-      <summary>Need something else?</summary>
+      <summary data-track-exposure="home_need_something_else" data-exposure-label="Need something else?">Need something else?</summary>
       <div class="home-more-body">`;
     if (canUndo) {
       html += `<div class="home-more-section">
@@ -5333,12 +5519,12 @@
       </div>`;
     }
     html += `<div class="home-more-section">
-        <details class="stock-fold"><summary>View all stock levels</summary>
+        <details class="stock-fold"><summary data-track-exposure="home_view_stock_levels" data-exposure-label="View all stock levels">View all stock levels</summary>
           <div style="margin-top:12px;">${renderStockLevelsList("home-more-pack-context")}</div>
         </details>
       </div>
       <div class="home-more-section home-more-section--tools">
-        ${renderAdminToolsBody()}
+        ${renderAdminToolsBody(true)}
       </div>
     </div></details></div>`;
     return html;
@@ -5349,19 +5535,19 @@
       <p class="home-question">What happened today?</p>
 
       <div class="home-actions">
-        <button type="button" class="home-action-btn home-action-btn--build" data-go="build">
+        <button type="button" class="home-action-btn home-action-btn--build" data-go="build" data-track-exposure="home_packed_packs" data-exposure-label="We packed packs">
           <span class="home-action-icon">${iconBagHeart()}</span>
           <span class="home-action-label">We packed packs</span>
         </button>
-        <button type="button" class="home-action-btn home-action-btn--donation" data-go="donation">
+        <button type="button" class="home-action-btn home-action-btn--donation" data-go="donation" data-track-exposure="home_donation_arrived" data-exposure-label="A donation arrived">
           <span class="home-action-icon">${iconGift()}</span>
           <span class="home-action-label">A donation arrived</span>
         </button>
-        <button type="button" class="home-action-btn home-action-btn--deliver" data-go="deliver">
+        <button type="button" class="home-action-btn home-action-btn--deliver" data-go="deliver" data-track-exposure="home_delivered_packs" data-exposure-label="We delivered packs">
           <span class="home-action-icon">${iconTruck()}</span>
           <span class="home-action-label">We delivered packs</span>
         </button>
-        <button type="button" class="home-action-btn home-action-btn--stock" data-go="stock">
+        <button type="button" class="home-action-btn home-action-btn--stock" data-go="stock" data-track-exposure="home_counted_again" data-exposure-label="I counted something again">
           <span class="home-action-icon">${iconCount()}</span>
           <span class="home-action-label">I counted something again</span>
         </button>
@@ -5446,7 +5632,7 @@
   function renderRecipeOptionalToggles(packKey) {
     const recipe = RECIPES[packKey];
     const qty = parseInt(form.qty, 10) || 0;
-    let html = `<div class="common-extras">
+    let html = `<div class="common-extras" data-track-exposure="build_optional_toggles" data-exposure-label="Did you include these?">
       <h3>Did you include these?</h3>
       <p class="screen-subtitle">Tap Yes for anything extra that went into each pack.</p>`;
     recipe.optional.forEach(opt => {
@@ -5546,24 +5732,24 @@
     if (extraCount) summaryParts.push(`${extraCount} extra${extraCount !== 1 ? "s" : ""}`);
     const summaryText = summaryParts.length ? summaryParts.join(" · ") : "Swaps, omissions, or extras not on the main screen";
 
-    return `<details class="advanced-section exceptions-panel" id="exceptions-panel" ${form.exceptionsOpen ? "open" : ""}>
+    return `<details class="advanced-section exceptions-panel" id="exceptions-panel" data-track-exposure="build_something_different" data-exposure-label="Something was different" ${form.exceptionsOpen ? "open" : ""}>
       <summary id="open-add-item">${summaryParts.length ? esc(summaryText) : "+ Something else happened?"}</summary>
       <div class="advanced-body">
         <p class="screen-subtitle" style="margin-bottom:18px;">Record swaps, items left out, or extras not listed above — all on this screen.</p>
 
-        <div class="exception-section">
+        <div class="exception-section" data-track-exposure="build_substitution_controls" data-exposure-label="Swapped items">
           <h4>Swapped items</h4>
           <div id="substitutions">${renderSubstitutionLines(packKey, qty, included, customExtras)}</div>
           <button type="button" class="btn-small" id="choice-substitution">+ Add swap</button>
         </div>
 
-        <div class="exception-section">
+        <div class="exception-section" data-track-exposure="build_omission_controls" data-exposure-label="Left out items">
           <h4>Left out items</h4>
           <div id="omissions">${renderOmissionLines(packKey, qty)}</div>
           <button type="button" class="btn-small" id="choice-leftout">+ Add left out</button>
         </div>
 
-        <div class="exception-section">
+        <div class="exception-section" data-track-exposure="build_custom_extra_controls" data-exposure-label="Extra items">
           <h4>Extra items</h4>
           <div id="custom-extras">${renderCustomExtraLines(packKey)}</div>
           <button type="button" class="btn-small" id="choice-extra">+ Add extra</button>
@@ -5640,7 +5826,7 @@
     html += renderBuildExceptions(form.packKey, qty, included, customExtras);
 
     html += `<div id="build-error" class="error ${errorMsg ? "" : "hidden"}">${errorMsg ? esc(errorMsg) : ""}</div>`;
-    html += `<div class="actions"><button class="btn btn-primary" id="build-save">Save packs</button></div></div>`;
+    html += `<div class="actions"><button class="btn btn-primary" id="build-save" data-track-exposure="build_save_packs" data-exposure-label="Save packs">Save packs</button></div></div>`;
     return html;
   }
 
@@ -5718,15 +5904,15 @@
         ${shortcuts.map(id => `<button type="button" class="stock-shortcut" data-id="${id}">${esc(itemName(id))}</button>`).join("")}
       </div>
       <label>Item</label>
-      <select id="stock-item">
+      <select id="stock-item" data-track-exposure="stock_item_selector" data-exposure-label="Item">
         ${itemOptions(form.stockItem, packCtx, { showBalance: true })}
       </select>
       <label>Physical count</label>
-      <input type="number" id="stock-count" min="0" value="${esc(String(form.stockCount ?? ""))}" placeholder="What you counted on the shelf">
+      <input type="number" id="stock-count" data-track-exposure="stock_count_input" data-exposure-label="Physical count" min="0" value="${esc(String(form.stockCount ?? ""))}" placeholder="What you counted on the shelf">
       <label>Reason (optional)</label>
       <input type="text" id="stock-reason" value="${esc(form.stockReason || "")}" placeholder="e.g. counting correction">
       ${errorMsg ? `<div class="error">${esc(errorMsg)}</div>` : ""}
-      <div class="actions"><button class="btn btn-primary" id="stock-save">Save Count</button></div>
+      <div class="actions"><button class="btn btn-primary" id="stock-save" data-track-exposure="stock_save_correction" data-exposure-label="Save Count">Save Count</button></div>
       ${renderFooter()}`;
     return html;
   }
@@ -6331,6 +6517,7 @@
   document.addEventListener("click", function(e) {
     const target = e.target.closest("button, summary, a, input, select, textarea");
     if (!target) return;
+    analyticsExposureOnClick(target);
     analyticsClearHoverTimer(target);
     analyticsRecordClickBurst(target);
     analyticsTrack("click", { target: analyticsElementMeta(target) });

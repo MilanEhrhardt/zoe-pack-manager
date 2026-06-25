@@ -102,6 +102,10 @@ See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 **Phase 3C.1 (shipped):** Polish patch — unique donation memory IDs (`donationId`), deduped evidence arrays, config-fact confidence floor for Baby Pack unconfirmed, cautious Deo optional copy on early evidence.
 
+### Exposure Tracking (v1 — analytics only)
+
+**Exposure Tracking v1 (shipped):** `IntersectionObserver` per-control `ui_exposure` events for high-value volunteer controls (home verbs, pack creation, stock count). Minimum 750ms visible dwell before logging. Events flush when a control leaves the viewport, the screen changes, or the control is clicked (`clicked: true` / `false`). Analytics summary includes `ignoredVisibleControls` (production sessions default), `productionIgnoredVisibleControls`, and `testerIgnoredVisibleControls` — each row reports exposures, ignored count, ignored rate, and average visible ms. Admin backup/export/import tracked only when actually visible inside opened **Need something else?** on home, not from footer admin on other screens. Legacy batch exposure snapshots retained. **Janet sees nothing new.**
+
 See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 ## Design Principles
@@ -146,7 +150,13 @@ See [`docs/DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md) for the full design cont
 
 ## Analytics Strategy
 
-<!-- TODO: Add analytics strategy -->
+Local-first analytics in the browser: screen flow, form friction, errors, scroll depth, and export-only intelligence layers in the AI Data Pack. Volunteers are never shown analytics UI beyond discreet admin export behind **Need something else?**
+
+**Exposure Tracking v1:** High-value controls carry `data-track-exposure` attributes. `IntersectionObserver` logs per-control `ui_exposure` events when a control is visible for at least 750ms, then leaves the viewport, the screen changes, or the control is clicked. Export summary `ignoredVisibleControls` surfaces controls that were seen but not clicked (production sessions by default; tester sessions in a separate array). Admin utilities are tracked only when visible inside the opened **Need something else?** area — not from footer admin on donation/deliver/stock screens. Coexists with legacy batch exposure snapshots.
+
+**Tester separation:** Milan packer sessions tagged `isTesterSession`; raw events retained; production-default summaries for volunteer usability analysis.
+
+See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md) and [`docs/AI_CONTEXT.md`](AI_CONTEXT.md).
 
 ## AI Roadmap
 
