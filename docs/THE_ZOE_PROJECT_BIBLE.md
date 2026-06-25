@@ -72,9 +72,13 @@ Matching, care, dignity, and thoughtful packing are part of the product philosop
 
 Say “20 mothers now have packs ready,” not “20 transactions saved.” Hide database concepts (transactions, sessions, records, inventory adjustments, analytics, schemas) from volunteer-facing experience.
 
-### Confidence Meter (future)
+### Confidence Meter (Phase 1 — export only)
 
-Build toward a simple **Confidence Meter** — a signal of how reliable stock feels on the shelf. Direction only; not yet implemented.
+**Increment A (shipped):** A deterministic **item-level confidence** read-model computes trust scores from recount recency, movements since last count, donations, pack deductions (via `computeBuildStockPlan`), substitutions/omissions, and recipe role. Exported in AI Data Pack as `itemConfidence` with split `volunteerConfidence` / `allMovementsConfidence`. Analytics summary includes `confidenceSummary`. Janet sees nothing new yet.
+
+**Increment B (deferred):** Calm human phrase on Stock view when an item is selected — no scores, no blocking.
+
+See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 ## Design Principles
 

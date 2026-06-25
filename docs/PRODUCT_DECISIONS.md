@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Item-level confidence (Increment A, export only)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Deterministic per-item confidence in export and analytics summary only; no volunteer UI in Increment A |
+| **Date** | 2026-06-25 |
+| **Context** | Janet's core problem is trust in stock numbers, not arithmetic. DESIGN_PRINCIPLES and THE_ZOE_PROJECT_BIBLE call for a future Confidence Meter. SPE Phase 1 needs belief-state signals without volunteer-facing dashboards. |
+| **Decision** | Add read-only `computeAllItemConfidence()` derived from transactions + item/recipe metadata. Each item gets `confidenceScore` (0–100), `confidenceBand`, `confidenceReason`, `recommendedAction`, and `volunteerLabel`. Export includes `volunteerConfidence` (excludes Milan tester builds) and `allMovementsConfidence`. Analytics summary includes `confidenceSummary`. Sample data caps volunteer scores at 79. No localStorage schema change. No UI on Home, Pack Creation, or Stock view yet. |
+| **Reasoning** | Smallest safe foundation for SPE and ops analysis without changing stock math or alarming Janet. Split views keep tester pack deductions out of production confidence. |
+| **Alternatives Considered** | **Recency-only labels** — rejected as too coarse. **Volunteer UI in Phase 1** — rejected; Increment B deferred until field validation. **Persisted belief state** — rejected; schema migration risk. |
+| **Status** | Accepted |
+
 ### Milan tester analytics separation
 
 | Field | Content |

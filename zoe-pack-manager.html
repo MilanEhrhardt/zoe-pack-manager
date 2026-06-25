@@ -945,7 +945,7 @@
   const analyticsHoverLogged = new Set();
   let analyticsScrollState = { view: "", startedAt: 0, maxPct: 0, lastPct: 0, lastAt: 0, timer: null };
 
-  let analyticsSessionUser = state.lastSelectedPacker || "";
+  let analyticsSessionUser = "";
 
   function isTesterUser(userName) {
     return String(userName || "").trim().toLowerCase() === "milan";
@@ -1640,16 +1640,15 @@
     const bySession = {};
     events.forEach(e => {
       const sid = e.sessionId || "unknown";
-      if (!bySession[sid]) bySession[sid] = { sessionUser: "", isTester: false, eventCount: 0 };
+      if (!bySession[sid]) bySession[sid] = { sessionUser: "", eventCount: 0 };
       bySession[sid].eventCount += 1;
-      if (e.sessionUser && !bySession[sid].sessionUser) bySession[sid].sessionUser = e.sessionUser;
-      if (e.isTesterSession) bySession[sid].isTester = true;
+      if (e.sessionUser) bySession[sid].sessionUser = e.sessionUser;
     });
     let productionVolunteerSessions = 0;
     let testerSessions = 0;
     let unknownSessions = 0;
     Object.values(bySession).forEach(s => {
-      if (s.isTester || isTesterUser(s.sessionUser)) testerSessions += 1;
+      if (isTesterUser(s.sessionUser)) testerSessions += 1;
       else if (s.sessionUser) productionVolunteerSessions += 1;
       else unknownSessions += 1;
     });
@@ -1772,6 +1771,8 @@
     ].sort((a, b) => b.score - a.score).slice(0, 25);
 
     const sessionBreakdown = analyticsClassifySessions(events);
+    const itemConfidence = computeAllItemConfidence();
+    const confidenceSummary = buildConfidenceSummary(itemConfidence);
 
     return {
       generatedAt: new Date().toISOString(),
@@ -1803,6 +1804,7 @@
       alwaysUsedOptions,
       confusionHotspots,
       operationalSnapshot: analyticsOperationalSnapshot(),
+      confidenceSummary,
       ...sessionBreakdown,
     };
   }
@@ -1842,6 +1844,7 @@
     analyticsTrack("analytics_export_requested", { format: "ai_data_pack" });
     analyticsTrack("ai_data_pack_export_requested", { format: "ai_data_pack" });
     const userCtx = analyticsUserFields();
+    const itemConfidence = computeAllItemConfidence();
     const payload = {
       exportedAt: new Date().toISOString(),
       app: "Zoe Pack Manager",
@@ -1855,6 +1858,12 @@
         sessionUser: userCtx.sessionUser,
         isTesterSession: userCtx.isTesterSession,
       },
+      ...(state.sampleData ? {
+        dataQuality: {
+          synthetic: true,
+          note: "Sample data — not from a real stock take. Volunteer confidence scores capped at probably_right.",
+        },
+      } : {}),
       config: { packers: PACKERS, clinics: CLINICS, items: ITEMS, recipes: RECIPES, completeUnitItems: COMPLETE_UNIT_ITEMS },
       state: {
         balances: state.balances,
@@ -1862,6 +1871,7 @@
         donors: state.donors,
         transactions: state.transactions,
       },
+      itemConfidence,
       analytics: state.analytics,
       summary: analyticsDerivedSummary(),
     };
@@ -2042,6 +2052,330 @@
     finishTransaction({
       id: uid(), type: "recount", date: date || todayISO(), itemId, oldQty, newQty, reason: reason || "",
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ITEM CONFIDENCE — read-only estimate trust model (export / ops)
+  // ═══════════════════════════════════════════════════════════════════
+
+  function confidenceDaysSince(isoDate) {
+    if (!isoDate) return Infinity;
+    const a = new Date(isoDate + "T12:00:00");
+    const b = new Date(todayISO() + "T12:00:00");
+    return Math.floor((b - a) / 86400000);
+  }
+
+  function confidenceClamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function itemRecipeMeta(itemId) {
+    let isCoreMom = false;
+    let isCoreBaby = false;
+    let isOptionalDecrement = false;
+    for (const packKey of ["momPack", "babyPack"]) {
+      const recipe = RECIPES[packKey];
+      if (recipe.core.some(c => c.itemId === itemId)) {
+        if (packKey === "momPack") isCoreMom = true;
+        else isCoreBaby = true;
+      }
+      for (const opt of recipe.optional) {
+        if (opt.itemId === itemId && opt.decrement) isOptionalDecrement = true;
+      }
+    }
+    return { isCoreMom, isCoreBaby, isCore: isCoreMom || isCoreBaby, isOptionalDecrement };
+  }
+
+  function emptyItemActivityStats() {
+    return {
+      lastRecountDate: null,
+      lastRecountNewQty: null,
+      hasEverBeenRecounted: false,
+      lastRecountVariance: 0,
+      lastRecountVariancePct: 0,
+      donationLineCount: 0,
+      packDeductions: 0,
+      buildTouchCount: 0,
+      volunteerBuildTouches: 0,
+      testerBuildTouches: 0,
+      substitutionTouches: 0,
+      omissionTouches: 0,
+      totalMovements: 0,
+    };
+  }
+
+  function confidenceTxAfterAnchor(txDate, anchorDate) {
+    if (!anchorDate) return true;
+    return txDate > anchorDate;
+  }
+
+  function buildItemActivityStatsIndex(transactions, { excludeTesterBuilds = false } = {}) {
+    const index = {};
+    const ensure = id => {
+      if (!index[id]) index[id] = emptyItemActivityStats();
+      return index[id];
+    };
+
+    ITEMS.forEach(i => ensure(i.id));
+
+    (transactions || []).forEach(tx => {
+      if (tx.type === "recount" && tx.itemId) {
+        const s = ensure(tx.itemId);
+        if (!s.lastRecountDate || tx.date >= s.lastRecountDate) {
+          const oldQty = Number(tx.oldQty) || 0;
+          const newQty = Number(tx.newQty) || 0;
+          const variance = Math.abs(newQty - oldQty);
+          s.lastRecountDate = tx.date;
+          s.lastRecountNewQty = newQty;
+          s.hasEverBeenRecounted = true;
+          s.lastRecountVariance = variance;
+          s.lastRecountVariancePct = variance / Math.max(oldQty, newQty, 1);
+        }
+      }
+    });
+
+    (transactions || []).forEach(tx => {
+      if (tx.type === "undo") return;
+      if (tx.type === "donation") {
+        for (const line of tx.lines || []) {
+          if (!line.itemId) continue;
+          const s = ensure(line.itemId);
+          if (!confidenceTxAfterAnchor(tx.date, s.lastRecountDate)) continue;
+          s.donationLineCount += 1;
+          s.totalMovements += 1;
+        }
+        return;
+      }
+      if (tx.type === "build") {
+        const isTester = isTesterUser(tx.packer);
+        if (excludeTesterBuilds && isTester) return;
+        const { usage } = computeBuildStockPlan(
+          tx.packKey, tx.qty, tx.optionalIncluded || [], tx.customExtras || [],
+          tx.substitutions || [], tx.omissions || []
+        );
+        const touched = new Set();
+        for (const [itemId, deduct] of Object.entries(usage)) {
+          if (deduct <= 0) continue;
+          const s = ensure(itemId);
+          if (!confidenceTxAfterAnchor(tx.date, s.lastRecountDate)) continue;
+          s.packDeductions += deduct;
+          if (!touched.has(itemId)) {
+            s.buildTouchCount += 1;
+            touched.add(itemId);
+            s.totalMovements += 1;
+          }
+          if (isTester) s.testerBuildTouches += 1;
+          else s.volunteerBuildTouches += 1;
+        }
+        for (const sub of tx.substitutions || []) {
+          [sub.insteadOf, sub.substitute].forEach(itemId => {
+            if (!itemId) return;
+            const s = ensure(itemId);
+            if (!confidenceTxAfterAnchor(tx.date, s.lastRecountDate)) return;
+            s.substitutionTouches += 1;
+          });
+        }
+        for (const omit of tx.omissions || []) {
+          if (!omit.itemId) continue;
+          const s = ensure(omit.itemId);
+          if (!confidenceTxAfterAnchor(tx.date, s.lastRecountDate)) continue;
+          s.omissionTouches += 1;
+        }
+      }
+    });
+
+    return index;
+  }
+
+  function deriveItemActivityStats(itemId, statsIndex) {
+    return statsIndex[itemId] ? { ...statsIndex[itemId] } : emptyItemActivityStats();
+  }
+
+  function confidenceBand(score) {
+    if (score >= 80) return "trusted";
+    if (score >= 60) return "probably_right";
+    if (score >= 40) return "uncertain";
+    return "needs_checking";
+  }
+
+  function confidenceVolunteerLabel(band) {
+    if (band === "trusted") return "Trusted";
+    if (band === "probably_right") return "Probably right";
+    if (band === "uncertain") return "May need checking";
+    return "Worth counting soon";
+  }
+
+  function confidenceReason(item, stats) {
+    const days = confidenceDaysSince(stats.lastRecountDate);
+    const meta = itemRecipeMeta(item.id);
+    if (stats.hasEverBeenRecounted && days <= 7 && stats.lastRecountVariance <= 2) {
+      return "Counted recently.";
+    }
+    if (stats.hasEverBeenRecounted && days <= 14 && (stats.lastRecountVariancePct > 0.2 || stats.lastRecountVariance > 10)) {
+      return "Last count didn't match what we expected.";
+    }
+    if (!stats.hasEverBeenRecounted) {
+      return "Not physically checked in this system yet.";
+    }
+    if (days > 90) {
+      return "Not physically checked for a while.";
+    }
+    if (stats.totalMovements > 25) {
+      return "Many pack movements since last count.";
+    }
+    if (stats.donationLineCount >= 3) {
+      return "Several donations since last count.";
+    }
+    if (stats.substitutionTouches + stats.omissionTouches >= 2) {
+      return "Often swapped or left out when packing.";
+    }
+    if (meta.isCoreMom) return "Important for Mom Packs.";
+    if (meta.isCoreBaby) return "Important for Baby Packs.";
+    if (getBalance(item.id) === 0 && !stats.hasEverBeenRecounted) {
+      return "Showing zero — worth confirming on the shelf.";
+    }
+    return "Based on recent storeroom activity.";
+  }
+
+  function confidenceRecommendedAction(item, stats, band) {
+    const meta = itemRecipeMeta(item.id);
+    const packLabel = meta.isCoreMom ? "Mom" : meta.isCoreBaby ? "Baby" : "";
+    if (band === "trusted") return "No action needed.";
+    if (band === "probably_right") return "Check this when convenient.";
+    if (band === "uncertain") {
+      return meta.isCore && packLabel
+        ? `Worth counting before packing more ${packLabel} Packs.`
+        : "Worth counting soon.";
+    }
+    return meta.isCore && packLabel
+      ? `Count this before packing more ${packLabel} Packs.`
+      : "Count this when you can.";
+  }
+
+  function computeItemConfidence(item, balance, stats, allStats, opts = {}) {
+    let score = 70;
+    const days = confidenceDaysSince(stats.lastRecountDate);
+    const meta = itemRecipeMeta(item.id);
+
+    if (stats.hasEverBeenRecounted) {
+      if (days <= 7) score += 25;
+      else if (days <= 30) score += 15;
+      else if (days <= 90) score += 0;
+      else if (days <= 180) score -= 15;
+      else score -= 25;
+    } else {
+      score -= 25;
+    }
+
+    if (!stats.hasEverBeenRecounted) score -= 15;
+
+    if (stats.hasEverBeenRecounted && days <= 14) {
+      if (stats.lastRecountVariance <= 2) score += 10;
+      else if (stats.lastRecountVariancePct > 0.2 || stats.lastRecountVariance > 10) score -= 10;
+    }
+
+    const movements = stats.totalMovements;
+    if (movements <= 2) score += 10;
+    else if (movements <= 10) score += 5;
+    else if (movements <= 25) score -= 5;
+    else if (movements <= 50) score -= 15;
+    else score -= 25;
+
+    score -= Math.min(stats.donationLineCount, 10);
+    score -= Math.min((stats.substitutionTouches + stats.omissionTouches) * 3, 15);
+
+    if (meta.isCore && (!stats.hasEverBeenRecounted || days > 60)) score -= 10;
+    if (item.fastCount) score += 5;
+    if (isOutOfSeason(item)) score -= 5;
+
+    if (balance === 0) {
+      if (stats.hasEverBeenRecounted && days <= 30 && stats.lastRecountNewQty === 0) score += 5;
+      else if (!stats.hasEverBeenRecounted) score -= 10;
+    }
+
+    if (opts.volunteerView && allStats.buildTouchCount > 0 && allStats.volunteerBuildTouches === 0) {
+      score = Math.min(score, 55);
+    }
+
+    score = confidenceClamp(Math.round(score), 0, 100);
+
+    if (opts.volunteerView && opts.sampleData) {
+      score = Math.min(score, 79);
+    }
+
+    const band = confidenceBand(score);
+    return {
+      confidenceScore: score,
+      confidenceBand: band,
+      confidenceReason: confidenceReason(item, stats),
+      recommendedAction: confidenceRecommendedAction(item, stats, band),
+      volunteerLabel: confidenceVolunteerLabel(band),
+      stats: {
+        lastRecountDate: stats.lastRecountDate,
+        hasEverBeenRecounted: stats.hasEverBeenRecounted,
+        daysSinceRecount: Number.isFinite(days) ? days : null,
+        totalMovements: stats.totalMovements,
+        donationLineCount: stats.donationLineCount,
+        buildTouchCount: stats.buildTouchCount,
+        substitutionTouches: stats.substitutionTouches,
+        omissionTouches: stats.omissionTouches,
+        isCore: meta.isCore,
+        isFastCount: !!item.fastCount,
+        isSeasonal: !!item.seasonal,
+        isOutOfSeason: isOutOfSeason(item),
+      },
+    };
+  }
+
+  function computeAllItemConfidence() {
+    const txs = state.transactions || [];
+    const volunteerIndex = buildItemActivityStatsIndex(txs, { excludeTesterBuilds: true });
+    const allIndex = buildItemActivityStatsIndex(txs, { excludeTesterBuilds: false });
+    const sampleData = !!state.sampleData;
+    return ITEMS.map(item => {
+      const balance = getBalance(item.id);
+      const vStats = deriveItemActivityStats(item.id, volunteerIndex);
+      const aStats = deriveItemActivityStats(item.id, allIndex);
+      return {
+        itemId: item.id,
+        itemName: item.name,
+        balance,
+        volunteerConfidence: computeItemConfidence(item, balance, vStats, aStats, { volunteerView: true, sampleData }),
+        allMovementsConfidence: computeItemConfidence(item, balance, aStats, aStats, { volunteerView: false, sampleData: false }),
+      };
+    });
+  }
+
+  function buildConfidenceSummary(itemConfidence) {
+    const bands = { trusted: 0, probably_right: 0, uncertain: 0, needs_checking: 0 };
+    const ranked = itemConfidence.map(row => {
+      const c = row.volunteerConfidence;
+      bands[c.confidenceBand] = (bands[c.confidenceBand] || 0) + 1;
+      return { itemId: row.itemId, itemName: row.itemName, score: c.confidenceScore, band: c.confidenceBand };
+    });
+    ranked.sort((a, b) => a.score - b.score);
+    const allBands = { trusted: 0, probably_right: 0, uncertain: 0, needs_checking: 0 };
+    itemConfidence.forEach(row => {
+      const b = row.allMovementsConfidence.confidenceBand;
+      allBands[b] = (allBands[b] || 0) + 1;
+    });
+    return {
+      volunteer: {
+        trusted: bands.trusted,
+        probably_right: bands.probably_right,
+        uncertain: bands.uncertain,
+        needs_checking: bands.needs_checking,
+        lowConfidenceCount: bands.uncertain + bands.needs_checking,
+      },
+      lowestVolunteer: ranked.slice(0, 10),
+      itemsNeedingCheck: ranked
+        .filter(r => r.band === "needs_checking" && itemRecipeMeta(r.itemId).isCore)
+        .slice(0, 10),
+      allMovements: {
+        ...allBands,
+        lowConfidenceCount: allBands.uncertain + allBands.needs_checking,
+      },
+    };
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -2418,6 +2752,7 @@
   function renderBuild() {
     if (!form.packKey) form.packKey = getPackContext();
     if (!form.packer) form.packer = state.lastSelectedPacker || PACKERS[0];
+    if (!analyticsSessionUser && form.packer) setSelectedPacker(form.packer);
     if (!form.destination) form.destination = CLINICS[0];
     if (!form.qty) form.qty = "";
     if (!form.optional) {
@@ -2624,7 +2959,8 @@
         if (view === "build") {
           form.packKey = getPackContext();
           initOptionalDefaults(form.packKey);
-          if (state.lastSelectedPacker) form.packer = state.lastSelectedPacker;
+          form.packer = state.lastSelectedPacker || PACKERS[0];
+          if (!analyticsSessionUser) setSelectedPacker(form.packer);
         }
         render();
       };
