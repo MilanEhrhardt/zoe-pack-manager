@@ -13,6 +13,7 @@ Single-file offline app: open `zoe-pack-manager.html` in a browser. No install o
 | `docs/CURSOR_RULES.md` | Extended safe-change guidelines for AI agents |
 | `docs/THE_ZOE_PROJECT_BIBLE.md` | Long-term product reference (table of contents) |
 | `docs/DESIGN_PRINCIPLES.md` | Design and UX principles |
+| `docs/DESIGN_REVIEW_CHECKLIST.md` | Pre-ship UI review gate |
 | `docs/USER_RESEARCH.md` | Interviews, testing, insights |
 | `docs/CHANGELOG.md` | Shipped changes (newest first) |
 

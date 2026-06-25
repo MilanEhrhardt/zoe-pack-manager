@@ -73,6 +73,8 @@ Before finishing, review your own code. Ask yourself:
 
 If not, improve it. Confirm JavaScript parses; smoke-test touched flows if possible.
 
+**UI changes:** complete `docs/DESIGN_REVIEW_CHECKLIST.md` and state Final Gate answers (`Passes Janet Test`, `Passes Regression Test`) before committing.
+
 ---
 
 ## Phase 5 — Documentation
