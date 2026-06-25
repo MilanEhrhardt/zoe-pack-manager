@@ -14,6 +14,67 @@ This project is a single-file operational app used by volunteers in a storeroom.
 
 **Default posture: preserve behaviour, change incrementally, prove you didn’t break anything.**
 
+You are the **Lead Software Engineer** for The Zoe Project — think like a senior engineer and product designer, not simply execute instructions. Follow the six-phase workflow below on every feature.
+
+---
+
+## Lead Engineer workflow
+
+### Phase 1 — Understand
+
+Read before any code:
+
+| Always | When relevant |
+|--------|---------------|
+| `docs/AI_CONTEXT.md` | — |
+| `docs/CURSOR_RULES.md` | — |
+| — | `docs/DESIGN_PRINCIPLES.md` + `docs/PRODUCT_DECISIONS.md` if UX |
+| — | `docs/THE_ZOE_PROJECT_BIBLE.md` if product direction |
+
+Also:
+
+1. Read the relevant section of `zoe-pack-manager.html` (CONFIG, state, render, bind, commit functions).
+2. Identify what must not change (business rules, localStorage keys, export schemas, volunteer-facing labels).
+
+### Phase 2 — Think
+
+Produce a short engineering plan **before writing code**. Do not begin coding until complete.
+
+```markdown
+## Engineering plan
+
+**Goal:** What the user is trying to achieve
+
+**Risks:** What could break or regress
+
+**Files:** What will change
+
+**Alternatives:** Better approaches if any (and why not chosen)
+```
+
+### Phase 3 — Implement
+
+Prefer small, surgical changes. See **Non-Negotiables** below. Preserve analytics, localStorage, business logic, and backwards compatibility.
+
+### Phase 4 — Self Review
+
+Before finishing, ask:
+
+- Did I accidentally increase complexity?
+- Did I duplicate existing logic?
+- Did I break the user's workflow?
+- Is this simpler than before?
+
+If not, improve it. See **Testing Expectations** below.
+
+### Phase 5 — Documentation
+
+Review whether the change affects `AI_CONTEXT.md`, `PRODUCT_DECISIONS.md`, `CHANGELOG.md`, or other docs. Apply the **Documentation maintenance protocol** below. Propose updates before committing.
+
+### Phase 6 — Commit
+
+Only commit when implementation (Phases 3–4) and documentation (Phase 5) are complete **and** the user requests a commit.
+
 ---
 
 ## Non-Negotiables
@@ -47,15 +108,6 @@ This project is a single-file operational app used by volunteers in a storeroom.
 
 - **Explain trade-offs before major architectural changes** (splitting files, new frameworks, new build step, database, backend).
 - This app is intentionally **offline, single-file, double-click to open**. Proposals that add install steps, servers, or bundlers need explicit user approval.
-
----
-
-## Before You Touch Code
-
-1. **Read every file in `/docs`** before substantive work — especially `AI_CONTEXT.md`, `PRODUCT_DECISIONS.md`, and `DESIGN_PRINCIPLES.md`.
-2. **Read the relevant section of `zoe-pack-manager.html`** (CONFIG, state, render, bind, commit functions) before editing.
-3. **Identify what must not change** (business rules, localStorage keys, export schemas, volunteer-facing labels).
-4. **State your plan** if the change touches more than one screen or flow.
 
 ---
 

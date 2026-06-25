@@ -169,6 +169,7 @@ None. Stabilisation phase — no active UX experiments on the canonical build.
 | Reject “Today's Changes” build | **Rejected** — broke quick optional-item toggles |
 | Canonical app = analytics rollback add-items build | **Accepted** — `zoe-pack-manager.html` |
 | Documentation-first AI workflow | **Accepted** — read this file before coding |
+| Lead Engineer six-phase workflow | **Accepted** — see `.cursor/rules.md` |
 | Redesign before stable packing proven | **Deferred** |
 
 Full decision log: `docs/PRODUCT_DECISIONS.md` (to be populated).
@@ -177,4 +178,4 @@ Full decision log: `docs/PRODUCT_DECISIONS.md` (to be populated).
 
 ## Documentation maintenance
 
-At the end of every implementation session, review all code changes and update affected docs before finishing. See `.cursor/rules.md` and `docs/CURSOR_RULES.md` for the mandatory checklist and change → document matrix. The repository is the single source of truth.
+Every implementation session follows the **six-phase Lead Engineer workflow** (`.cursor/rules.md`): Understand → Think → Implement → Self Review → Documentation → Commit. Phase 5 requires reviewing all code changes and updating affected docs before finishing. See `docs/CURSOR_RULES.md` for the change → document matrix. The repository is the single source of truth.

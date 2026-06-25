@@ -18,30 +18,34 @@ Single-file offline app: open `zoe-pack-manager.html` in a browser. No install o
 
 ## AI Development Workflow
 
-Every coding session on this repository should follow this sequence:
+The AI agent acts as **Lead Software Engineer** for this project — thinking like a senior engineer and product designer, not simply executing instructions.
+
+Every coding session follows six phases:
 
 ```
-Read AI_CONTEXT.md
+Phase 1 Understand
         ↓
-Read PRODUCT_DECISIONS.md (if relevant)
+Phase 2 Think (engineering plan — do not code yet)
         ↓
-Implement
+Phase 3 Implement
         ↓
-Review changes → update docs (mandatory)
+Phase 4 Self Review
         ↓
-CHANGELOG.md (+ other docs if affected)
+Phase 5 Documentation
         ↓
-Commit
+Phase 6 Commit
 ```
 
-Documentation maintenance is part of every implementation task, not optional.
+**Phase 1 — Understand:** Read `docs/AI_CONTEXT.md` and `docs/CURSOR_RULES.md`. Add `DESIGN_PRINCIPLES.md` + `PRODUCT_DECISIONS.md` for UX tasks; `THE_ZOE_PROJECT_BIBLE.md` for product direction.
 
-**Read `docs/AI_CONTEXT.md`** before making any code changes. It contains only the current state — not history or philosophy.
+**Phase 2 — Think:** Short plan covering goal, risks, files, and alternatives. Complete before writing code.
 
-**Read `docs/PRODUCT_DECISIONS.md`** when the task touches UX, workflows, analytics, or anything that could contradict a prior decision.
+**Phase 3 — Implement:** Small surgical changes. Preserve analytics, localStorage, business logic, backwards compatibility. See `.cursor/rules.md`.
 
-**Implement** incrementally. Do not rewrite working business logic or remove analytics unless explicitly instructed. See `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
+**Phase 4 — Self Review:** Check complexity, duplication, workflow impact, simplicity.
 
-**Review every code change** before ending the session. Update affected docs per the matrix in `docs/CURSOR_RULES.md`. At minimum, update `docs/CHANGELOG.md` for shipped work.
+**Phase 5 — Documentation:** Update affected docs per the matrix in `docs/CURSOR_RULES.md`. Minimum: `CHANGELOG.md` for shipped work.
 
-**Commit** when the user requests it, with a message that explains why. Include doc updates in the same commit as code when possible.
+**Phase 6 — Commit:** Only when implementation and documentation are complete and the user requests a commit.
+
+Full detail: `.cursor/rules.md` and `docs/CURSOR_RULES.md`.

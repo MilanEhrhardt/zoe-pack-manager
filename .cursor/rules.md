@@ -1,60 +1,112 @@
 # Zoe Pack Manager — Cursor Rules
 
+You are the **Lead Software Engineer** for The Zoe Project. Think like a senior engineer and product designer — not simply execute instructions.
+
 Read this file at the start of every coding session. For fuller guidance, see `docs/CURSOR_RULES.md`.
 
 ---
 
-## Before any code changes
+## Phase 1 — Understand
 
-1. **Always read `docs/AI_CONTEXT.md`** — it holds the current state of the project.
-2. **Consult `docs/PRODUCT_DECISIONS.md`** before changing UX, workflows, or behaviour volunteers rely on.
-3. Skim other `/docs` files when the task touches research, design, or long-term vision.
+Before implementing any feature, read:
 
----
+- `docs/AI_CONTEXT.md` (always)
+- `docs/CURSOR_RULES.md` (always)
 
-## Non-negotiable engineering rules
+If the task affects UX:
 
-- **Never rewrite working business logic** unless explicitly instructed.
-- **Never remove analytics instrumentation** (event tracking, export formats, control IDs).
-- **Never simplify functionality** to achieve cleaner code.
-- **Prefer incremental changes over rewrites** — especially for `zoe-pack-manager.html`.
-- **Preserve backwards compatibility** wherever possible (saved data, volunteer habits, export consumers).
-- **Explain trade-offs before major architectural changes** (new frameworks, split files, backend, build step).
-- **Keep business logic separate from presentation** whenever possible (`render*` / `bind*` vs `commit*` / `check*`).
-- **Preserve localStorage compatibility** — do not rename storage keys or change persisted shape without a migration plan.
-- **Preserve the existing analytics schema** unless migration is explicitly requested and documented.
+- `docs/DESIGN_PRINCIPLES.md`
+- `docs/PRODUCT_DECISIONS.md`
+
+If the task affects product direction:
+
+- `docs/THE_ZOE_PROJECT_BIBLE.md`
+
+Also read the relevant section of `zoe-pack-manager.html` (CONFIG, state, render, bind, commit) and identify what must not change.
 
 ---
 
-## During implementation
+## Phase 2 — Think
 
-- Change the **smallest surface area** that satisfies the request.
-- Do not replace the entire app file unless the user provides a reference and asks for a full swap.
-- Do not remove validation, confirmation modals, undo, or admin/export paths without explicit approval.
-- If you change instrumentation or storage, update `docs/PRODUCT_DECISIONS.md` and `docs/CHANGELOG.md`.
+Before writing code, produce a **short engineering plan**. Do not begin coding until the plan is complete.
+
+Include:
+
+- What you think the user is trying to achieve
+- Possible risks
+- Files that will change
+- Better alternatives if they exist
 
 ---
 
-## Documentation maintenance (required)
+## Phase 3 — Implement
 
-**Never finish a coding session without reviewing whether documentation should be updated.** Documentation maintenance is part of every implementation task, not a separate follow-up.
+Prefer small, surgical changes. Do not rewrite large sections.
 
-Before ending the session:
+**Preserve:**
 
-1. **Review every code change** (`git diff` or equivalent).
-2. **Classify impact** — does it affect product decisions, UX, architecture, user research, current project state, or the changelog?
-3. **Update affected docs** using the matrix in `docs/CURSOR_RULES.md`.
-4. **Keep updates concise.** Never invent user research. Never overwrite historical decisions — append to `PRODUCT_DECISIONS.md` and mark old entries `Superseded` if needed.
-5. If no doc update is needed, **state briefly why** (e.g. internal comment only, no behaviour change).
-6. **Repository is the single source of truth** — do not treat chat history as canonical.
+- analytics instrumentation
+- localStorage compatibility
+- business logic
+- backwards compatibility
 
-**Minimum on shipped work:** update `docs/CHANGELOG.md` (newest first).
+**Non-negotiables:**
 
-**Commit** only when the user asks; include doc updates in the same commit as code when possible.
+- Never rewrite working business logic unless explicitly instructed
+- Never remove analytics instrumentation
+- Never simplify functionality to achieve cleaner code
+- Keep business logic separate from presentation (`render*` / `bind*` vs `commit*` / `check*`)
+- Explain trade-offs before major architectural changes
+- Do not replace the entire app file unless the user explicitly asks
+- Do not remove validation, confirmation modals, undo, or admin/export without approval
+
+---
+
+## Phase 4 — Self Review
+
+Before finishing, review your own code. Ask yourself:
+
+- Did I accidentally increase complexity?
+- Did I duplicate existing logic?
+- Did I break the user's workflow?
+- Is this simpler than before?
+
+If not, improve it. Confirm JavaScript parses; smoke-test touched flows if possible.
+
+---
+
+## Phase 5 — Documentation
+
+Review whether the implementation changes:
+
+- `docs/AI_CONTEXT.md`
+- `docs/PRODUCT_DECISIONS.md`
+- `docs/CHANGELOG.md`
+
+(and other docs per the matrix in `docs/CURSOR_RULES.md`)
+
+**Never finish a session without asking: should docs be updated?**
+
+- Review every code change; classify impact; update affected docs
+- Keep updates concise; never invent user research; never overwrite historical decisions
+- Minimum on shipped work: update `CHANGELOG.md` (newest first)
+- Propose documentation updates before committing
+
+---
+
+## Phase 6 — Commit
+
+Only commit when:
+
+1. Implementation is complete (Phases 3–4)
+2. Documentation is complete (Phase 5)
+3. The user requests a commit
+
+Include doc updates in the same commit as code when possible. Commit messages should explain **why**.
 
 ---
 
 ## App constraints (do not break)
 
 - Single-file, offline, double-click-to-open HTML app.
-- No install step, no server, no bundler — unless the user explicitly approves a architecture change.
+- No install step, no server, no bundler — unless the user explicitly approves an architecture change.
