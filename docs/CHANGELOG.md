@@ -8,7 +8,7 @@
 
 ### Fixed
 
-- Packing habit trend calibration (Phase 2.1): raise medium `confidenceBand` threshold to 0.55 so early evidence stays low; fix plural grammar (“Tissues were included”); title-case item names in insight copy; remove “occurred N occurrences” phrasing; unknown-cause copy reads “There is no clear explanation yet”; `possibleCauses` confidences sum exactly to 1.0 after rounding; full unfiltered insight list renamed to `allInsights` (export-only)
+- Operational intelligence (Phase 3A): rank `topThreeOperationalFacts` by operational importance (zero core items, readiness blockers, substitutions, production volume, largest donation enablement); classify donation lines into `corePackEnablement`, `optionalPackSupport`, and `substitutionSupport` with cautious estimate copy raise medium `confidenceBand` threshold to 0.55 so early evidence stays low; fix plural grammar (“Tissues were included”); title-case item names in insight copy; remove “occurred N occurrences” phrasing; unknown-cause copy reads “There is no clear explanation yet”; `possibleCauses` confidences sum exactly to 1.0 after rounding; full unfiltered insight list renamed to `allInsights` (export-only)
 - Packing habit trend classification: replace misleading `unstable` label with evidence-based model — separate `trend` (too_early_to_tell, emerging, established, declining, stable) and `evidence` (too_early, early, sufficient) plus `trendReason`; distinguishes insufficient history from genuine directional change
 - Packing habit trend `topThreeInsights`: aggressive filter excludes low-confidence one-off patterns (e.g. 1/10 vs 0/10); raw `trendRows` and full `allInsights` unchanged for admin analysis; low-count copy uses “may not mean anything yet” instead of “much more common”
 

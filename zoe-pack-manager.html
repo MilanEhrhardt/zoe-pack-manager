@@ -3306,6 +3306,89 @@
     return Math.floor(units / core.qty);
   }
 
+  function opSubstitutePackKeysForItem(itemId, transactions) {
+    const packKeys = new Set();
+    opSplitBuilds(transactions).production.forEach(tx => {
+      normalizeSubstitutions(tx.substitutions || []).forEach(sub => {
+        if (sub.substitute === itemId) packKeys.add(tx.packKey);
+      });
+    });
+    return [...packKeys];
+  }
+
+  function opAvgSubstituteQtyPerPack(itemId, packKey, transactions) {
+    let totalUnits = 0;
+    let totalPacks = 0;
+    opSplitBuilds(transactions).production.forEach(tx => {
+      if (tx.packKey !== packKey) return;
+      normalizeSubstitutions(tx.substitutions || []).forEach(sub => {
+        if (sub.substitute !== itemId) return;
+        totalPacks += sub.packCount;
+        totalUnits += sub.packCount * sub.qtyPerPack;
+      });
+    });
+    if (totalPacks <= 0) return 1;
+    return Math.max(1, Math.round((totalUnits / totalPacks) * 100) / 100);
+  }
+
+  function opDonationLineRoleEstimates(itemId, unitsAdded, transactions) {
+    const name = itemName(itemId);
+    const roles = opRecipeRolesForItem(itemId);
+    const corePackEnablement = {};
+    const optionalPackSupport = {};
+    const substitutionSupport = {};
+    const subPackKeys = opSubstitutePackKeysForItem(itemId, transactions);
+
+    roles.filter(r => r.role === "core").forEach(r => {
+      const estimatedPacks = Math.floor(unitsAdded / r.qtyPerPack);
+      if (estimatedPacks > 0) {
+        corePackEnablement[r.packKey] = {
+          estimatedPacks,
+          description: `This donation added enough ${name} for up to ${estimatedPacks} ${r.packLabel}s.`,
+        };
+      }
+    });
+
+    roles.filter(r => r.role === "optional").forEach(r => {
+      const estimatedPacks = Math.floor(unitsAdded / r.qtyPerPack);
+      if (estimatedPacks > 0) {
+        optionalPackSupport[r.packKey] = {
+          estimatedPacks,
+          description: `This donation added enough ${name} to include it in up to ${estimatedPacks} ${r.packLabel}s.`,
+        };
+      }
+    });
+
+    subPackKeys.forEach(pk => {
+      const packLabel = RECIPES[pk]?.label || pk;
+      const qtyPerPack = opAvgSubstituteQtyPerPack(itemId, pk, transactions);
+      const estimatedPacks = Math.floor(unitsAdded / qtyPerPack);
+      if (estimatedPacks > 0) {
+        substitutionSupport[pk] = {
+          estimatedPacks,
+          description: `This donation added enough ${name} to support up to ${estimatedPacks} ${packLabel}s if used as an extra or substitute.`,
+        };
+      }
+    });
+
+    return { corePackEnablement, optionalPackSupport, substitutionSupport };
+  }
+
+  function opDonationLineMaxEnablement(line) {
+    const values = [];
+    ["corePackEnablement", "optionalPackSupport", "substitutionSupport"].forEach(key => {
+      Object.values(line[key] || {}).forEach(entry => {
+        if (entry.estimatedPacks > 0) values.push(entry.estimatedPacks);
+      });
+    });
+    return values.length ? Math.max(...values) : 0;
+  }
+
+  function opDonationMaxEnablement(donation) {
+    const values = (donation.lines || []).map(opDonationLineMaxEnablement);
+    return values.length ? Math.max(...values) : 0;
+  }
+
   function opDaysBetween(dateA, dateB) {
     if (!dateA || !dateB) return Infinity;
     const a = new Date(dateA + "T12:00:00");
@@ -3609,13 +3692,16 @@
       const lines = (tx.lines || []).map(line => {
         const unitsAdded = line.unitsAdded || Number(line.qty) || 0;
         const roles = opRecipeRolesForItem(line.itemId);
+        const roleEstimates = opDonationLineRoleEstimates(line.itemId, unitsAdded, transactions);
         const estimatedByPack = {};
-        roles.filter(r => r.role === "core").forEach(r => {
-          estimatedByPack[r.packKey] = opEstimatedPacksForItem(unitsAdded, r.packKey, line.itemId);
+        Object.entries(roleEstimates.corePackEnablement).forEach(([pk, entry]) => {
+          estimatedByPack[pk] = entry.estimatedPacks;
         });
-        const enableParts = Object.entries(estimatedByPack)
-          .filter(([, n]) => n > 0)
-          .map(([pk, n]) => `up to ${n} ${RECIPES[pk]?.label || pk}s`);
+        const descriptions = [
+          ...Object.values(roleEstimates.corePackEnablement).map(e => e.description),
+          ...Object.values(roleEstimates.optionalPackSupport).map(e => e.description),
+          ...Object.values(roleEstimates.substitutionSupport).map(e => e.description),
+        ];
         return {
           itemId: line.itemId,
           itemName: itemName(line.itemId),
@@ -3624,10 +3710,13 @@
           unitsLaterConsumedAfterDonation: opUnitsConsumedAfterDate(line.itemId, tx.date, transactions),
           appearsInRecipe: roles.length > 0,
           recipeRoles: roles,
+          corePackEnablement: roleEstimates.corePackEnablement,
+          optionalPackSupport: roleEstimates.optionalPackSupport,
+          substitutionSupport: roleEstimates.substitutionSupport,
           estimatedPacksEnabledByThisLine: estimatedByPack,
-          estimateDescription: enableParts.length
-            ? `This donation added enough ${itemName(line.itemId)} for ${enableParts.join(" and ")}.`
-            : `${itemName(line.itemId)} does not appear as a core recipe item — no pack enablement estimate.`,
+          estimateDescription: descriptions.length
+            ? descriptions.join(" ")
+            : `${itemName(line.itemId)} does not appear in recipe roles — no pack enablement estimate (measurement only).`,
         };
       });
       const totalUnitsAdded = lines.reduce((s, l) => s + l.unitsAdded, 0);
@@ -3650,6 +3739,7 @@
         totalUnitsAdded,
         lines,
         estimatedPackEnablement,
+        maxEstimatedPackEnablement: opDonationMaxEnablement({ lines }),
         itemsStillOnHand,
         itemsLaterConsumed,
         impactWindow: { from: tx.date, to: dates[dates.length - 1] || tx.date },
@@ -3936,35 +4026,61 @@
   function operationalIntelligenceSummaryConcise(full) {
     if (!full) return null;
     const facts = [];
-    const readyMom = state.readyPacks?.momPack || 0;
-    const readyBaby = state.readyPacks?.babyPack || 0;
-    if (readyMom > 0) facts.push({ score: readyMom, text: `${readyMom} Mom Packs are currently ready.` });
-    if (readyBaby > 0) facts.push({ score: readyBaby, text: `${readyBaby} Baby Packs are currently ready.` });
 
     (full.stockRisk || []).filter(r => r.zeroStock && r.recipeRoles.some(role => role.role === "core")).forEach(r => {
-      facts.push({ score: 100 + r.balance, text: `${r.itemName} is currently at zero balance.` });
+      facts.push({ score: 10000, text: `${r.itemName} is currently at zero balance.` });
     });
 
-    (full.substitutionImpact || []).slice(0, 3).forEach(s => {
+    if (!full.impactReadiness?.readyForImpactJudgement) {
+      const blockers = full.impactReadiness?.blockers || [];
+      const blockerText = blockers.length ? blockers[0] : "insufficient production history";
       facts.push({
-        score: 50 + s.packsAffected,
-        text: `${s.substituteItemName} substituted for ${s.insteadOfItemName} affected ${s.packsAffected} ${s.packLabel} pack records.`,
-      });
-    });
-
-    (full.donationImpact || []).slice(0, 2).forEach(d => {
-      const parts = Object.entries(d.estimatedPackEnablement || {}).map(([pk, n]) => `${n} ${RECIPES[pk]?.label || pk}s`);
-      if (parts.length) {
-        facts.push({ score: 40 + d.totalUnitsAdded, text: `Donation on ${d.date} from ${d.donor || "unknown donor"} may have enabled up to ${parts.join(" and ")}.` });
-      }
-    });
-
-    if (full.summary?.productionPacksCreated > 0) {
-      facts.push({
-        score: 30 + full.summary.productionPacksCreated,
-        text: `${full.summary.productionPacksCreated} production packs have been recorded in total.`,
+        score: 9000,
+        text: `Impact judgement is not ready yet: ${blockerText} (measurement only).`,
       });
     }
+
+    const topSub = (full.substitutionImpact || [])[0];
+    if (topSub && topSub.packsAffected > 0) {
+      facts.push({
+        score: 8000 + topSub.packsAffected,
+        text: `${topSub.substituteItemName} substituted for ${topSub.insteadOfItemName} affected ${topSub.packsAffected} ${topSub.packLabel} pack records.`,
+      });
+    }
+
+    const productionPacks = full.summary?.productionPacksCreated || 0;
+    if (productionPacks > 0) {
+      facts.push({
+        score: 7000 + Math.min(productionPacks, 500),
+        text: `${productionPacks} production packs have been recorded in total.`,
+      });
+    }
+
+    const donationsByEnablement = [...(full.donationImpact || [])]
+      .map(d => ({ donation: d, maxEnable: d.maxEstimatedPackEnablement || opDonationMaxEnablement(d) }))
+      .filter(x => x.maxEnable > 0)
+      .sort((a, b) => b.maxEnable - a.maxEnable);
+
+    donationsByEnablement.slice(0, 2).forEach(({ donation: d, maxEnable }) => {
+      const topLine = [...(d.lines || [])].sort((a, b) => opDonationLineMaxEnablement(b) - opDonationLineMaxEnablement(a))[0];
+      let detail = `may enable up to ${maxEnable} packs (estimated, measurement only)`;
+      if (topLine) {
+        const coreDesc = Object.values(topLine.corePackEnablement || {})[0]?.description;
+        const optDesc = Object.values(topLine.optionalPackSupport || {})[0]?.description;
+        const subDesc = Object.values(topLine.substitutionSupport || {})[0]?.description;
+        const raw = coreDesc || optDesc || subDesc;
+        if (raw) detail = raw.replace(/^This donation /, "may ").replace(/\.$/, " (estimated).");
+      }
+      facts.push({
+        score: 6000 + maxEnable,
+        text: `Donation on ${d.date} from ${d.donor || "unknown donor"}: ${detail}`,
+      });
+    });
+
+    const readyMom = state.readyPacks?.momPack || 0;
+    const readyBaby = state.readyPacks?.babyPack || 0;
+    if (readyMom > 0) facts.push({ score: 1000 + readyMom, text: `${readyMom} Mom Packs are currently ready.` });
+    if (readyBaby > 0) facts.push({ score: 1000 + readyBaby, text: `${readyBaby} Baby Packs are currently ready.` });
 
     facts.sort((a, b) => b.score - a.score);
     return {
