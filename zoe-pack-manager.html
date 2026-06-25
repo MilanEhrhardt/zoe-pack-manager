@@ -1780,6 +1780,11 @@
     const operationalIntelligence = opts.operationalIntelligence
       || computeOperationalIntelligence({ itemConfidence, packingHabits: packingHabitsFull });
     const operationalIntelligenceSummary = operationalIntelligenceSummaryConcise(operationalIntelligence);
+    const beliefEngine = opts.beliefEngine || computeBeliefEngine({
+      itemConfidence, packingHabits: packingHabitsFull, operationalIntelligence,
+      synthetic: !!state.sampleData,
+    });
+    const beliefEngineSummary = beliefEngineSummaryConcise(beliefEngine);
 
     return {
       generatedAt: new Date().toISOString(),
@@ -1815,6 +1820,7 @@
       packingHabitsSummary,
       packingHabitTrends,
       operationalIntelligenceSummary,
+      beliefEngineSummary,
       ...sessionBreakdown,
     };
   }
@@ -1857,6 +1863,9 @@
     const itemConfidence = computeAllItemConfidence();
     const packingHabits = packingHabitSummary();
     const operationalIntelligence = computeOperationalIntelligence({ itemConfidence, packingHabits });
+    const beliefEngine = computeBeliefEngine({
+      itemConfidence, packingHabits, operationalIntelligence, synthetic: !!state.sampleData,
+    });
     const payload = {
       exportedAt: new Date().toISOString(),
       app: "Zoe Pack Manager",
@@ -1886,8 +1895,9 @@
       itemConfidence,
       packingHabits,
       operationalIntelligence,
+      beliefEngine,
       analytics: state.analytics,
-      summary: analyticsDerivedSummary({ itemConfidence, packingHabits, operationalIntelligence }),
+      summary: analyticsDerivedSummary({ itemConfidence, packingHabits, operationalIntelligence, beliefEngine }),
     };
     downloadTextFile(JSON.stringify(payload, null, 2), `zoe-ai-data-pack-${todayISO()}.json`, "application/json");
   }
@@ -4090,6 +4100,566 @@
       criticalRiskItemCount: full.summary?.criticalRiskItemCount || 0,
       topThreeOperationalFacts: facts.slice(0, 3).map(f => f.text),
       readyForImpactJudgement: full.impactReadiness?.readyForImpactJudgement || false,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // BELIEF ENGINE — Phase 3B framework (export / ops only)
+  // ═══════════════════════════════════════════════════════════════════
+
+  const BE_MODEL_VERSION = "3B.1";
+  const BE_BANNED_COPY = /\b(ai|algorithm|detected|recommendation|should|must|proven|guaranteed|decision|optimis[ez]ation|optimisation|change recipe)\b/gi;
+
+  function beCopySafe(text) {
+    if (!text) return "";
+    return String(text).replace(BE_BANNED_COPY, m => {
+      const lower = m.toLowerCase();
+      const map = {
+        ai: "analysis", algorithm: "pattern", detected: "observed", recommendation: "note",
+        should: "may", must: "may", proven: "supported", guaranteed: "likely", decision: "view",
+        optimization: "review", optimisation: "review", optimize: "review", optimise: "review",
+        "change recipe": "review pack contents",
+      };
+      return map[lower] || "note";
+    });
+  }
+
+  function beConfidenceBand(p) {
+    if (p < 0.25) return "very_low";
+    if (p < 0.45) return "low";
+    if (p < 0.70) return "moderate";
+    return "high";
+  }
+
+  function computeBeliefConfidence(inputs) {
+    inputs = inputs || {};
+    let p = 0.35;
+    if (inputs.multipleSources) p += 0.10;
+    if (inputs.sufficientHistory) p += 0.10;
+    if (inputs.strongItemConfidence) p += 0.08;
+    if (inputs.repeatedPattern) p += 0.10;
+    if (inputs.operationalRelevance) p += 0.07;
+    if (inputs.synthetic) p -= 0.08;
+    if (inputs.impactReadinessFalse) p -= 0.10;
+    if (inputs.earlyEvidence) p -= 0.12;
+    if (inputs.fewRecounts) p -= 0.08;
+    if (inputs.singlePackerDominance) p -= 0.06;
+    if (inputs.weakBabyPackHistory) p -= 0.05;
+    if (inputs.insufficientEvidence) p = Math.min(p, 0.25);
+    else if (inputs.earlyEvidence) p = Math.min(p, 0.55);
+    if (inputs.synthetic) p = Math.min(p, 0.65);
+    if (inputs.impactReadinessFalse) p = Math.min(p, 0.70);
+    return Math.max(0, Math.min(1, Math.round(p * 100) / 100));
+  }
+
+  function beBeliefCtx(deps) {
+    return {
+      itemConfidence: deps.itemConfidence,
+      packingHabits: deps.packingHabits,
+      operationalIntelligence: deps.operationalIntelligence,
+      synthetic: deps.synthetic != null ? deps.synthetic : !!state.sampleData,
+    };
+  }
+
+  function beImpactReady(ctx) {
+    return !!(ctx.operationalIntelligence?.impactReadiness?.readyForImpactJudgement);
+  }
+
+  function beReadinessInputs(ctx) {
+    const oi = ctx.operationalIntelligence || {};
+    const ir = oi.impactReadiness || {};
+    return {
+      synthetic: ctx.synthetic,
+      impactReadinessFalse: !ir.readyForImpactJudgement,
+      fewRecounts: (oi.summary?.recountCount ?? 0) < 5,
+      weakBabyPackHistory: (oi.summary?.productionPacksCreated ?? 0) > 0
+        && (oi.buildImpact?.byPackKey || []).find(p => p.packKey === "babyPack")?.productionPacksCreated < 10,
+      singlePackerDominance: (ir.blockers || []).some(b => /one packer dominates/i.test(b)),
+      sufficientHistory: (oi.summary?.productionPacksCreated ?? 0) >= 50,
+    };
+  }
+
+  function beResolveActionability(status, ctx, confidenceBand, beliefType) {
+    if (ctx.synthetic || !beImpactReady(ctx)) {
+      if (beliefType === "habit" && ["likely_emerging_practice", "possible_emerging_practice", "established_practice"].includes(status)) {
+        return "monitor";
+      }
+      if (["balance_likely_wrong", "likely_real_shortage", "established_practice", "possible_recipe_mismatch", "likely_recipe_mismatch"].includes(status)
+        && (confidenceBand === "moderate" || confidenceBand === "high")) {
+        return "monitor";
+      }
+      return "observe_only";
+    }
+    if (status === "insufficient_evidence" || confidenceBand === "very_low") return "observe_only";
+    if (["established_practice", "balance_likely_wrong", "likely_real_shortage", "likely_recipe_mismatch"].includes(status)
+      && confidenceBand === "high") {
+      return "ready_for_review";
+    }
+    if (["likely_emerging_practice", "possible_emerging_practice", "possible_shortage", "balance_uncertain", "possible_recipe_mismatch"].includes(status)) {
+      return "monitor";
+    }
+    return "observe_only";
+  }
+
+  function beMakeBelief(partial, ctx) {
+    const confidenceProbability = partial.confidenceProbability;
+    const confidenceBand = partial.confidenceBand || beConfidenceBand(confidenceProbability);
+    const actionability = partial.actionability || beResolveActionability(partial.status, ctx, confidenceBand, partial.beliefType);
+    return {
+      beliefId: partial.beliefId,
+      beliefType: partial.beliefType,
+      subject: partial.subject,
+      status: partial.status,
+      confidenceBand,
+      confidenceProbability,
+      supportingEvidence: (partial.supportingEvidence || []).map(beCopySafe),
+      contradictingEvidence: (partial.contradictingEvidence || []).map(beCopySafe),
+      unknowns: (partial.unknowns || []).map(beCopySafe),
+      reasoning: beCopySafe(partial.reasoning || ""),
+      actionability,
+      limitations: (partial.limitations || []).map(beCopySafe),
+    };
+  }
+
+  function beItemConfidenceRow(ctx, itemId) {
+    return (ctx.itemConfidence || []).find(r => r.itemId === itemId);
+  }
+
+  function beStockRiskRow(ctx, itemId) {
+    return (ctx.operationalIntelligence?.stockRisk || []).find(r => r.itemId === itemId);
+  }
+
+  function beImportantItemIds(ctx) {
+    const ids = new Set();
+    const oi = ctx.operationalIntelligence || {};
+    (oi.stockRisk || []).forEach(r => {
+      if ((r.recipeRoles || []).some(role => role.role === "core")) ids.add(r.itemId);
+      if (r.zeroStock || r.lowStock) ids.add(r.itemId);
+      if (r.riskBand === "high" || r.riskBand === "critical") ids.add(r.itemId);
+      if (r.recentSubstitutionTouches >= 2) ids.add(r.itemId);
+    });
+    (oi.recountImpact || []).filter(r => r.varianceAbs >= 3).forEach(r => ids.add(r.itemId));
+    (oi.substitutionImpact || []).forEach(s => {
+      ids.add(s.insteadOfItemId);
+      ids.add(s.substituteItemId);
+    });
+    return [...ids];
+  }
+
+  function beBalanceStatusFromConfidence(band, hasEvidence) {
+    if (!hasEvidence) return "insufficient_evidence";
+    if (band === "trusted") return "balance_probably_reliable";
+    if (band === "probably_right") return "balance_plausible_but_unverified";
+    if (band === "uncertain") return "balance_uncertain";
+    return "balance_likely_wrong";
+  }
+
+  function computeItemBalanceBeliefs(ctx) {
+    const beliefs = [];
+    const ri = beReadinessInputs(ctx);
+    beImportantItemIds(ctx).forEach(itemId => {
+      const row = beItemConfidenceRow(ctx, itemId);
+      const risk = beStockRiskRow(ctx, itemId);
+      if (!row && !risk) return;
+      const conf = row?.volunteerConfidence;
+      const band = conf?.confidenceBand;
+      const hasEvidence = !!(conf && (conf.stats?.totalMovements > 0 || conf.stats?.hasEverBeenRecounted || risk));
+      const status = beBalanceStatusFromConfidence(band, hasEvidence);
+      const supporting = [];
+      const contradicting = [];
+      const unknowns = [];
+      if (conf) {
+        supporting.push(`Volunteer confidence is ${conf.volunteerLabel || band}.`);
+        if (conf.confidenceReason) supporting.push(conf.confidenceReason);
+      }
+      if (risk) {
+        if (risk.zeroStock) supporting.push(`${risk.itemName} is at zero balance.`);
+        else if (risk.lowStock) supporting.push(`${risk.itemName} is below the low-stock threshold.`);
+        if (risk.riskSignals?.length) supporting.push(`Risk signals: ${risk.riskSignals.join(", ")}.`);
+      }
+      const recount = (ctx.operationalIntelligence?.recountImpact || []).find(r => r.itemId === itemId);
+      if (recount && recount.varianceAbs >= 3) {
+        supporting.push(`A recent recount showed a variance of ${recount.varianceAbs} units.`);
+      }
+      if (!conf?.stats?.hasEverBeenRecounted) unknowns.push("No physical recount recorded in this system yet.");
+      if (ctx.synthetic) unknowns.push("Limited by synthetic sample data.");
+      const confInputs = {
+        ...ri,
+        multipleSources: supporting.length >= 2,
+        strongItemConfidence: band === "trusted" || band === "probably_right",
+        operationalRelevance: risk && (risk.riskBand === "high" || risk.riskBand === "critical"),
+        insufficientEvidence: status === "insufficient_evidence",
+        earlyEvidence: band === "uncertain" || band === "needs_checking",
+      };
+      const confidenceProbability = computeBeliefConfidence(confInputs);
+      beliefs.push(beMakeBelief({
+        beliefId: `item_balance:${itemId}`,
+        beliefType: "item_balance",
+        subject: { itemId, itemName: row?.itemName || risk?.itemName || itemName(itemId) },
+        status,
+        confidenceProbability,
+        supportingEvidence: supporting,
+        contradictingEvidence: contradicting,
+        unknowns,
+        reasoning: `We currently believe the recorded balance for ${row?.itemName || itemName(itemId)} is ${status.replace(/_/g, " ")}. Evidence suggests ${conf?.confidenceReason || "recent storeroom activity matters here"}. Observe only until more recounts are available.`,
+        limitations: ctx.synthetic ? ["Synthetic sample data caps belief confidence."] : [],
+      }, ctx));
+    });
+    return beliefs;
+  }
+
+  function computeShortageBeliefs(ctx) {
+    const beliefs = [];
+    const ri = beReadinessInputs(ctx);
+    (ctx.operationalIntelligence?.stockRisk || []).forEach(risk => {
+      const isCore = (risk.recipeRoles || []).some(role => role.role === "core");
+      const meaningful = risk.zeroStock || risk.lowStock || isCore
+        || risk.riskBand === "high" || risk.riskBand === "critical"
+        || risk.recentSubstitutionTouches >= 2;
+      if (!meaningful) return;
+
+      let status = "shortage_uncertain";
+      if (!risk.appearsInRecipes && risk.zeroStock) status = "insufficient_evidence";
+      else if (risk.zeroStock && isCore) status = "likely_real_shortage";
+      else if (risk.zeroStock) status = "possible_shortage";
+      else if (risk.lowStock && isCore) status = "possible_shortage";
+      else if (risk.riskBand === "critical") status = "likely_real_shortage";
+      else if (risk.riskBand === "high") status = "possible_shortage";
+      else if (risk.recentSubstitutionTouches >= 2 && (risk.lowStock || risk.zeroStock)) status = "possible_shortage";
+      else if (!risk.zeroStock && !risk.lowStock && risk.riskBand === "low") return;
+
+      const row = beItemConfidenceRow(ctx, risk.itemId);
+      const supporting = [];
+      if (risk.zeroStock) supporting.push(`${risk.itemName} balance is zero.`);
+      if (risk.lowStock) supporting.push(`${risk.itemName} is below threshold (${risk.balance} vs ${risk.threshold}).`);
+      if (isCore) supporting.push(`${risk.itemName} is a core recipe item.`);
+      if (risk.recentSubstitutionTouches >= 2) supporting.push("Substitution pressure appears in recent packing.");
+      const unknowns = [];
+      if (!row?.volunteerConfidence?.stats?.hasEverBeenRecounted) unknowns.push("Shelf count not recently verified.");
+      const confInputs = {
+        ...ri,
+        multipleSources: supporting.length >= 2,
+        strongItemConfidence: row?.volunteerConfidence?.confidenceBand === "trusted",
+        operationalRelevance: isCore || risk.riskBand === "critical",
+        repeatedPattern: risk.recentSubstitutionTouches >= 2,
+        insufficientEvidence: status === "insufficient_evidence",
+        earlyEvidence: risk.riskBand === "medium",
+      };
+      const confidenceProbability = computeBeliefConfidence(confInputs);
+      beliefs.push(beMakeBelief({
+        beliefId: `shortage:${risk.itemId}`,
+        beliefType: "shortage",
+        subject: { itemId: risk.itemId, itemName: risk.itemName },
+        status,
+        confidenceProbability,
+        supportingEvidence: supporting,
+        contradictingEvidence: risk.balance > risk.threshold && !risk.zeroStock
+          ? [`Balance (${risk.balance}) is above the low-stock threshold.`] : [],
+        unknowns,
+        reasoning: `Evidence suggests a ${status.replace(/_/g, " ")} for ${risk.itemName}. This is export-only — monitor stock and recount when convenient.`,
+        limitations: ["Shortage beliefs are cautious measurements, not packing instructions."],
+      }, ctx));
+    });
+    return beliefs;
+  }
+
+  function beHabitStatusFromTrend(trend, evidence, percentage) {
+    if (trend === "established") return "established_practice";
+    if (trend === "emerging" && evidence === "sufficient") return "likely_emerging_practice";
+    if (trend === "emerging") return "possible_emerging_practice";
+    if (trend === "declining") return "fading_behaviour";
+    if (trend === "stable" && percentage < 50) return "occasional_behaviour";
+    if (trend === "too_early_to_tell" || evidence === "too_early") return "insufficient_evidence";
+    if (percentage >= 40) return "possible_emerging_practice";
+    return "occasional_behaviour";
+  }
+
+  function computeHabitBeliefs(ctx) {
+    const beliefs = [];
+    const ri = beReadinessInputs(ctx);
+    const seen = new Set();
+
+    (ctx.packingHabits?.observations || []).forEach(obs => {
+      const key = `habit:${obs.type}:${obs.packKey}:${obs.itemId}:${obs.replacementItemId || ""}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const status = beHabitStatusFromTrend(obs.trend, obs.evidence, obs.percentage);
+      const supporting = [obs.volunteerText || `${obs.itemName} pattern in ${obs.packLabel}.`].filter(Boolean);
+      if (obs.trendReason) supporting.push(obs.trendReason);
+      const unknowns = obs.insufficientHistory ? ["Not enough packing history for a firm conclusion."] : [];
+      const confInputs = {
+        ...ri,
+        multipleSources: !!(obs.trend && obs.possibleCauses?.length),
+        repeatedPattern: obs.count >= 3,
+        earlyEvidence: obs.evidence === "early" || obs.evidence === "too_early",
+        insufficientEvidence: status === "insufficient_evidence",
+        operationalRelevance: obs.type === "substitution",
+      };
+      const confidenceProbability = computeBeliefConfidence(confInputs);
+      const subj = {
+        type: obs.type,
+        packKey: obs.packKey,
+        packLabel: obs.packLabel,
+        itemId: obs.itemId,
+        itemName: obs.itemName,
+      };
+      if (obs.replacementItemId) {
+        subj.replacementItemId = obs.replacementItemId;
+        subj.replacementItemName = obs.replacementItemName;
+      }
+      beliefs.push(beMakeBelief({
+        beliefId: key,
+        beliefType: "habit",
+        subject: subj,
+        status,
+        confidenceProbability,
+        supportingEvidence: supporting,
+        contradictingEvidence: [],
+        unknowns,
+        reasoning: `Evidence suggests ${obs.replacementItemName || obs.itemName} ${obs.type === "substitution" ? "may appear as a substitute" : "may reflect packing practice"} in ${obs.packLabel}. Observe only — this is not a recipe note.`,
+        limitations: ["Habit beliefs describe observed patterns, not volunteer instructions."],
+      }, ctx));
+    });
+
+    (ctx.operationalIntelligence?.substitutionImpact || []).forEach(sub => {
+      const key = `habit:substitution:${sub.packKey}:${sub.insteadOfItemId}:${sub.substituteItemId}`;
+      if (seen.has(key)) return;
+      if (sub.packsAffected < 1) return;
+      seen.add(key);
+      const habit = sub.relatedHabitObservation;
+      const trend = sub.relatedTrend;
+      const status = trend?.trend
+        ? beHabitStatusFromTrend(trend.trend, trend.evidence, 0)
+        : (sub.packsAffected >= 5 ? "likely_emerging_practice" : "possible_emerging_practice");
+      const supporting = [
+        `${sub.substituteItemName} substituted for ${sub.insteadOfItemName} in ${sub.packsAffected} ${sub.packLabel} pack records.`,
+      ];
+      if (sub.possibleOperationalMeaning) supporting.push(sub.possibleOperationalMeaning);
+      if (habit?.volunteerText) supporting.push(habit.volunteerText);
+      const confInputs = {
+        ...ri,
+        multipleSources: supporting.length >= 2,
+        repeatedPattern: sub.packsAffected >= 3,
+        operationalRelevance: true,
+        earlyEvidence: sub.packsAffected < 5,
+        insufficientEvidence: sub.packsAffected < 1,
+      };
+      const confidenceProbability = computeBeliefConfidence(confInputs);
+      beliefs.push(beMakeBelief({
+        beliefId: key,
+        beliefType: "habit",
+        subject: {
+          type: "substitution",
+          packKey: sub.packKey,
+          packLabel: sub.packLabel,
+          itemId: sub.insteadOfItemId,
+          itemName: sub.insteadOfItemName,
+          replacementItemId: sub.substituteItemId,
+          replacementItemName: sub.substituteItemName,
+        },
+        status,
+        confidenceProbability,
+        supportingEvidence: supporting,
+        contradictingEvidence: [],
+        unknowns: sub.packsAffected < 5 ? ["Pattern may not be consistent yet."] : [],
+        reasoning: `Evidence suggests ${sub.substituteItemName} may replace ${sub.insteadOfItemName} in some ${sub.packLabel} packs. Monitor only — not enough evidence to treat this as a settled practice.`,
+        limitations: ["Substitution habit beliefs are observational scaffolding only."],
+      }, ctx));
+    });
+
+    return beliefs;
+  }
+
+  function computeRecipeAlignmentBeliefs(ctx) {
+    const beliefs = [];
+    const ri = beReadinessInputs(ctx);
+    const subImpact = ctx.operationalIntelligence?.substitutionImpact || [];
+
+    Object.keys(RECIPES).forEach(packKey => {
+      const recipe = RECIPES[packKey];
+      let status = "insufficient_evidence";
+      const supporting = [];
+      const contradicting = [];
+      const unknowns = [];
+
+      if (!recipe.confirmed) {
+        status = "unconfirmed_recipe";
+        unknowns.push(`${recipe.label} is marked unconfirmed in configuration.`);
+        supporting.push("Recipe contents are not yet confirmed for operational use.");
+      } else {
+        const coreSubs = subImpact.filter(s =>
+          s.packKey === packKey && recipe.core.some(c => c.itemId === s.insteadOfItemId)
+        );
+        const totalAffected = coreSubs.reduce((s, x) => s + x.packsAffected, 0);
+        if (totalAffected >= 8) {
+          status = "likely_recipe_mismatch";
+          supporting.push(`Repeated substitutions touch core items across ${totalAffected} pack records.`);
+        } else if (totalAffected >= 3) {
+          status = "possible_recipe_mismatch";
+          supporting.push(`Some substitutions touch core ${recipe.label} items (${totalAffected} pack records).`);
+        } else if ((ctx.operationalIntelligence?.summary?.productionPacksCreated || 0) >= 10) {
+          status = "recipe_aligned";
+          supporting.push(`No strong substitution pressure on core ${recipe.label} items.`);
+        } else {
+          unknowns.push("Limited production history for this pack type.");
+        }
+      }
+
+      const confInputs = {
+        ...ri,
+        multipleSources: supporting.length >= 1,
+        sufficientHistory: (ctx.operationalIntelligence?.summary?.productionPacksCreated || 0) >= 20,
+        insufficientEvidence: status === "insufficient_evidence",
+        weakBabyPackHistory: packKey === "babyPack" && status === "insufficient_evidence",
+        operationalRelevance: packKey === "momPack",
+      };
+      const confidenceProbability = computeBeliefConfidence(confInputs);
+      beliefs.push(beMakeBelief({
+        beliefId: `recipe_alignment:${packKey}`,
+        beliefType: "recipe_alignment",
+        subject: { packKey, packLabel: recipe.label, confirmed: !!recipe.confirmed },
+        status,
+        confidenceProbability,
+        supportingEvidence: supporting,
+        contradictingEvidence: contradicting,
+        unknowns,
+        reasoning: status === "unconfirmed_recipe"
+          ? `We currently believe ${recipe.label} alignment is unconfirmed. Not enough evidence to treat this recipe as settled. Observe only.`
+          : `Evidence suggests ${recipe.label} is ${status.replace(/_/g, " ")}. This is a cautious read — monitor only.`,
+        limitations: ["Recipe alignment beliefs do not alter pack recipes."],
+      }, ctx));
+    });
+    return beliefs;
+  }
+
+  function computeReadinessBeliefs(ctx) {
+    const ir = ctx.operationalIntelligence?.impactReadiness || {};
+    const ri = beReadinessInputs(ctx);
+    let status = "not_ready";
+    if (ctx.synthetic) status = "blocked";
+    else if (ir.readyForImpactJudgement) status = "ready";
+    else if ((ir.readinessScore || 0) >= 50) status = "nearly_ready";
+    else if ((ir.blockers || []).length >= 3) status = "blocked";
+
+    const supporting = (ir.reasons || []).slice(0, 5);
+    const unknowns = (ir.blockers || []).slice(0, 5);
+    const confInputs = {
+      ...ri,
+      multipleSources: supporting.length >= 2,
+      sufficientHistory: (ctx.operationalIntelligence?.summary?.productionPacksCreated || 0) >= 50,
+      insufficientEvidence: status === "blocked" && !supporting.length,
+      impactReadinessFalse: !ir.readyForImpactJudgement,
+    };
+    const confidenceProbability = computeBeliefConfidence(confInputs);
+    return [beMakeBelief({
+      beliefId: "readiness:overall",
+      beliefType: "readiness",
+      subject: { scope: "operational_readiness" },
+      status,
+      confidenceProbability,
+      supportingEvidence: supporting,
+      contradictingEvidence: [],
+      unknowns,
+      reasoning: ctx.synthetic
+        ? "We currently believe operational readiness is blocked. Limited by synthetic sample data — observe only."
+        : `Evidence suggests overall readiness is ${status.replace(/_/g, " ")}. ${ir.readyForImpactJudgement ? "Impact judgement gate is open." : "Impact judgement is not ready yet — monitor data collection."}`,
+      limitations: ["Readiness beliefs are framework scaffolding, not volunteer messaging."],
+      actionability: "observe_only",
+    }, ctx)];
+  }
+
+  function beCountBy(beliefs, keyFn) {
+    const counts = {};
+    beliefs.forEach(b => {
+      const k = keyFn(b);
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    return counts;
+  }
+
+  function beReadyForRecommendations(beliefs, ctx) {
+    if (ctx.synthetic) return false;
+    if (!beImpactReady(ctx)) return false;
+    if (beliefs.some(b => b.status === "insufficient_evidence" && b.confidenceBand === "very_low")) return false;
+    const avg = beliefs.length
+      ? beliefs.reduce((s, b) => s + b.confidenceProbability, 0) / beliefs.length
+      : 0;
+    return avg >= 0.45 && !beliefs.some(b => b.actionability === "ready_for_review");
+  }
+
+  function beBuildBeliefSummary(beliefs, ctx) {
+    const sorted = [...beliefs].sort((a, b) => b.confidenceProbability - a.confidenceProbability);
+    const uncertain = [...beliefs].sort((a, b) => a.confidenceProbability - b.confidenceProbability);
+    return {
+      totalBeliefs: beliefs.length,
+      byType: beCountBy(beliefs, b => b.beliefType),
+      byStatus: beCountBy(beliefs, b => b.status),
+      byConfidenceBand: beCountBy(beliefs, b => b.confidenceBand),
+      byActionability: beCountBy(beliefs, b => b.actionability),
+      topBeliefs: sorted.slice(0, 5).map(b => ({
+        beliefId: b.beliefId,
+        beliefType: b.beliefType,
+        subject: b.subject,
+        status: b.status,
+        confidenceProbability: b.confidenceProbability,
+      })),
+      highestUncertaintyBeliefs: uncertain.slice(0, 5).map(b => ({
+        beliefId: b.beliefId,
+        beliefType: b.beliefType,
+        subject: b.subject,
+        status: b.status,
+        confidenceProbability: b.confidenceProbability,
+      })),
+      readyForRecommendations: beReadyForRecommendations(beliefs, ctx),
+    };
+  }
+
+  function computeBeliefEngine(deps) {
+    const ctx = beBeliefCtx(deps || {});
+    const beliefs = [
+      ...computeItemBalanceBeliefs(ctx),
+      ...computeShortageBeliefs(ctx),
+      ...computeHabitBeliefs(ctx),
+      ...computeRecipeAlignmentBeliefs(ctx),
+      ...computeReadinessBeliefs(ctx),
+    ];
+    const limitations = [
+      "Beliefs are export-only scaffolding, not volunteer instructions.",
+      ctx.synthetic ? "Synthetic sample data limits belief confidence." : null,
+      !beImpactReady(ctx) ? "Impact readiness gate is closed — beliefs remain cautious." : null,
+    ].filter(Boolean);
+    return {
+      generatedAt: new Date().toISOString(),
+      modelVersion: BE_MODEL_VERSION,
+      dataQuality: { synthetic: ctx.synthetic, productionOnlyDefault: true },
+      summary: beBuildBeliefSummary(beliefs, ctx),
+      beliefs,
+      limitations,
+    };
+  }
+
+  function beliefEngineSummaryConcise(beliefEngine) {
+    if (!beliefEngine) return null;
+    const beliefs = beliefEngine.beliefs || [];
+    const sorted = [...beliefs].sort((a, b) => b.confidenceProbability - a.confidenceProbability);
+    const uncertain = [...beliefs].sort((a, b) => a.confidenceProbability - b.confidenceProbability);
+    const byAction = beliefEngine.summary?.byActionability || beCountBy(beliefs, b => b.actionability);
+    return {
+      totalBeliefs: beliefs.length,
+      readyForRecommendations: beliefEngine.summary?.readyForRecommendations ?? false,
+      monitorBeliefCount: byAction.monitor || 0,
+      observeOnlyBeliefCount: byAction.observe_only || 0,
+      topThreeBeliefs: sorted.slice(0, 3).map(b => ({
+        beliefId: b.beliefId,
+        beliefType: b.beliefType,
+        status: b.status,
+        confidenceProbability: b.confidenceProbability,
+      })),
+      highestUncertaintyBeliefs: uncertain.slice(0, 3).map(b => ({
+        beliefId: b.beliefId,
+        status: b.status,
+        confidenceProbability: b.confidenceProbability,
+      })),
     };
   }
 

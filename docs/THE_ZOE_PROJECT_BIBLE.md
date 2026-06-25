@@ -90,7 +90,11 @@ See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 ### Operational Intelligence Foundation (Phase 3A — export only)
 
-**Phase 3A (shipped):** A read-only **operational measurement layer** derives quantity-weighted facts from existing transactions: build impact (packs created via `tx.qty`), substitution impact (`packCount` × `qtyPerPack`), optional impact, donation enablement estimates, recount variance effects, item-level stock risk, and an `impactReadiness` gate for Phase 3B. Exported as `operationalIntelligence` in AI Data Pack; analytics summary includes `operationalIntelligenceSummary`. Production-only default; Milan tester builds excluded from primary measurements. **Does not make recommendations** — prepares the Operational Impact Engine (Phase 3B). Janet sees nothing new.
+**Phase 3A (shipped):** A read-only **operational measurement layer** derives quantity-weighted facts from existing transactions: build impact (packs created via `tx.qty`), substitution impact (`packCount` × `qtyPerPack`), optional impact, donation enablement estimates, recount variance effects, item-level stock risk, and an `impactReadiness` gate for Phase 3B. Exported as `operationalIntelligence` in AI Data Pack; analytics summary includes `operationalIntelligenceSummary`. Production-only default; Milan tester builds excluded from primary measurements. **Does not make recommendations** — prepares the belief engine framework (Phase 3B). Janet sees nothing new.
+
+### Belief Engine Framework (Phase 3B — export only)
+
+**Phase 3B (shipped):** A read-only **belief scaffolding layer** consumes `itemConfidence`, `packingHabits`, and `operationalIntelligence` to export structured `beliefs` with types (`item_balance`, `shortage`, `habit`, `recipe_alignment`, `readiness`), deterministic `confidenceProbability` with caps, supporting/contradicting evidence, and actionability (`observe_only`, `monitor`; no `ready_for_review` on synthetic data or when impact readiness is false). Exported as `beliefEngine` in AI Data Pack; analytics summary includes `beliefEngineSummary`. **Not SPE, not recommendations, not volunteer-facing** — defines where future reasoning will live while staying cautious. Janet sees nothing new.
 
 See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 

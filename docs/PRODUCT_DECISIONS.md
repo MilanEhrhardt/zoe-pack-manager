@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Belief engine framework (Phase 3B, export only)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Read-only belief scaffolding in export and analytics summary only; no volunteer UI, no SPE, no recommendations in Phase 3B |
+| **Date** | 2026-06-25 |
+| **Context** | Phase 3A supplies quantity-weighted measurements and an `impactReadiness` gate. Before any operational impact judgements or SPE work, the codebase needs a stable place where future beliefs will live — with cautious copy, deterministic confidence, and explicit limitations. |
+| **Decision** | Add Phase 3B pipeline: `computeBeliefEngine(ctx)` consuming `itemConfidence`, `packingHabits`, `operationalIntelligence`, and `synthetic: !!state.sampleData`. Builders: `computeItemBalanceBeliefs`, `computeShortageBeliefs`, `computeHabitBeliefs`, `computeRecipeAlignmentBeliefs`, `computeReadinessBeliefs`, plus `computeBeliefConfidence` and `beliefEngineSummaryConcise`. Export `beliefEngine` in AI Data Pack; analytics summary includes `beliefEngineSummary`. Default actionability `observe_only` or `monitor`; never `ready_for_review` when synthetic or `impactReadiness.readyForImpactJudgement` is false. `readyForRecommendations` false in sandbox. Cautious copy only — currently believe, evidence suggests, may, appears, monitor. No localStorage schema change. No changes to commit flows, stock math, recipes, render functions, or volunteer UI. |
+| **Reasoning** | Defines structural framework for future reasoning without overclaiming from sparse or synthetic data. Keeps measurement (3A) separate from belief scaffolding (3B) and deferred impact judgements. |
+| **Alternatives Considered** | **Evidence Fusion Engine** — deferred; user chose belief framework first. **Volunteer-facing beliefs** — rejected. **Persisted belief state** — rejected; schema change forbidden. **ready_for_review in sandbox** — rejected. |
+| **Status** | Accepted |
+
 ### Operational intelligence foundation (Phase 3A, export only)
 
 | Field | Content |
