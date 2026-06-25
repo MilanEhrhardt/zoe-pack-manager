@@ -132,6 +132,18 @@ Copy this block for each new decision:
 | **Alternatives Considered** | **Recency-only labels** — rejected as too coarse. **Volunteer UI in Phase 1** — rejected; Increment B deferred until field validation. **Persisted belief state** — rejected; schema migration risk. |
 | **Status** | Accepted |
 
+### Interaction Episode Consolidation (Phase 3D.1)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Remove legacy batch exposure; episodes canonical |
+| **Date** | 2026-06-25 |
+| **Context** | Phase 3D shipped episodes alongside legacy `analyticsTrackUIExposure()` batch snapshots (`details.controlCount`, `details.controls[]`). Redundant — future AI should reason from Interaction Episodes, not inventories of visible controls. |
+| **Decision** | Delete `analyticsTrackUIExposure()`, `analyticsVisibleControls()`, `analyticsControlKey()`, and batch aggregation in `analyticsDerivedSummary()`. Remove deprecated `ignoredControls` summary (superseded by `ignoredVisibleControls` + `interactionEpisodeSummary`). Keep per-control `ui_exposure` only. Fix `interactionEpisodeId` attachment before episode observe/complete. Wire `details_toggled` to episodes via summary `target` meta. Episode complete adds `endedAt` and `visibleMs` alias. `EPISODE_MODEL_VERSION = 3D.1.1`, `ANALYTICS_SCHEMA_VERSION = 1.3.0`. Historical localStorage events not migrated — new sessions only. Export-only. No volunteer UI, intelligence layer, or localStorage schema changes. |
+| **Reasoning** | Completes telemetry architecture refactor: Analytics Events → Interaction Episodes → future Behaviour Objects → AI. |
+| **Alternatives Considered** | **Keep batch snapshots for backward compat** — rejected; redundant and confusing. **Migrate historical events** — rejected; out of scope. |
+| **Status** | Accepted |
+
 ### Interaction Episodes Foundation (Phase 3D)
 
 | Field | Content |
@@ -151,9 +163,9 @@ Copy this block for each new decision:
 | **Decision** | Per-control exposure analytics for high-value controls only; no volunteer UI |
 | **Date** | 2026-06-25 |
 | **Context** | Batch `ui_exposure` snapshots list visible controls but cannot distinguish dwell time or click outcome. Need “seen but not clicked” signal for usability analysis without contaminating data with admin utilities Janet is not expected to use. |
-| **Decision** | Add `IntersectionObserver`-based per-control `ui_exposure` events (`controlId`, `label`, `visibleMs`, `clicked`, `screen`) with 750ms minimum dwell. Log on viewport exit, screen change, or click. High-value controls only: home verbs, pack creation (optional toggles, save, exceptions), stock count fields. Admin export/backup/import tracked only when visible inside opened **Need something else?** on home — not footer admin on other screens. Summary: `ignoredVisibleControls` (production default), `productionIgnoredVisibleControls`, `testerIgnoredVisibleControls`. Raw events preserved for tester sessions. Legacy batch `analyticsTrackUIExposure` unchanged; per-control events discriminated by `details.controlId` (batch events use `details.controls[]`). Lifecycle preserves dwell across same-screen re-renders; does not flush pending exposures on every rebind. Analytics schema 1.2.0. No localStorage schema migration. No stock/recipe/commit/volunteer workflow changes. |
+| **Decision** | Add `IntersectionObserver`-based per-control `ui_exposure` events (`controlId`, `label`, `visibleMs`, `clicked`, `screen`) with 750ms minimum dwell. Log on viewport exit, screen change, or click. High-value controls only. Admin export/backup/import tracked only when visible inside opened **Need something else?** on home. Summary: `ignoredVisibleControls` (production default), `productionIgnoredVisibleControls`, `testerIgnoredVisibleControls`. Phase 3D.1 removed legacy batch snapshots — per-control events only in new sessions. No localStorage schema migration. No stock/recipe/commit/volunteer workflow changes. |
 | **Reasoning** | Measures meaningful ignored controls for Janet's daily path. IntersectionObserver naturally excludes collapsed admin. Production-default summary keeps Milan test sessions separable without deleting data. |
-| **Alternatives Considered** | **Track all buttons** — rejected; noisy dataset. **Track footer admin everywhere** — rejected; contaminates volunteer usability signal. **Replace batch exposure** — rejected; keep backward compatibility. |
+| **Alternatives Considered** | **Track all buttons** — rejected; noisy dataset. **Track footer admin everywhere** — rejected; contaminates volunteer usability signal. **Keep batch exposure indefinitely** — superseded by Phase 3D.1 episode consolidation. |
 | **Status** | Accepted |
 
 ### Milan tester analytics separation

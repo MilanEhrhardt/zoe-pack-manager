@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Interaction Episode Consolidation (Phase 3D.1): remove legacy batch `ui_exposure` screen snapshots (`analyticsTrackUIExposure`, `details.controlCount`, `details.controls[]`); Interaction Episodes are the canonical behavioural primitive; per-control exposure only; fix `interactionEpisodeId` on first-interaction events; `details_toggled` wired to episodes; episode complete adds `endedAt` and `visibleMs` alias; remove deprecated `ignoredControls` summary; `EPISODE_MODEL_VERSION` 3D.1.1; analytics schema 1.3.0; historical localStorage events not migrated
+
 ### Fixed
 
 - Exposure Tracking v1: per-control `ui_exposure` events now set top-level `view` to match `details.screen` via `viewOverride` on flush (fixes mismatched `view: "home"` / `details.screen: "build"` after navigation)

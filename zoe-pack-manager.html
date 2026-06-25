@@ -918,7 +918,7 @@
 
   const itemMap = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 
-  var ANALYTICS_SCHEMA_VERSION = "1.2.0";
+  var ANALYTICS_SCHEMA_VERSION = "1.3.0";
   var ANALYTICS_MAX_EVENTS = 50000;
 
   let state = loadState();
@@ -939,7 +939,6 @@
   const analyticsFieldState = {};
   let analyticsLastFieldFocus = null;
   let analyticsLastErrorMessage = "";
-  let analyticsLastExposureSig = "";
   const analyticsClickBurst = {};
   const analyticsHoverTimers = new Map();
   const analyticsHoverLogged = new Set();
@@ -971,7 +970,7 @@
   let analyticsExposureBindRaf = 0;
   let analyticsExposureClickBound = false;
 
-  const EPISODE_MODEL_VERSION = "3D.1";
+  const EPISODE_MODEL_VERSION = "3D.1.1";
   const EPISODE_IDLE_TIMEOUT_MS = 30000;
   let analyticsEpisodeSeq = 0;
   const analyticsInteractionEpisodes = new Map();
@@ -1519,11 +1518,13 @@
       if (state.analytics.recordingEnabled === false && !details.forceRecord) return;
       const eventView = opts.viewOverride || view;
       let episodeId = opts.interactionEpisodeId || null;
-      if (!episodeId && event !== "interaction_episode_complete") {
-        const ctrl = analyticsEpisodeResolveControl(details, eventView);
-        if (ctrl) episodeId = analyticsEpisodeActiveId(ctrl.screen, ctrl.controlId);
-      }
+      let episodeCtrl = null;
       if (event !== "interaction_episode_complete") {
+        episodeCtrl = analyticsEpisodeResolveControl(details, eventView);
+        if (episodeCtrl) {
+          analyticsEpisodeBegin(episodeCtrl.screen, episodeCtrl.controlId, episodeCtrl.label);
+          if (!episodeId) episodeId = analyticsEpisodeActiveId(episodeCtrl.screen, episodeCtrl.controlId);
+        }
         analyticsEpisodeObserveEvent(event, details, eventView);
       }
       const userFields = ANALYTICS_USER_EVENTS.has(event) ? analyticsUserFields() : {};
@@ -1620,7 +1621,6 @@
       analyticsCurrentView = view;
       analyticsViewEnteredAt = Date.now();
       analyticsTrack("screen_view", { screen: view, snapshot: analyticsOperationalSnapshot() });
-      analyticsLastExposureSig = "";
     }
 
     if (errorMsg) {
@@ -1638,7 +1638,6 @@
       analyticsLastErrorMessage = "";
     }
 
-    analyticsTrackUIExposure();
     analyticsExposureBind();
     analyticsEpisodeTimeoutSweep();
   }
@@ -1998,14 +1997,18 @@
     ep.abandoned = abandoned;
     ep.completionReason = reason;
     analyticsInteractionEpisodes.delete(key);
+    const endedAt = new Date(now).toISOString();
     const payload = {
       interactionEpisodeId: ep.interactionEpisodeId,
       episodeModelVersion: EPISODE_MODEL_VERSION,
       screen: ep.screen,
       controlId: ep.controlId,
       label: ep.label,
+      startedAt: new Date(ep.startedAt).toISOString(),
+      endedAt,
       durationMs,
       totalVisibleMs: ep.totalVisibleMs,
+      visibleMs: ep.totalVisibleMs,
       hoverCount: ep.hoverCount,
       clickCount: ep.clickCount,
       focusCount: ep.focusCount,
@@ -2049,8 +2052,7 @@
   function analyticsEpisodeObserveEvent(event, details, eventView) {
     const ctrl = analyticsEpisodeResolveControl(details, eventView);
     if (!ctrl) return;
-    const { screen, controlId, label } = ctrl;
-    analyticsEpisodeBegin(screen, controlId, label);
+    const { screen, controlId } = ctrl;
     if (event === "click") {
       const ep = analyticsEpisodeIncrement(screen, controlId, "clickCount");
       if (ep) ep.clicked = true;
@@ -2062,6 +2064,9 @@
       analyticsEpisodeIncrement(screen, controlId, "blurCount");
       analyticsEpisodeComplete(screen, controlId, "blurred");
     } else if (event === "field_change") {
+      const ep = analyticsEpisodeIncrement(screen, controlId, "changeCount");
+      if (ep) ep.changed = true;
+    } else if (event === "details_toggled") {
       const ep = analyticsEpisodeIncrement(screen, controlId, "changeCount");
       if (ep) ep.changed = true;
     } else if (event === "mouse_hesitation") {
@@ -2124,40 +2129,6 @@
     };
   }
 
-  function analyticsControlKey(el) {
-    const meta = analyticsElementMeta(el);
-    return meta.id || meta.dataGo || meta.text || `${meta.tag}:${meta.type}:${meta.classes?.[0] || ""}`;
-  }
-
-  function analyticsVisibleControls() {
-    const controls = [];
-    document.querySelectorAll("button, summary, input, select, textarea, a").forEach(el => {
-      const rect = el.getBoundingClientRect();
-      const style = window.getComputedStyle(el);
-      if (style.display === "none" || style.visibility === "hidden" || rect.width === 0 || rect.height === 0) return;
-      const meta = analyticsElementMeta(el);
-      controls.push({
-        key: analyticsControlKey(el),
-        tag: meta.tag,
-        id: meta.id,
-        type: meta.type,
-        text: meta.text,
-        dataGo: meta.dataGo,
-        top: Math.round(rect.top),
-        left: Math.round(rect.left),
-      });
-    });
-    return controls.slice(0, 120);
-  }
-
-  function analyticsTrackUIExposure() {
-    const controls = analyticsVisibleControls();
-    const sig = view + "|" + controls.map(c => c.key).join("|");
-    if (sig === analyticsLastExposureSig) return;
-    analyticsLastExposureSig = sig;
-    analyticsTrack("ui_exposure", { screen: view, controlCount: controls.length, controls });
-  }
-
   function analyticsTransactionSummary(tx) {
     const base = { txId: tx.id, type: tx.type, date: tx.date };
     if (tx.type === "donation") {
@@ -2211,7 +2182,7 @@
     const flowStarts = {}, completedDurations = [];
     const fieldChanges = {}, fieldFocusDurations = {}, fieldAbandons = {}, timeBetweenFields = {};
     const rageClicks = [], mouseHesitations = [], scrollDepthByScreen = {}, errorRecoveries = [];
-    const exposures = {}, clickKeys = {}, detailsToggles = {};
+    const detailsToggles = {};
 
     events.forEach(e => {
       byEvent[e.event] = (byEvent[e.event] || 0) + 1;
@@ -2222,15 +2193,6 @@
       if (e.event === "click") {
         const k = e.details?.target?.id || e.details?.target?.text || e.details?.target?.dataGo || "unknown";
         clicks[k] = (clicks[k] || 0) + 1;
-        clickKeys[k] = (clickKeys[k] || 0) + 1;
-      }
-      if (e.event === "ui_exposure") {
-        (e.details?.controls || []).forEach(c => {
-          const k = c.key || c.id || c.text || "unknown";
-          if (!exposures[k]) exposures[k] = { count: 0, screens: {}, sample: c };
-          exposures[k].count += 1;
-          exposures[k].screens[e.view || "unknown"] = (exposures[k].screens[e.view || "unknown"] || 0) + 1;
-        });
       }
       if (e.event === "details_toggled") {
         const k = e.details?.summary || "unknown";
@@ -2282,11 +2244,6 @@
     const avg = vals => vals.length ? Math.round(vals.reduce((a,b)=>a+b,0) / vals.length) : 0;
     const avgFieldFocusMs = Object.fromEntries(Object.entries(fieldFocusDurations).map(([k, vals]) => [k, avg(vals)]));
     const avgTimeBetweenFieldsMs = Object.fromEntries(Object.entries(timeBetweenFields).map(([k, vals]) => [k, avg(vals)]));
-
-    const ignoredControls = Object.entries(exposures)
-      .filter(([k, v]) => v.count >= 1 && !clickKeys[k] && !["unknown"].includes(k))
-      .map(([k, v]) => ({ key: k, seen: v.count, screens: v.screens, sample: v.sample }))
-      .slice(0, 50);
 
     const neverUsedOptions = {};
     const alwaysUsedOptions = {};
@@ -2357,7 +2314,6 @@
       rageClicks,
       mouseHesitations,
       scrollDepthByScreen,
-      ignoredControls,
       ignoredVisibleControls: productionIgnoredVisibleControls,
       productionIgnoredVisibleControls,
       testerIgnoredVisibleControls,
@@ -6369,7 +6325,14 @@
     document.querySelectorAll("details").forEach(d => {
       if (!d.dataset.analyticsBound) {
         d.dataset.analyticsBound = "1";
-        d.addEventListener("toggle", () => analyticsTrack("details_toggled", { open: d.open, summary: analyticsSafeText(d.querySelector("summary")?.innerText || "") }));
+        d.addEventListener("toggle", () => {
+          const summary = d.querySelector("summary");
+          analyticsTrack("details_toggled", {
+            open: d.open,
+            summary: analyticsSafeText(summary?.innerText || ""),
+            target: analyticsElementMeta(summary),
+          });
+        });
       }
     });
 

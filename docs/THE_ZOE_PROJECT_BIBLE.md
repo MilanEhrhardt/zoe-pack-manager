@@ -104,11 +104,13 @@ See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 ### Exposure Tracking (v1 — analytics only)
 
-**Exposure Tracking v1 (shipped):** `IntersectionObserver` per-control `ui_exposure` events for high-value volunteer controls (home verbs, pack creation, stock count). Minimum 750ms visible dwell before logging. Events flush when a control leaves the viewport, the screen changes, or the control is clicked (`clicked: true` / `false`). Per-control events carry `details.controlId`, `visibleMs`, and `clicked`; legacy batch snapshots (`details.controls[]`) coexist unchanged. Analytics summary includes `ignoredVisibleControls` (production sessions default), `productionIgnoredVisibleControls`, and `testerIgnoredVisibleControls`. Admin backup/export/import tracked only when actually visible inside opened **Need something else?** on home. **Janet sees nothing new.**
+**Exposure Tracking v1 (shipped):** `IntersectionObserver` per-control `ui_exposure` events for high-value volunteer controls. Minimum 750ms visible dwell. Per-control events carry `details.controlId`, `visibleMs`, and `clicked`. Analytics summary includes `ignoredVisibleControls`. Admin utilities tracked only when visible inside opened **Need something else?** on home. **Janet sees nothing new.**
 
 ### Interaction Episodes (Phase 3D — export only)
 
-**Phase 3D (shipped):** A read-only **behavioural episode layer** groups tracked-control analytics into coherent `interaction_episode_complete` events. Active episodes keyed by `screen` + `controlId` accumulate visibility, hovers, clicks, focus, blur, and changes. Related raw events auto-carry `interactionEpisodeId`. Episode ends on click, blur, navigation, hidden, timeout, or cancel. Analytics summary includes `interactionEpisodeSummary`. **Future AI should consume episodes rather than raw analytics events.** Not SPE, not recommendations, not volunteer-facing. No changes to Belief Engine or Operational Memory. **Janet sees nothing new.**
+**Phase 3D (shipped):** A read-only **behavioural episode layer** groups tracked-control analytics into coherent `interaction_episode_complete` events. Active episodes keyed by `screen` + `controlId` accumulate visibility, hovers, clicks, focus, blur, and changes. Related raw events auto-carry `interactionEpisodeId`. Episode ends on click, blur, navigation, hidden, timeout, or cancel. Analytics summary includes `interactionEpisodeSummary`. **Future AI should consume episodes rather than raw analytics events.** Not SPE, not recommendations, not volunteer-facing. **Janet sees nothing new.**
+
+**Phase 3D.1 (shipped):** Consolidation — removed legacy batch `ui_exposure` screen snapshots (`details.controlCount`, `details.controls[]`). Interaction Episodes are the canonical behavioural primitive. Per-control exposure only in new sessions. Deprecated `ignoredControls` summary removed.
 
 See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
@@ -156,11 +158,11 @@ See [`docs/DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md) for the full design cont
 
 Local-first analytics in the browser: screen flow, form friction, errors, scroll depth, and export-only intelligence layers in the AI Data Pack. Volunteers are never shown analytics UI beyond discreet admin export behind **Need something else?**
 
-**Exposure Tracking v1:** High-value controls carry `data-track-exposure` attributes. `IntersectionObserver` logs per-control `ui_exposure` events when a control is visible for at least 750ms, then leaves the viewport, the screen changes, or the control is clicked. Per-control events use `details.controlId`, `visibleMs`, and `clicked`; legacy batch snapshots (`details.controls[]`) from `analyticsTrackUIExposure` coexist unchanged. Export summary `ignoredVisibleControls` surfaces controls that were seen but not clicked (production sessions by default; tester sessions in a separate array). Admin utilities are tracked only when visible inside the opened **Need something else?** area.
+**Exposure Tracking v1:** High-value controls carry `data-track-exposure` attributes. `IntersectionObserver` logs per-control `ui_exposure` events when a control is visible for at least 750ms, then leaves the viewport, the screen changes, or the control is clicked. Per-control events use `details.controlId`, `visibleMs`, and `clicked`. Export summary `ignoredVisibleControls` surfaces controls that were seen but not clicked. Admin utilities tracked only when visible inside opened **Need something else?**
+
+**Interaction Episodes (Phase 3D / 3D.1):** Canonical behavioural layer. Analytics Events → Interaction Episodes → future Behaviour Objects → AI. Stateful episodes per tracked control produce `interaction_episode_complete` export events; raw events on tracked controls carry `interactionEpisodeId`. Phase 3D.1 removed legacy batch exposure snapshots — new sessions emit per-control exposure only.
 
 **Tester separation:** Milan packer sessions tagged `isTesterSession`; raw events retained; production-default summaries for volunteer usability analysis.
-
-**Interaction Episodes (Phase 3D):** Stateful behavioural episodes per tracked control aggregate visibility and interaction signals into `interaction_episode_complete` export events. Raw analytics events on tracked controls carry `interactionEpisodeId` for correlation. Summary `interactionEpisodeSummary` in AI Data Pack. Future intelligence layers should prefer episodes over raw event streams.
 
 See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md) and [`docs/AI_CONTEXT.md`](AI_CONTEXT.md).
 
