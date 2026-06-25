@@ -1496,7 +1496,7 @@
     };
   }
 
-  function analyticsTrack(event, details = {}) {
+  function analyticsTrack(event, details = {}, opts = {}) {
     try {
       state = analyticsUpgradeState(state);
       if (state.analytics.recordingEnabled === false && !details.forceRecord) return;
@@ -1507,7 +1507,7 @@
         sessionId: ANALYTICS_SESSION_ID || "session_pending",
         installId: state.analytics.installId,
         event,
-        view,
+        view: opts.viewOverride || view,
         flowId: analyticsCurrentFlow?.id || "",
         flow: analyticsCurrentFlow?.flow || "",
         details,
@@ -1621,7 +1621,7 @@
   function analyticsExposureKey(el) {
     const controlId = el.getAttribute("data-track-exposure");
     if (!controlId) return "";
-    return analyticsExposureKeyFrom(controlId, view);
+    return analyticsExposureKeyFrom(controlId, analyticsExposureScreen());
   }
 
   function analyticsExposureLabel(el) {
@@ -1638,6 +1638,20 @@
     return (entry.accumulatedMs || 0) + stint;
   }
 
+  function analyticsExposureScreen() {
+    return analyticsCurrentView || view;
+  }
+
+  function analyticsTrackControlExposure(entry, visibleMs, clicked) {
+    analyticsTrack("ui_exposure", {
+      screen: entry.screen,
+      controlId: entry.controlId,
+      label: entry.label,
+      visibleMs,
+      clicked: !!clicked,
+    }, { viewOverride: entry.screen });
+  }
+
   function analyticsExposureFlush(controlId, clicked, screenOverride) {
     const screen = screenOverride || view;
     const key = analyticsExposureKeyFrom(controlId, screen);
@@ -1650,13 +1664,7 @@
       return;
     }
     entry.flushed = true;
-    analyticsTrack("ui_exposure", {
-      screen: entry.screen,
-      controlId: entry.controlId,
-      label: entry.label,
-      visibleMs,
-      clicked: !!clicked,
-    });
+    analyticsTrackControlExposure(entry, visibleMs, clicked);
     analyticsExposurePending.delete(key);
   }
 
@@ -1669,13 +1677,7 @@
       const visibleMs = analyticsExposureTotalMs(entry);
       if (visibleMs >= EXPOSURE_MIN_VISIBLE_MS) {
         entry.flushed = true;
-        analyticsTrack("ui_exposure", {
-          screen: entry.screen,
-          controlId: entry.controlId,
-          label: entry.label,
-          visibleMs,
-          clicked: false,
-        });
+        analyticsTrackControlExposure(entry, visibleMs, false);
       }
       toDelete.push(key);
     });
@@ -1688,7 +1690,7 @@
       const el = ioEntry.target;
       const controlId = el.getAttribute("data-track-exposure");
       if (!controlId) return;
-      const screen = view;
+      const screen = analyticsExposureScreen();
       const key = analyticsExposureKeyFrom(controlId, screen);
       if (ioEntry.isIntersecting && ioEntry.intersectionRatio > 0) {
         let entry = analyticsExposurePending.get(key);
@@ -1715,13 +1717,7 @@
         const visibleMs = analyticsExposureTotalMs(entry, now);
         if (visibleMs >= EXPOSURE_MIN_VISIBLE_MS) {
           entry.flushed = true;
-          analyticsTrack("ui_exposure", {
-            screen: entry.screen,
-            controlId: entry.controlId,
-            label: entry.label,
-            visibleMs,
-            clicked: false,
-          });
+          analyticsTrackControlExposure(entry, visibleMs, false);
         }
         analyticsExposurePending.delete(key);
       }
@@ -1732,14 +1728,14 @@
     const el = target.closest("[data-track-exposure]");
     if (!el) return;
     const controlId = el.getAttribute("data-track-exposure");
-    const key = analyticsExposureKeyFrom(controlId, view);
+    const key = analyticsExposureKeyFrom(controlId, analyticsExposureScreen());
     let entry = analyticsExposurePending.get(key);
     if (!entry || entry.flushed) {
       entry = {
         el,
         controlId,
         label: analyticsExposureLabel(el),
-        screen: view,
+        screen: analyticsExposureScreen(),
         visibleSince: null,
         accumulatedMs: 0,
         flushed: false,
