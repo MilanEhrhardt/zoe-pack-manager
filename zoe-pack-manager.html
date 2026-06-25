@@ -1869,6 +1869,8 @@
 
   // ═══════════════════════════════════════════════════════════════════
   // INTERACTION EPISODES — Phase 3D behavioural layer
+  // completionReason: clicked | hidden | navigation | timeout | blurred | cancelled | export
+  // export: flushed before Analytics JSON / AI Data Pack export; completed only if already clicked
   // ═══════════════════════════════════════════════════════════════════
 
   function analyticsEpisodeMapKey(screen, controlId) {
@@ -2046,6 +2048,14 @@
       }
     });
     pending.forEach(({ screen, controlId }) => analyticsEpisodeComplete(screen, controlId, "timeout"));
+  }
+
+  function analyticsEpisodeFlushForExport() {
+    const pending = [];
+    analyticsInteractionEpisodes.forEach(ep => {
+      pending.push({ screen: ep.screen, controlId: ep.controlId });
+    });
+    pending.forEach(({ screen, controlId }) => analyticsEpisodeComplete(screen, controlId, "export"));
   }
 
   function analyticsEpisodeObserveEvent(event, details, eventView) {
@@ -2352,6 +2362,7 @@
   }
 
   function exportAnalyticsJSON() {
+    analyticsEpisodeFlushForExport();
     analyticsTrack("analytics_export_requested", { format: "json" });
     const payload = {
       exportedAt: new Date().toISOString(),
@@ -2363,6 +2374,7 @@
   }
 
   function exportAIDataPack() {
+    analyticsEpisodeFlushForExport();
     analyticsTrack("analytics_export_requested", { format: "ai_data_pack" });
     analyticsTrack("ai_data_pack_export_requested", { format: "ai_data_pack" });
     const userCtx = analyticsUserFields();
