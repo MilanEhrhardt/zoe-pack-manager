@@ -1960,13 +1960,9 @@
     return ep;
   }
 
-  function analyticsEpisodeAddVisibility(screen, controlId, visibleMs, maxVisibility) {
-    const ep = analyticsEpisodeTouch(screen, controlId);
-    if (!ep) return;
-    if (visibleMs > 0) ep.totalVisibleMs += visibleMs;
-    if (typeof maxVisibility === "number" && maxVisibility > ep.maxVisibility) {
-      ep.maxVisibility = maxVisibility;
-    }
+  function analyticsEpisodeClampVisibleMs(visibleMs, durationMs) {
+    const d = Math.max(0, Number(durationMs) || 0);
+    return Math.max(0, Math.min(Number(visibleMs) || 0, d));
   }
 
   function analyticsEpisodeIncrement(screen, controlId, field) {
@@ -1978,7 +1974,9 @@
 
   function analyticsEpisodeFinalizeVisibility(ep, now) {
     if (!ep || !ep.visibleSince) return;
-    ep.totalVisibleMs += now - ep.visibleSince;
+    const stint = now - ep.visibleSince;
+    const maxAllowed = Math.max(0, now - ep.startedAt);
+    ep.totalVisibleMs = analyticsEpisodeClampVisibleMs(ep.totalVisibleMs + stint, maxAllowed);
     ep.visibleSince = null;
   }
 
@@ -1988,7 +1986,8 @@
     if (!ep) return;
     const now = Date.now();
     analyticsEpisodeFinalizeVisibility(ep, now);
-    const durationMs = now - ep.startedAt;
+    const durationMs = Math.max(0, now - ep.startedAt);
+    const totalVisibleMs = analyticsEpisodeClampVisibleMs(ep.totalVisibleMs, durationMs);
     const clicked = reason === "clicked" || ep.clicked;
     const completed = clicked;
     const abandoned = !clicked && ["navigation", "timeout", "hidden", "blurred", "cancelled"].includes(reason);
@@ -2007,8 +2006,8 @@
       startedAt: new Date(ep.startedAt).toISOString(),
       endedAt,
       durationMs,
-      totalVisibleMs: ep.totalVisibleMs,
-      visibleMs: ep.totalVisibleMs,
+      totalVisibleMs,
+      visibleMs: totalVisibleMs,
       hoverCount: ep.hoverCount,
       clickCount: ep.clickCount,
       focusCount: ep.focusCount,
@@ -2073,7 +2072,6 @@
       analyticsEpisodeIncrement(screen, controlId, "hesitationCount");
       analyticsEpisodeIncrement(screen, controlId, "hoverCount");
     } else if (event === "ui_exposure" && details.controlId) {
-      analyticsEpisodeAddVisibility(screen, controlId, Number(details.visibleMs) || 0);
       if (details.clicked) {
         const ep = analyticsEpisodeTouch(screen, controlId);
         if (ep) ep.clicked = true;

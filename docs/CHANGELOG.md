@@ -12,6 +12,7 @@
 
 ### Fixed
 
+- Interaction episodes: clamp `totalVisibleMs` and `visibleMs` to `<= durationMs`; stop double-counting visibility from intersect finalize plus `ui_exposure` observe
 - Exposure Tracking v1: per-control `ui_exposure` events now set top-level `view` to match `details.screen` via `viewOverride` on flush (fixes mismatched `view: "home"` / `details.screen: "build"` after navigation)
 - Exposure Tracking v1: repair per-control `ui_exposure` lifecycle — stop flushing pending exposures on same-screen re-render (was resetting dwell before 750ms); preserve `visibleSince` across DOM handoff on re-render; defer observer bind via `requestAnimationFrame`; dedicated once global capture click listener; summary ignores legacy batch events (`details.controls[]`) and only aggregates events with `details.controlId`
 - Operational memory (Phase 3C.1 polish): unique donation memory IDs via `donationId`; dedupe `evidence[]` in `omMakeMemory()`; Baby Pack unconfirmed memory confidence floor for config facts; cautious Deo optional copy when status is `insufficient_evidence` or `emerging`
