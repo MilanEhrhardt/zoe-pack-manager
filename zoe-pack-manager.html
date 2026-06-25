@@ -2181,11 +2181,11 @@
       </div>
     </div>`;
 
-    if (qty > 0) {
-      html += `<div class="core-preview"><strong>Stock that will be used</strong><br>${formatBuildPreview(form.packKey, qty, included, customExtras, form.substitutions, true, form.omissions)}</div>`;
-    }
-
     html += renderRecipeOptionalToggles(form.packKey);
+
+    if (qty > 0) {
+      html += `<div class="core-preview"><strong>Stock this save will use</strong><br>${formatBuildPreview(form.packKey, qty, included, customExtras, form.substitutions, true, form.omissions)}</div>`;
+    }
 
     const advancedSummary = [];
     const extraCount = form.customExtras.filter(e => e.itemId).length;

@@ -19,6 +19,7 @@
 
 ### Changed
 
+- Pack Creation: usage preview moved below optional toggles and renamed **“Stock this save will use”**
 - Pack Creation: **“+ Something else happened”** subflow limited to swaps, omissions, and unlisted extras (removed `choice-optional` / duplicate toggle list)
 - Pack Creation: admin footer removed from build and add-item views (export remains on home)
 - Legacy `addItemStep === "optional"` redirects to main build screen for backwards compatibility
