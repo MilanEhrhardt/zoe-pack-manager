@@ -130,6 +130,7 @@ See also `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
 - **Analytics:** local event logging with JSON/CSV export for user-testing analysis (Mission Control dashboard reads exports). Key events record `sessionUser`, `currentSelectedUser`, and `isTesterSession`. Summary splits sessions into production volunteer, tester, and unknown. **Milan** is a tester identity — select as packer when testing; data is retained but separable in exports.
 - **Item confidence (Increment A):** deterministic read-only trust scores per stock item in AI Data Pack export and analytics summary only — `volunteerConfidence` excludes Milan tester builds; `allMovementsConfidence` includes all. No volunteer UI yet. See `PRODUCT_DECISIONS.md`.
 - **Packing habits (Phase 1):** read-only habit pattern observations from production build transactions in AI Data Pack (`packingHabits`) and analytics summary (`packingHabitsSummary`). Excludes Milan tester builds. Thresholded counted sentences only — no volunteer UI. See `PRODUCT_DECISIONS.md`.
+- **Packing habits trends (Phase 2):** windowed behavioural change analysis (recent vs previous production builds per pack); trend, `likelyCause`, and human insights in `packingHabits`; `packingHabitTrends` in analytics summary. Export-only. See `PRODUCT_DECISIONS.md`.
 - **Backup:** manual export/import from hidden admin area
 - **Packers:** Janet, Judy (volunteers); Milan (tester — analytics tagged `isTesterSession` when selected)
 
@@ -188,6 +189,7 @@ None. Pack Creation redesign shipped (render-only); awaiting volunteer field val
 | Milan tester analytics separation | **Accepted** — see `PRODUCT_DECISIONS.md` |
 | Item-level confidence (Increment A, export only) | **Accepted** — see `PRODUCT_DECISIONS.md` |
 | Packing habits intelligence (Phase 1, export only) | **Accepted** — see `PRODUCT_DECISIONS.md` |
+| Packing habits behavioural trends (Phase 2, export only) | **Accepted** — see `PRODUCT_DECISIONS.md` |
 | Documentation-first AI workflow | **Accepted** — read this file before coding |
 | Lead Engineer six-phase workflow | **Superseded** — see Lead Product Engineer workflow |
 | Lead Product Engineer workflow | **Accepted** — three-solution proposals, approval gate, auto-commit; see `.cursor/rules.md` |

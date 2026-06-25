@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Packing habits behavioural trends (Phase 2, export only)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Windowed habit trend analysis in export and analytics summary only; no volunteer UI in Phase 2 |
+| **Date** | 2026-06-25 |
+| **Context** | Phase 1 describes what habits exist. Ops and future SPE need to know whether behaviour is emerging, strengthening, stable, weakening, or disappearing — without Bayesian models, RL, or volunteer-facing dashboards. |
+| **Decision** | Add Phase 2 pipeline after Phase 1: `deriveHistoricalHabitWindows` → `compareHabitWindows` → `computeHabitTrend` → `generateHabitInsights` → `packingHabitTrendSummary`. Per packKey, compare non-overlapping recent/previous windows (25/25, else 20/20, else 10/10). Classify trends by percentage-point deltas. Evidence-based `likelyCause` (stock shortage, recount discrepancy, seasonality, recipe change candidate, volunteer preference, or none). Extend `packingHabits.observations` with trend fields; add `packingHabits.insights`; analytics summary includes `packingHabitTrends`. Excludes Milan tester builds. Human language only. No localStorage schema change. No changes to stock math, recipes, or volunteer UI. |
+| **Reasoning** | Smallest step from description to interpretation; deterministic and testable; feeds SPE recipe-importance and ops review without alarming Janet. |
+| **Alternatives Considered** | **Fold trends into Phase 1 observations only** — rejected; loses insight narrative and summary counts. **Persist rolling habit state** — rejected; schema change forbidden. **Bayesian/RL models** — explicitly deferred. |
+| **Status** | Accepted |
+
 ### Packing habits intelligence (Phase 1, export only)
 
 | Field | Content |

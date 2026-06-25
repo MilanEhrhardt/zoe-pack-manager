@@ -84,6 +84,8 @@ See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 **Phase 1 (shipped):** A read-only pipeline over **production build transactions** (tester builds excluded) surfaces counted habit observations: substitutions, optional inclusions, custom extras, and omissions. Each observation includes human `volunteerText` with counts (e.g. “Deodorant was included in 8 of the last 10 Mom Packs”), confidence band, and ops `recommendation`. Exported in AI Data Pack as `packingHabits`; analytics summary includes `packingHabitsSummary`. Janet sees nothing new yet. Feeds future SPE **recipe importance** signals.
 
+**Phase 2 (shipped):** Compares **non-overlapping recent and previous windows** of production builds per pack type (25/20/10 builds). Classifies whether each pattern is new, emerging, strengthening, stable, weakening, disappearing, or unstable. Adds evidence-based `likelyCause`, trend confidence, human `insights` (“I noticed something new…”), and extends observations with window counts and deltas. Analytics summary includes `packingHabitTrends`. Still export-only — Janet sees nothing new.
+
 See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 ## Design Principles

@@ -1773,7 +1773,9 @@
     const sessionBreakdown = analyticsClassifySessions(events);
     const itemConfidence = computeAllItemConfidence();
     const confidenceSummary = buildConfidenceSummary(itemConfidence);
-    const packingHabitsSummary = packingHabitsSummaryConcise(packingHabitSummary());
+    const packingHabitsFull = packingHabitSummary();
+    const packingHabitsSummary = packingHabitsSummaryConcise(packingHabitsFull);
+    const packingHabitTrends = packingHabitTrendsConcise(packingHabitsFull.trends);
 
     return {
       generatedAt: new Date().toISOString(),
@@ -1807,6 +1809,7 @@
       operationalSnapshot: analyticsOperationalSnapshot(),
       confidenceSummary,
       packingHabitsSummary,
+      packingHabitTrends,
       ...sessionBreakdown,
     };
   }
@@ -2554,15 +2557,423 @@
     return observations;
   }
 
+  // ── Phase 2: behavioural trend intelligence (export / ops only) ──
+
+  function packingHabitPatternKey(type, packKey, itemId, replacementItemId) {
+    return [type, packKey, itemId, replacementItemId || ""].join("|");
+  }
+
+  function packingHabitPatternMapFromBuilds(builds) {
+    const data = computePackingHabitPatterns({ productionBuilds: builds });
+    const map = {};
+    data.patterns.forEach(p => {
+      const key = packingHabitPatternKey(p.type, p.packKey, p.itemId, p.replacementItemId);
+      const denom = data.denominatorByPack[p.packKey] || builds.length;
+      map[key] = {
+        type: p.type,
+        packKey: p.packKey,
+        itemId: p.itemId,
+        replacementItemId: p.replacementItemId || "",
+        count: p.count,
+        denominator: denom,
+        percentage: denom > 0 ? Math.round((p.count / denom) * 100) : 0,
+      };
+    });
+    return map;
+  }
+
+  function chooseHabitWindowSize(totalBuilds) {
+    if (totalBuilds >= 50) return 25;
+    if (totalBuilds >= 40) return 20;
+    if (totalBuilds >= 20) return 10;
+    return null;
+  }
+
+  function deriveHistoricalHabitWindows(productionBuilds) {
+    const byPack = {};
+    (productionBuilds || []).forEach(tx => {
+      const packKey = tx.packKey || "unknown";
+      if (!byPack[packKey]) byPack[packKey] = [];
+      byPack[packKey].push(tx);
+    });
+
+    const windows = {};
+    Object.entries(byPack).forEach(([packKey, builds]) => {
+      const sorted = builds.slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+      const totalBuilds = sorted.length;
+      const windowSize = chooseHabitWindowSize(totalBuilds);
+      if (!windowSize) {
+        windows[packKey] = {
+          packKey,
+          totalBuilds,
+          windowSize: null,
+          recentBuilds: [],
+          previousBuilds: [],
+        };
+        return;
+      }
+      const recentBuilds = sorted.slice(-windowSize);
+      const previousBuilds = sorted.slice(-windowSize * 2, -windowSize);
+      windows[packKey] = {
+        packKey,
+        totalBuilds,
+        windowSize,
+        recentBuilds,
+        previousBuilds,
+        recentStartDate: recentBuilds[0]?.date || "",
+        recentEndDate: recentBuilds[recentBuilds.length - 1]?.date || "",
+        previousStartDate: previousBuilds[0]?.date || "",
+        previousEndDate: previousBuilds[previousBuilds.length - 1]?.date || "",
+      };
+    });
+    return windows;
+  }
+
+  function passesPackingHabitThreshold(count, denominator) {
+    const percentage = denominator > 0 ? Math.round((count / denominator) * 100) : 0;
+    return denominator >= PACKING_HABIT_MIN_DENOMINATOR
+      && count >= PACKING_HABIT_MIN_COUNT
+      && percentage >= PACKING_HABIT_MIN_PERCENT;
+  }
+
+  function compareHabitWindows(windowsByPack) {
+    const comparisons = [];
+    Object.values(windowsByPack || {}).forEach(w => {
+      if (!w.windowSize) return;
+      const recentMap = packingHabitPatternMapFromBuilds(w.recentBuilds);
+      const previousMap = packingHabitPatternMapFromBuilds(w.previousBuilds);
+      const keys = new Set([...Object.keys(recentMap), ...Object.keys(previousMap)]);
+      keys.forEach(key => {
+        const recent = recentMap[key] || { count: 0, percentage: 0 };
+        const previous = previousMap[key] || { count: 0, percentage: 0 };
+        const parts = key.split("|");
+        comparisons.push({
+          type: parts[0],
+          packKey: parts[1],
+          itemId: parts[2],
+          replacementItemId: parts[3] || "",
+          recentCount: recent.count,
+          recentPercent: recent.percentage,
+          recentDenominator: w.windowSize,
+          previousCount: previous.count,
+          previousPercent: previous.percentage,
+          previousDenominator: w.windowSize,
+          deltaPercent: recent.percentage - previous.percentage,
+          windowSize: w.windowSize,
+          recentStartDate: w.recentStartDate,
+          recentEndDate: w.recentEndDate,
+        });
+      });
+    });
+    return comparisons;
+  }
+
+  function computeHabitTrend(comparison) {
+    const recentPasses = passesPackingHabitThreshold(comparison.recentCount, comparison.recentDenominator);
+    const previousPasses = passesPackingHabitThreshold(comparison.previousCount, comparison.previousDenominator);
+    const delta = comparison.deltaPercent;
+
+    if (comparison.windowSize <= 10
+      && comparison.recentCount >= 1
+      && comparison.previousCount >= 1
+      && !recentPasses
+      && !previousPasses) {
+      return "unstable";
+    }
+    if (comparison.windowSize <= 10 && Math.abs(delta) >= 20 && comparison.recentCount + comparison.previousCount < 8) {
+      return "unstable";
+    }
+    if (!previousPasses && recentPasses) return "new";
+    if (comparison.previousCount === 0 && comparison.recentCount > 0 && recentPasses) return "new";
+    if (delta <= -15) return "disappearing";
+    if (delta >= 15) return "emerging";
+    if (delta >= 5) return "strengthening";
+    if (delta <= -5) return "weakening";
+    return "stable";
+  }
+
+  function habitReplayItemZeroDates(itemId, transactions) {
+    const balances = {};
+    ITEMS.forEach(i => { balances[i.id] = 0; });
+    const zeroDates = [];
+    const sorted = [...(transactions || [])].filter(t => t.type !== "undo")
+      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    sorted.forEach(tx => {
+      if (tx.type === "recount" && tx.itemId) {
+        balances[tx.itemId] = Number(tx.newQty) || 0;
+      } else if (tx.type === "donation") {
+        (tx.lines || []).forEach(line => {
+          if (!line.itemId) return;
+          balances[line.itemId] = (balances[line.itemId] || 0) + (line.unitsAdded || Number(line.qty) || 0);
+        });
+      } else if (tx.type === "build" && !isTesterUser(tx.packer)) {
+        const { usage } = computeBuildStockPlan(
+          tx.packKey, tx.qty, tx.optionalIncluded || [], tx.customExtras || [],
+          tx.substitutions || [], tx.omissions || []
+        );
+        Object.entries(usage).forEach(([id, deduct]) => {
+          if (deduct > 0) balances[id] = (balances[id] || 0) - deduct;
+        });
+      } else if (tx.type === "deliver" && tx.deliverType === "completeUnit" && tx.itemId) {
+        balances[tx.itemId] = (balances[tx.itemId] || 0) - (Number(tx.qty) || 0);
+      }
+      if ((balances[itemId] ?? 0) <= 0 && tx.date) zeroDates.push(tx.date);
+    });
+    return zeroDates;
+  }
+
+  function itemReachedZeroDuringWindow(itemId, startDate, endDate, transactions) {
+    if (!itemId || !startDate || !endDate) return false;
+    return habitReplayItemZeroDates(itemId, transactions).some(d => d >= startDate && d <= endDate);
+  }
+
+  function habitRecentRecountDiscrepancy(itemId, startDate, endDate, transactions) {
+    return (transactions || []).some(tx => {
+      if (tx.type !== "recount" || tx.itemId !== itemId) return false;
+      if (!tx.date || tx.date < startDate || tx.date > endDate) return false;
+      const oldQty = Number(tx.oldQty) || 0;
+      const newQty = Number(tx.newQty) || 0;
+      const variance = Math.abs(newQty - oldQty);
+      const variancePct = variance / Math.max(oldQty, newQty, 1);
+      return variance > 10 || variancePct > 0.2;
+    });
+  }
+
+  function detectHabitLikelyCause(comparison, trend, transactions) {
+    const stockItemId = comparison.type === "substitution" ? comparison.itemId : comparison.itemId;
+    const start = comparison.recentStartDate;
+    const end = comparison.recentEndDate;
+
+    if (itemReachedZeroDuringWindow(stockItemId, start, end, transactions)) {
+      return "stock_shortage";
+    }
+    if (habitRecentRecountDiscrepancy(stockItemId, start, end, transactions)) {
+      return "recount_discrepancy";
+    }
+    const itemMeta = itemMap[comparison.itemId];
+    if (itemMeta?.seasonal) {
+      return "seasonality";
+    }
+    if (comparison.type === "substitution" && comparison.recentPercent >= 70) {
+      return "recipe_change_candidate";
+    }
+    if (comparison.type === "optional_usage"
+      && (trend === "emerging" || trend === "strengthening")
+      && !itemReachedZeroDuringWindow(stockItemId, start, end, transactions)) {
+      return "volunteer_preference";
+    }
+    return "none";
+  }
+
+  function habitLikelyCauseText(likelyCause) {
+    if (likelyCause === "stock_shortage") {
+      return "This is probably caused by stock availability rather than volunteer preference.";
+    }
+    if (likelyCause === "recount_discrepancy") {
+      return "A recent count didn't match what we expected.";
+    }
+    if (likelyCause === "seasonality") {
+      return "This item is seasonal — the timing may explain the change.";
+    }
+    if (likelyCause === "recipe_change_candidate") {
+      return "This substitution is common enough to review the written recipe.";
+    }
+    if (likelyCause === "volunteer_preference") {
+      return "This looks like a growing volunteer preference.";
+    }
+    return "No clear cause identified.";
+  }
+
+  function habitTrendConfidence(comparison, trend, likelyCause) {
+    let score = 0;
+    if (comparison.windowSize >= 25) score += 2;
+    else if (comparison.windowSize >= 20) score += 1;
+    else if (comparison.windowSize <= 10) score -= 1;
+    if (["emerging", "strengthening", "disappearing", "new"].includes(trend) && Math.abs(comparison.deltaPercent) >= 15) {
+      score += 1;
+    }
+    if (likelyCause && likelyCause !== "none") score += 1;
+    if (trend === "unstable") score -= 2;
+    if (comparison.recentCount + comparison.previousCount < 6) score -= 1;
+    if (trend === "stable" && comparison.windowSize >= 20) score += 1;
+    if (score >= 3) return "high";
+    if (score >= 1) return "medium";
+    return "low";
+  }
+
+  function habitDescribePatternWindow(comparison, which) {
+    const packLabel = RECIPES[comparison.packKey]?.label || comparison.packKey;
+    const count = which === "recent" ? comparison.recentCount : comparison.previousCount;
+    const denom = which === "recent" ? comparison.recentDenominator : comparison.previousDenominator;
+    const itemNameStr = comparison.type === "optional_usage"
+      ? recipeOptionalLabel(comparison.packKey, comparison.itemId)
+      : itemName(comparison.itemId);
+    const replacementNameStr = comparison.replacementItemId ? itemName(comparison.replacementItemId) : "";
+    if (comparison.type === "substitution") {
+      return `${replacementNameStr} replaced ${itemNameStr} in ${count} of the last ${denom} ${packLabel}s`;
+    }
+    if (comparison.type === "optional_usage") {
+      return `${itemNameStr} was included in ${count} of the last ${denom} ${packLabel}s`;
+    }
+    if (comparison.type === "custom_extra") {
+      return `${itemNameStr} were added to ${count} of the last ${denom} ${packLabel}s`;
+    }
+    if (comparison.type === "omission") {
+      return `${itemNameStr} was left out of ${count} of the last ${denom} ${packLabel}s`;
+    }
+    return `${itemNameStr} in ${count} of the last ${denom} ${packLabel}s`;
+  }
+
+  function generateHabitInsightText(comparison, trend, likelyCause) {
+    const packLabel = RECIPES[comparison.packKey]?.label || comparison.packKey;
+    const itemNameStr = comparison.type === "optional_usage"
+      ? recipeOptionalLabel(comparison.packKey, comparison.itemId)
+      : itemName(comparison.itemId);
+    const recentLine = habitDescribePatternWindow(comparison, "recent");
+    const previousLine = habitDescribePatternWindow(comparison, "previous");
+    const causeLine = habitLikelyCauseText(likelyCause);
+    let text = "";
+
+    if (trend === "new") {
+      text = `I noticed something new.\n\n${recentLine}.\n\nPreviously this happened in only ${comparison.previousCount} of the previous ${comparison.previousDenominator}.\n\nThis appears to be becoming normal.`;
+    } else if (trend === "emerging" || trend === "strengthening") {
+      text = `I noticed a change.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\nThis has become much more common.`;
+    } else if (trend === "weakening" || trend === "disappearing") {
+      text = `I noticed a change.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\nThis seems to be fading.`;
+    } else if (trend === "stable") {
+      text = `${itemNameStr} continue to appear in about the same share of ${packLabel}s. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} did; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. No meaningful change detected.`;
+      if (comparison.type === "optional_usage") {
+        text = `${itemNameStr} continue to be included in about the same share of ${packLabel}s. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} included them; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. No meaningful change detected.`;
+      } else if (comparison.type === "substitution") {
+        const replacementNameStr = itemName(comparison.replacementItemId);
+        text = `${replacementNameStr} replacing ${itemNameStr} has stayed remarkably consistent. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} did; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. No meaningful change detected.`;
+      }
+    } else {
+      text = `The pattern here is hard to read with the history we have. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount}; in the previous ${comparison.previousDenominator}, ${comparison.previousCount}.`;
+    }
+
+    if (trend !== "stable" && causeLine) {
+      text += `\n\n${causeLine}`;
+    }
+    return text;
+  }
+
+  function generateHabitInsights(trendRows) {
+    const insights = trendRows
+      .filter(r => r.recentCount > 0 || r.previousCount > 0)
+      .map(r => ({
+        type: r.type,
+        packKey: r.packKey,
+        packLabel: RECIPES[r.packKey]?.label || r.packKey,
+        itemId: r.itemId,
+        replacementItemId: r.replacementItemId || "",
+        trend: r.trend,
+        deltaPercentage: r.deltaPercent,
+        confidence: r.confidence,
+        likelyCause: r.likelyCause,
+        volunteerText: r.insightText,
+      }))
+      .sort((a, b) => {
+        const trendRank = { new: 0, emerging: 1, strengthening: 2, disappearing: 3, weakening: 4, unstable: 5, stable: 6 };
+        const ra = trendRank[a.trend] ?? 9;
+        const rb = trendRank[b.trend] ?? 9;
+        if (ra !== rb) return ra - rb;
+        return Math.abs(b.deltaPercentage) - Math.abs(a.deltaPercentage);
+      });
+    return insights;
+  }
+
+  function packingHabitTrendSummary(events, transactions) {
+    const windows = deriveHistoricalHabitWindows(events.productionBuilds);
+    const comparisons = compareHabitWindows(windows);
+    const trendRows = comparisons.map(c => {
+      const trend = computeHabitTrend(c);
+      const likelyCause = detectHabitLikelyCause(c, trend, transactions);
+      const confidence = habitTrendConfidence(c, trend, likelyCause);
+      const insightText = generateHabitInsightText(c, trend, likelyCause);
+      return { ...c, trend, likelyCause, confidence, insightText };
+    });
+    const insights = generateHabitInsights(trendRows);
+    const counts = {
+      new: 0, emerging: 0, strengthening: 0, stable: 0, weakening: 0, disappearing: 0, unstable: 0,
+    };
+    trendRows.forEach(r => { counts[r.trend] = (counts[r.trend] || 0) + 1; });
+    const windowsSummary = {};
+    Object.entries(windows).forEach(([packKey, w]) => {
+      windowsSummary[packKey] = {
+        windowSize: w.windowSize,
+        totalBuilds: w.totalBuilds,
+        recentBuildCount: w.recentBuilds.length,
+        previousBuildCount: w.previousBuilds.length,
+      };
+    });
+    return { windows: windowsSummary, counts, trendRows, insights };
+  }
+
+  function packingHabitTrendsConcise(trends) {
+    const counts = trends?.counts || {};
+    return {
+      numberOfEmergingHabits: (counts.new || 0) + (counts.emerging || 0),
+      numberOfStableHabits: counts.stable || 0,
+      numberOfWeakeningHabits: (counts.weakening || 0) + (counts.disappearing || 0),
+      numberOfStrengtheningHabits: counts.strengthening || 0,
+      topThreeInsights: (trends?.insights || []).slice(0, 3).map(i => ({
+        trend: i.trend,
+        volunteerText: i.volunteerText,
+        confidence: i.confidence,
+        likelyCause: i.likelyCause,
+      })),
+    };
+  }
+
   function packingHabitSummary() {
-    const events = extractPackingHabitEvents(state.transactions || []);
+    const transactions = state.transactions || [];
+    const events = extractPackingHabitEvents(transactions);
     const patternData = computePackingHabitPatterns(events);
     const observations = generatePackingHabitObservations(patternData);
+    const trends = packingHabitTrendSummary(events, transactions);
+    const trendByKey = {};
+    trends.trendRows.forEach(r => {
+      trendByKey[packingHabitPatternKey(r.type, r.packKey, r.itemId, r.replacementItemId)] = r;
+    });
+    const enrichedObservations = observations.map(obs => {
+      const key = packingHabitPatternKey(obs.type, obs.packKey, obs.itemId, obs.replacementItemId);
+      const t = trendByKey[key];
+      if (!t) {
+        return {
+          ...obs,
+          trend: null,
+          previousCount: null,
+          previousPercentage: null,
+          recentCount: null,
+          recentPercentage: null,
+          deltaPercentage: null,
+          likelyCause: null,
+          confidence: null,
+          insufficientHistory: true,
+        };
+      }
+      return {
+        ...obs,
+        trend: t.trend,
+        previousCount: t.previousCount,
+        previousPercentage: t.previousPercent,
+        recentCount: t.recentCount,
+        recentPercentage: t.recentPercent,
+        deltaPercentage: t.deltaPercent,
+        likelyCause: t.likelyCause,
+        confidence: t.confidence,
+        insufficientHistory: false,
+      };
+    });
     return {
       generatedAt: new Date().toISOString(),
       productionBuildCount: events.productionBuildCount,
       excludedTesterBuildCount: events.excludedTesterBuildCount,
-      observations,
+      windows: trends.windows,
+      observations: enrichedObservations,
+      insights: trends.insights,
+      trends,
     };
   }
 

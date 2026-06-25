@@ -8,6 +8,7 @@
 
 ### Added
 
+- Packing Habits behavioural trend intelligence (Phase 2): windowed comparison of production build habits (recent vs previous 25/20/10 builds per pack); trend classification (new, emerging, strengthening, stable, weakening, disappearing, unstable); context-aware `likelyCause`; human insights in `packingHabits.insights`; `packingHabitTrends` in analytics summary; export-only, no volunteer UI
 - Packing Habits Intelligence Engine (Phase 1): read-only `packingHabits` in AI Data Pack export with counted observations (substitutions, optional usage, custom extras, omissions) from production builds only; `packingHabitsSummary` in analytics derived summary; no volunteer UI
 - Item-level confidence model (Increment A): read-only `itemConfidence` in AI Data Pack export with `volunteerConfidence` and `allMovementsConfidence` per item; `confidenceSummary` in analytics derived summary; no volunteer UI yet
 - Milan as selectable packer identity with tester analytics separation (`isTesterUser`, session user fields on key analytics events, summary session breakdown, AI Data Pack `userContext`)
