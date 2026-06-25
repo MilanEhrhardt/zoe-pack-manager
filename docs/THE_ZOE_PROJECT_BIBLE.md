@@ -104,7 +104,7 @@ See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 ### Exposure Tracking (v1 — analytics only)
 
-**Exposure Tracking v1 (shipped):** `IntersectionObserver` per-control `ui_exposure` events for high-value volunteer controls (home verbs, pack creation, stock count). Minimum 750ms visible dwell before logging. Events flush when a control leaves the viewport, the screen changes, or the control is clicked (`clicked: true` / `false`). Analytics summary includes `ignoredVisibleControls` (production sessions default), `productionIgnoredVisibleControls`, and `testerIgnoredVisibleControls` — each row reports exposures, ignored count, ignored rate, and average visible ms. Admin backup/export/import tracked only when actually visible inside opened **Need something else?** on home, not from footer admin on other screens. Legacy batch exposure snapshots retained. **Janet sees nothing new.**
+**Exposure Tracking v1 (shipped):** `IntersectionObserver` per-control `ui_exposure` events for high-value volunteer controls (home verbs, pack creation, stock count). Minimum 750ms visible dwell before logging. Events flush when a control leaves the viewport, the screen changes, or the control is clicked (`clicked: true` / `false`). Per-control events carry `details.controlId`, `visibleMs`, and `clicked`; legacy batch snapshots (`details.controls[]`) coexist unchanged. Analytics summary includes `ignoredVisibleControls` (production sessions default), `productionIgnoredVisibleControls`, and `testerIgnoredVisibleControls`. Admin backup/export/import tracked only when actually visible inside opened **Need something else?** on home. **Janet sees nothing new.**
 
 See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
@@ -152,7 +152,7 @@ See [`docs/DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md) for the full design cont
 
 Local-first analytics in the browser: screen flow, form friction, errors, scroll depth, and export-only intelligence layers in the AI Data Pack. Volunteers are never shown analytics UI beyond discreet admin export behind **Need something else?**
 
-**Exposure Tracking v1:** High-value controls carry `data-track-exposure` attributes. `IntersectionObserver` logs per-control `ui_exposure` events when a control is visible for at least 750ms, then leaves the viewport, the screen changes, or the control is clicked. Export summary `ignoredVisibleControls` surfaces controls that were seen but not clicked (production sessions by default; tester sessions in a separate array). Admin utilities are tracked only when visible inside the opened **Need something else?** area — not from footer admin on donation/deliver/stock screens. Coexists with legacy batch exposure snapshots.
+**Exposure Tracking v1:** High-value controls carry `data-track-exposure` attributes. `IntersectionObserver` logs per-control `ui_exposure` events when a control is visible for at least 750ms, then leaves the viewport, the screen changes, or the control is clicked. Per-control events use `details.controlId`, `visibleMs`, and `clicked`; legacy batch snapshots (`details.controls[]`) from `analyticsTrackUIExposure` coexist unchanged. Export summary `ignoredVisibleControls` surfaces controls that were seen but not clicked (production sessions by default; tester sessions in a separate array). Admin utilities are tracked only when visible inside the opened **Need something else?** area.
 
 **Tester separation:** Milan packer sessions tagged `isTesterSession`; raw events retained; production-default summaries for volunteer usability analysis.
 

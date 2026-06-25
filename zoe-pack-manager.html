@@ -968,6 +968,8 @@
   };
   let analyticsExposureObserver = null;
   const analyticsExposurePending = new Map();
+  let analyticsExposureBindRaf = 0;
+  let analyticsExposureClickBound = false;
 
   let analyticsSessionUser = "";
 
@@ -1612,26 +1614,39 @@
     analyticsExposureBind();
   }
 
-  function analyticsExposureKey(controlId, screen) {
+  function analyticsExposureKeyFrom(controlId, screen) {
     return `${screen}|${controlId}`;
   }
 
-  function analyticsExposureLabel(el, controlId) {
+  function analyticsExposureKey(el) {
+    const controlId = el.getAttribute("data-track-exposure");
+    if (!controlId) return "";
+    return analyticsExposureKeyFrom(controlId, view);
+  }
+
+  function analyticsExposureLabel(el) {
+    const controlId = el.getAttribute("data-track-exposure");
     const attr = el.getAttribute("data-exposure-label");
     if (attr) return attr;
     return EXPOSURE_CONTROL_LABELS[controlId] || analyticsSafeText(el.textContent, 80);
   }
 
-  function analyticsExposureVisibleMs(entry) {
-    if (!entry || !entry.visibleSince) return 0;
-    return Date.now() - entry.visibleSince;
+  function analyticsExposureTotalMs(entry, now) {
+    if (!entry) return 0;
+    now = now || Date.now();
+    const stint = entry.visibleSince ? now - entry.visibleSince : 0;
+    return (entry.accumulatedMs || 0) + stint;
   }
 
-  function analyticsExposureFlushEntry(entry, clicked) {
+  function analyticsExposureFlush(controlId, clicked, screenOverride) {
+    const screen = screenOverride || view;
+    const key = analyticsExposureKeyFrom(controlId, screen);
+    const entry = analyticsExposurePending.get(key);
     if (!entry || entry.flushed) return;
-    const visibleMs = analyticsExposureVisibleMs(entry);
+    const visibleMs = analyticsExposureTotalMs(entry);
     if (visibleMs < EXPOSURE_MIN_VISIBLE_MS) {
       entry.visibleSince = null;
+      entry.accumulatedMs = 0;
       return;
     }
     entry.flushed = true;
@@ -1642,6 +1657,7 @@
       visibleMs,
       clicked: !!clicked,
     });
+    analyticsExposurePending.delete(key);
   }
 
   function analyticsExposureFlushScreenExit() {
@@ -1649,8 +1665,18 @@
     if (!exitingScreen) return;
     const toDelete = [];
     analyticsExposurePending.forEach((entry, key) => {
-      if (entry.screen !== exitingScreen) return;
-      if (entry.visibleSince && !entry.flushed) analyticsExposureFlushEntry(entry, false);
+      if (entry.screen !== exitingScreen || entry.flushed) return;
+      const visibleMs = analyticsExposureTotalMs(entry);
+      if (visibleMs >= EXPOSURE_MIN_VISIBLE_MS) {
+        entry.flushed = true;
+        analyticsTrack("ui_exposure", {
+          screen: entry.screen,
+          controlId: entry.controlId,
+          label: entry.label,
+          visibleMs,
+          clicked: false,
+        });
+      }
       toDelete.push(key);
     });
     toDelete.forEach(k => analyticsExposurePending.delete(k));
@@ -1663,28 +1689,41 @@
       const controlId = el.getAttribute("data-track-exposure");
       if (!controlId) return;
       const screen = view;
-      const key = analyticsExposureKey(controlId, screen);
+      const key = analyticsExposureKeyFrom(controlId, screen);
       if (ioEntry.isIntersecting && ioEntry.intersectionRatio > 0) {
         let entry = analyticsExposurePending.get(key);
-        if (!entry || entry.flushed || entry.el !== el) {
+        if (!entry || entry.flushed) {
           entry = {
             el,
             controlId,
-            label: analyticsExposureLabel(el, controlId),
+            label: analyticsExposureLabel(el),
             screen,
             visibleSince: now,
+            accumulatedMs: 0,
             flushed: false,
           };
-          analyticsExposurePending.set(key, entry);
-        } else if (!entry.visibleSince) {
-          entry.visibleSince = now;
+        } else {
+          entry.el = el;
+          if (!entry.visibleSince) entry.visibleSince = now;
+          if (!entry.label) entry.label = analyticsExposureLabel(el);
         }
+        analyticsExposurePending.set(key, entry);
       } else {
         const entry = analyticsExposurePending.get(key);
-        if (entry && entry.el === el && entry.visibleSince && !entry.flushed) {
-          analyticsExposureFlushEntry(entry, false);
-          analyticsExposurePending.delete(key);
+        if (!entry || entry.flushed) return;
+        if (entry.el && entry.el !== el) return;
+        const visibleMs = analyticsExposureTotalMs(entry, now);
+        if (visibleMs >= EXPOSURE_MIN_VISIBLE_MS) {
+          entry.flushed = true;
+          analyticsTrack("ui_exposure", {
+            screen: entry.screen,
+            controlId: entry.controlId,
+            label: entry.label,
+            visibleMs,
+            clicked: false,
+          });
         }
+        analyticsExposurePending.delete(key);
       }
     });
   }
@@ -1693,35 +1732,58 @@
     const el = target.closest("[data-track-exposure]");
     if (!el) return;
     const controlId = el.getAttribute("data-track-exposure");
-    const key = analyticsExposureKey(controlId, view);
-    const entry = analyticsExposurePending.get(key);
-    if (!entry || entry.el !== el || entry.flushed) return;
-    const visibleMs = analyticsExposureVisibleMs(entry);
+    const key = analyticsExposureKeyFrom(controlId, view);
+    let entry = analyticsExposurePending.get(key);
+    if (!entry || entry.flushed) {
+      entry = {
+        el,
+        controlId,
+        label: analyticsExposureLabel(el),
+        screen: view,
+        visibleSince: null,
+        accumulatedMs: 0,
+        flushed: false,
+      };
+      analyticsExposurePending.set(key, entry);
+    } else {
+      entry.el = el;
+    }
+    const visibleMs = analyticsExposureTotalMs(entry);
     if (visibleMs < EXPOSURE_MIN_VISIBLE_MS) return;
-    entry.flushed = true;
-    analyticsTrack("ui_exposure", {
-      screen: entry.screen,
-      controlId: entry.controlId,
-      label: entry.label,
-      visibleMs,
-      clicked: true,
+    analyticsExposureFlush(controlId, true, entry.screen);
+  }
+
+  function analyticsExposureBindNow() {
+    if (analyticsExposureObserver) analyticsExposureObserver.disconnect();
+    analyticsExposurePending.forEach(entry => {
+      if (entry.flushed) return;
+      if (entry.el && !document.contains(entry.el)) entry.el = null;
     });
-    analyticsExposurePending.delete(key);
+    if (typeof IntersectionObserver === "undefined") return;
+    analyticsExposureObserver = new IntersectionObserver(analyticsExposureOnIntersect, {
+      root: null,
+      rootMargin: "0px",
+      threshold: 0.01,
+    });
+    document.querySelectorAll("[data-track-exposure]").forEach(el => analyticsExposureObserver.observe(el));
   }
 
   function analyticsExposureBind() {
-    if (analyticsExposureObserver) analyticsExposureObserver.disconnect();
-    const staleKeys = [];
-    analyticsExposurePending.forEach((entry, key) => {
-      if (entry.screen === view && entry.visibleSince && !entry.flushed) {
-        analyticsExposureFlushEntry(entry, false);
-      }
-      if (entry.screen === view) staleKeys.push(key);
+    if (analyticsExposureBindRaf) cancelAnimationFrame(analyticsExposureBindRaf);
+    analyticsExposureBindRaf = requestAnimationFrame(() => {
+      analyticsExposureBindRaf = 0;
+      analyticsExposureBindNow();
     });
-    staleKeys.forEach(k => analyticsExposurePending.delete(k));
-    if (typeof IntersectionObserver === "undefined") return;
-    analyticsExposureObserver = new IntersectionObserver(analyticsExposureOnIntersect, { threshold: 0.01 });
-    document.querySelectorAll("[data-track-exposure]").forEach(el => analyticsExposureObserver.observe(el));
+  }
+
+  function analyticsExposureEnsureClickListener() {
+    if (analyticsExposureClickBound) return;
+    analyticsExposureClickBound = true;
+    document.addEventListener("click", function(e) {
+      const target = e.target.closest("button, summary, a, input, select, textarea, [data-track-exposure]");
+      if (!target) return;
+      analyticsExposureOnClick(target);
+    }, true);
   }
 
   function analyticsIgnoredVisibleControlsFromEvents(events, opts) {
@@ -1730,7 +1792,7 @@
     (events || []).forEach(e => {
       if (e.event !== "ui_exposure") return;
       const d = e.details || {};
-      if (!d.controlId || typeof d.visibleMs !== "number" || d.visibleMs < EXPOSURE_MIN_VISIBLE_MS) return;
+      if (!d.controlId || Number(d.visibleMs) < EXPOSURE_MIN_VISIBLE_MS) return;
       const isTester = !!e.isTesterSession;
       if (opts.productionOnly && isTester) return;
       if (opts.testerOnly && !isTester) return;
@@ -6514,10 +6576,11 @@
     analyticsClearHoverTimer(target);
   }, true);
 
+  analyticsExposureEnsureClickListener();
+
   document.addEventListener("click", function(e) {
     const target = e.target.closest("button, summary, a, input, select, textarea");
     if (!target) return;
-    analyticsExposureOnClick(target);
     analyticsClearHoverTimer(target);
     analyticsRecordClickBurst(target);
     analyticsTrack("click", { target: analyticsElementMeta(target) });
