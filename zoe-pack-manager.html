@@ -2837,7 +2837,12 @@
     if (trend === "new") {
       text = `I noticed something new.\n\n${recentLine}.\n\nPreviously this happened in only ${comparison.previousCount} of the previous ${comparison.previousDenominator}.\n\nThis appears to be becoming normal.`;
     } else if (trend === "emerging" || trend === "strengthening") {
-      text = `I noticed a change.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\nThis has become much more common.`;
+      text = `I noticed a change.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.`;
+      if (comparison.recentCount <= 1 && comparison.previousCount <= 1) {
+        text += "\n\nThis has only happened once, so it may not mean anything yet.";
+      } else {
+        text += "\n\nThis has become much more common.";
+      }
     } else if (trend === "weakening" || trend === "disappearing") {
       text = `I noticed a change.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\nThis seems to be fading.`;
     } else if (trend === "stable") {
@@ -2858,6 +2863,19 @@
     return text;
   }
 
+  function habitInsightQualifiesForTopSummary(insight) {
+    if (insight.recentCount <= 1 && insight.previousCount <= 1) return false;
+    if (insight.confidence === "medium" || insight.confidence === "high") return true;
+    if (insight.recentCount >= 3) return true;
+    if (insight.previousCount >= 3) return true;
+    if (Math.abs(insight.deltaPercentage) >= 30) return true;
+    return false;
+  }
+
+  function filterTopHabitInsights(insights) {
+    return (insights || []).filter(habitInsightQualifiesForTopSummary);
+  }
+
   function generateHabitInsights(trendRows) {
     const insights = trendRows
       .filter(r => r.recentCount > 0 || r.previousCount > 0)
@@ -2868,6 +2886,8 @@
         itemId: r.itemId,
         replacementItemId: r.replacementItemId || "",
         trend: r.trend,
+        recentCount: r.recentCount,
+        previousCount: r.previousCount,
         deltaPercentage: r.deltaPercent,
         confidence: r.confidence,
         likelyCause: r.likelyCause,
@@ -2912,16 +2932,20 @@
 
   function packingHabitTrendsConcise(trends) {
     const counts = trends?.counts || {};
+    const topInsights = filterTopHabitInsights(trends?.insights || []).slice(0, 3);
     return {
       numberOfEmergingHabits: (counts.new || 0) + (counts.emerging || 0),
       numberOfStableHabits: counts.stable || 0,
       numberOfWeakeningHabits: (counts.weakening || 0) + (counts.disappearing || 0),
       numberOfStrengtheningHabits: counts.strengthening || 0,
-      topThreeInsights: (trends?.insights || []).slice(0, 3).map(i => ({
+      topThreeInsights: topInsights.map(i => ({
         trend: i.trend,
         volunteerText: i.volunteerText,
         confidence: i.confidence,
         likelyCause: i.likelyCause,
+        recentCount: i.recentCount,
+        previousCount: i.previousCount,
+        deltaPercentage: i.deltaPercentage,
       })),
     };
   }
