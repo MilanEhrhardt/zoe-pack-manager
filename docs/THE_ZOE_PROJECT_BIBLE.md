@@ -88,6 +88,10 @@ See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 **Phase 2.1 (shipped):** Refines Phase 2 epistemic honesty — replaces single `likelyCause` with scored cause probabilities, number-driven explanations, and quality-based insight ordering. No volunteer workflow changes.
 
+### Operational Intelligence Foundation (Phase 3A — export only)
+
+**Phase 3A (shipped):** A read-only **operational measurement layer** derives quantity-weighted facts from existing transactions: build impact (packs created via `tx.qty`), substitution impact (`packCount` × `qtyPerPack`), optional impact, donation enablement estimates, recount variance effects, item-level stock risk, and an `impactReadiness` gate for Phase 3B. Exported as `operationalIntelligence` in AI Data Pack; analytics summary includes `operationalIntelligenceSummary`. Production-only default; Milan tester builds excluded from primary measurements. **Does not make recommendations** — prepares the Operational Impact Engine (Phase 3B). Janet sees nothing new.
+
 See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 ## Design Principles

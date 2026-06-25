@@ -1665,7 +1665,8 @@
     };
   }
 
-  function analyticsDerivedSummary() {
+  function analyticsDerivedSummary(opts) {
+    opts = opts || {};
     const events = state.analytics?.events || [];
     const byEvent = {}, byScreen = {}, byFlow = {}, errors = {}, clicks = {};
     const flowStarts = {}, completedDurations = [];
@@ -1771,11 +1772,14 @@
     ].sort((a, b) => b.score - a.score).slice(0, 25);
 
     const sessionBreakdown = analyticsClassifySessions(events);
-    const itemConfidence = computeAllItemConfidence();
+    const itemConfidence = opts.itemConfidence || computeAllItemConfidence();
     const confidenceSummary = buildConfidenceSummary(itemConfidence);
-    const packingHabitsFull = packingHabitSummary();
+    const packingHabitsFull = opts.packingHabits || packingHabitSummary();
     const packingHabitsSummary = packingHabitsSummaryConcise(packingHabitsFull);
     const packingHabitTrends = packingHabitTrendsConcise(packingHabitsFull.trends);
+    const operationalIntelligence = opts.operationalIntelligence
+      || computeOperationalIntelligence({ itemConfidence, packingHabits: packingHabitsFull });
+    const operationalIntelligenceSummary = operationalIntelligenceSummaryConcise(operationalIntelligence);
 
     return {
       generatedAt: new Date().toISOString(),
@@ -1810,6 +1814,7 @@
       confidenceSummary,
       packingHabitsSummary,
       packingHabitTrends,
+      operationalIntelligenceSummary,
       ...sessionBreakdown,
     };
   }
@@ -1851,6 +1856,7 @@
     const userCtx = analyticsUserFields();
     const itemConfidence = computeAllItemConfidence();
     const packingHabits = packingHabitSummary();
+    const operationalIntelligence = computeOperationalIntelligence({ itemConfidence, packingHabits });
     const payload = {
       exportedAt: new Date().toISOString(),
       app: "Zoe Pack Manager",
@@ -1879,8 +1885,9 @@
       },
       itemConfidence,
       packingHabits,
+      operationalIntelligence,
       analytics: state.analytics,
-      summary: analyticsDerivedSummary(),
+      summary: analyticsDerivedSummary({ itemConfidence, packingHabits, operationalIntelligence }),
     };
     downloadTextFile(JSON.stringify(payload, null, 2), `zoe-ai-data-pack-${todayISO()}.json`, "application/json");
   }
@@ -3230,6 +3237,743 @@
         volunteerText: o.volunteerText,
         confidenceBand: o.confidenceBand,
       })),
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // OPERATIONAL INTELLIGENCE — Phase 3A measurement foundation (export / ops)
+  // ═══════════════════════════════════════════════════════════════════
+
+  const OP_RECOUNT_BUILD_WINDOW_DAYS = 30;
+
+  function opPackQty(tx) {
+    return Math.max(0, Number(tx.qty) || 0);
+  }
+
+  function opSplitBuilds(transactions) {
+    const all = (transactions || []).filter(t => t.type === "build");
+    const production = all.filter(t => isProductionBuild(t));
+    const tester = all.filter(t => isTesterUser(t.packer));
+    return { all, production, tester };
+  }
+
+  function opConsumptionFromBuild(tx) {
+    return computeBuildStockPlan(
+      tx.packKey, opPackQty(tx), tx.optionalIncluded || [], tx.customExtras || [],
+      tx.substitutions || [], tx.omissions || []
+    );
+  }
+
+  function opBaselineUsageFromBuild(tx) {
+    return computeBuildStockPlan(
+      tx.packKey, opPackQty(tx), tx.optionalIncluded || [], tx.customExtras || [], [], []
+    ).usage;
+  }
+
+  function opClassifyItemRole(itemId, packKey, tx) {
+    const recipe = RECIPES[packKey];
+    const subs = normalizeSubstitutions(tx.substitutions || []);
+    if (subs.some(s => s.substitute === itemId)) return "substitution";
+    if ((tx.customExtras || []).some(e => e.itemId === itemId)) return "custom_extra";
+    if (recipe.core.some(c => c.itemId === itemId)) return "core";
+    const optionalIncluded = tx.optionalIncluded || [];
+    for (const opt of recipe.optional || []) {
+      const key = opt.itemId || opt.id;
+      if (optionalIncluded.includes(key) && opt.itemId === itemId) return "optional";
+    }
+    return "core";
+  }
+
+  function opRecipeRolesForItem(itemId) {
+    const roles = [];
+    for (const packKey of Object.keys(RECIPES)) {
+      const recipe = RECIPES[packKey];
+      const core = recipe.core.find(c => c.itemId === itemId);
+      if (core) roles.push({ packKey, packLabel: recipe.label, role: "core", qtyPerPack: core.qty });
+      for (const opt of recipe.optional || []) {
+        if (opt.itemId === itemId && opt.decrement) {
+          roles.push({ packKey, packLabel: recipe.label, role: "optional", qtyPerPack: 1 });
+        }
+      }
+    }
+    return roles;
+  }
+
+  function opEstimatedPacksForItem(units, packKey, itemId) {
+    const recipe = RECIPES[packKey];
+    const core = recipe?.core?.find(c => c.itemId === itemId);
+    if (!core || core.qty <= 0) return 0;
+    return Math.floor(units / core.qty);
+  }
+
+  function opDaysBetween(dateA, dateB) {
+    if (!dateA || !dateB) return Infinity;
+    const a = new Date(dateA + "T12:00:00");
+    const b = new Date(dateB + "T12:00:00");
+    return Math.abs(Math.floor((b - a) / 86400000));
+  }
+
+  function opUnitsConsumedAfterDate(itemId, afterDate, transactions) {
+    let total = 0;
+    (transactions || []).forEach(tx => {
+      if (tx.type === "undo") return;
+      if (tx.type !== "build") return;
+      if (afterDate && (tx.date || "") <= afterDate) return;
+      const { usage } = opConsumptionFromBuild(tx);
+      total += usage[itemId] || 0;
+    });
+    return total;
+  }
+
+  function opLinkHabitFields(packingHabits, type, packKey, itemId, replacementItemId) {
+    const key = packingHabitPatternKey(type, packKey, itemId, replacementItemId || "");
+    const obs = (packingHabits?.observations || []).find(o =>
+      packingHabitPatternKey(o.type, o.packKey, o.itemId, o.replacementItemId || "") === key
+    );
+    const trend = (packingHabits?.trends?.trendRows || []).find(r =>
+      packingHabitPatternKey(r.type, r.packKey, r.itemId, r.replacementItemId || "") === key
+    );
+    return {
+      relatedHabitObservation: obs ? { volunteerText: obs.volunteerText, confidenceBand: obs.confidenceBand } : null,
+      relatedTrend: trend ? { trend: trend.trend, evidence: trend.evidence, confidenceBand: trend.confidenceBand } : null,
+    };
+  }
+
+  function opOperationalMeaning(kind, ctx) {
+    if (kind === "substitution") {
+      if (ctx.shortageLikely === true) return "May have helped packing continue during a shortage.";
+      if (ctx.shortageLikely === false) return "May reflect volunteer preference.";
+      if (ctx.highRate) return "May reflect recipe mismatch.";
+      return "Insufficient evidence.";
+    }
+    if (kind === "optional") {
+      if (ctx.inclusionRate >= 0.7) return "This optional is becoming operationally significant.";
+      if (ctx.unitsConsumed >= 20) return "This optional consumes meaningful stock.";
+      if (ctx.inclusionRate < 0.2) return "This optional appears occasional.";
+      return "Insufficient evidence.";
+    }
+    return "Insufficient evidence.";
+  }
+
+  function opEmptyPackBuildStats(packKey) {
+    return {
+      packKey,
+      packLabel: RECIPES[packKey]?.label || packKey,
+      productionBuildEvents: 0,
+      productionPacksCreated: 0,
+      testerBuildEventsExcluded: 0,
+      testerPacksExcluded: 0,
+      totalPacksCreatedAllMovements: 0,
+      byPacker: {},
+      byDestination: {},
+      byDate: {},
+      averagePacksPerBuildEvent: 0,
+      largestSingleBuild: 0,
+      coreStockConsumed: 0,
+      optionalStockConsumed: 0,
+      customExtraStockConsumed: 0,
+      substitutionStockConsumed: 0,
+      omittedStockAvoided: 0,
+    };
+  }
+
+  function computeBuildImpact(transactions) {
+    const { all, production, tester } = opSplitBuilds(transactions);
+    const packKeys = Object.keys(RECIPES);
+    const prodByPack = {};
+    const allByPack = {};
+    packKeys.forEach(pk => { prodByPack[pk] = opEmptyPackBuildStats(pk); allByPack[pk] = opEmptyPackBuildStats(pk); });
+
+    const itemConsProd = {};
+    const itemConsAll = {};
+    const ensureItem = (map, itemId) => {
+      if (!map[itemId]) {
+        map[itemId] = { itemId, itemName: itemName(itemId), unitsConsumed: 0, buildTouchCount: 0, packsAffected: 0, role: "core" };
+      }
+      return map[itemId];
+    };
+
+    function processBuild(tx, byPack, itemMap, isProduction) {
+      const pk = tx.packKey;
+      if (!byPack[pk]) return;
+      const qty = opPackQty(tx);
+      const row = byPack[pk];
+      row.totalPacksCreatedAllMovements += qty;
+      if (isProduction) {
+        row.productionBuildEvents += 1;
+        row.productionPacksCreated += qty;
+      }
+      const packer = tx.packer || "unknown";
+      const dest = tx.destination || "unknown";
+      const date = tx.date || "unknown";
+      row.byPacker[packer] = (row.byPacker[packer] || 0) + qty;
+      row.byDestination[dest] = (row.byDestination[dest] || 0) + qty;
+      row.byDate[date] = (row.byDate[date] || 0) + qty;
+      if (qty > row.largestSingleBuild) row.largestSingleBuild = qty;
+
+      const { usage } = opConsumptionFromBuild(tx);
+      const baseline = opBaselineUsageFromBuild(tx);
+      const touched = new Set();
+      Object.entries(usage).forEach(([itemId, units]) => {
+        if (units <= 0) return;
+        const role = opClassifyItemRole(itemId, pk, tx);
+        const entry = ensureItem(itemMap, itemId);
+        entry.unitsConsumed += units;
+        entry.role = role;
+        if (!touched.has(itemId)) {
+          entry.buildTouchCount += 1;
+          entry.packsAffected += qty;
+          touched.add(itemId);
+        }
+        if (role === "core") row.coreStockConsumed += units;
+        else if (role === "optional") row.optionalStockConsumed += units;
+        else if (role === "custom_extra") row.customExtraStockConsumed += units;
+        else if (role === "substitution") row.substitutionStockConsumed += units;
+      });
+      Object.entries(baseline).forEach(([itemId, baseUnits]) => {
+        const actual = usage[itemId] || 0;
+        if (baseUnits > actual) row.omittedStockAvoided += baseUnits - actual;
+      });
+    }
+
+    production.forEach(tx => processBuild(tx, prodByPack, itemConsProd, true));
+    all.forEach(tx => processBuild(tx, allByPack, itemConsAll, isProductionBuild(tx)));
+
+    tester.forEach(tx => {
+      const pk = tx.packKey;
+      if (!prodByPack[pk]) return;
+      prodByPack[pk].testerBuildEventsExcluded += 1;
+      prodByPack[pk].testerPacksExcluded += opPackQty(tx);
+    });
+
+    packKeys.forEach(pk => {
+      const row = prodByPack[pk];
+      row.averagePacksPerBuildEvent = row.productionBuildEvents > 0
+        ? Math.round((row.productionPacksCreated / row.productionBuildEvents) * 100) / 100
+        : 0;
+      const allRow = allByPack[pk];
+      allRow.averagePacksPerBuildEvent = allRow.productionBuildEvents > 0
+        ? Math.round((allRow.productionPacksCreated / allRow.productionBuildEvents) * 100) / 100
+        : 0;
+    });
+
+    return {
+      byPackKey: packKeys.map(pk => prodByPack[pk]),
+      allMovements: {
+        byPackKey: packKeys.map(pk => allByPack[pk]),
+        totalPacksCreatedAllMovements: packKeys.reduce((s, pk) => s + allByPack[pk].totalPacksCreatedAllMovements, 0),
+      },
+      itemConsumption: {
+        productionOnly: Object.values(itemConsProd).sort((a, b) => b.unitsConsumed - a.unitsConsumed),
+        allMovements: Object.values(itemConsAll).sort((a, b) => b.unitsConsumed - a.unitsConsumed),
+      },
+    };
+  }
+
+  function computeSubstitutionImpact(transactions, packingHabits) {
+    const { production } = opSplitBuilds(transactions);
+    const patterns = {};
+
+    production.forEach(tx => {
+      const pk = tx.packKey;
+      const qty = opPackQty(tx);
+      normalizeSubstitutions(tx.substitutions || []).forEach(sub => {
+        const key = `${pk}|${sub.insteadOf}|${sub.substitute}`;
+        if (!patterns[key]) {
+          patterns[key] = {
+            packKey: pk,
+            packLabel: RECIPES[pk]?.label || pk,
+            insteadOfItemId: sub.insteadOf,
+            insteadOfItemName: itemName(sub.insteadOf),
+            substituteItemId: sub.substitute,
+            substituteItemName: itemName(sub.substitute),
+            substitutionEvents: 0,
+            packsAffected: 0,
+            unitsSubstituted: 0,
+            firstSeen: tx.date,
+            lastSeen: tx.date,
+            dates: [],
+          };
+        }
+        const p = patterns[key];
+        p.substitutionEvents += 1;
+        p.packsAffected += sub.packCount;
+        p.unitsSubstituted += sub.packCount * sub.qtyPerPack;
+        p.dates.push(tx.date);
+        if (tx.date < p.firstSeen) p.firstSeen = tx.date;
+        if (tx.date > p.lastSeen) p.lastSeen = tx.date;
+      });
+    });
+
+    return Object.values(patterns).map(p => {
+      const habit = opLinkHabitFields(packingHabits, "substitution", p.packKey, p.insteadOfItemId, p.substituteItemId);
+      const zeroDates = habitReplayItemZeroDates(p.insteadOfItemId, transactions);
+      const shortageDuring = zeroDates.some(d => d >= p.firstSeen && d <= p.lastSeen);
+      const origBal = getBalance(p.insteadOfItemId);
+      const subBal = getBalance(p.substituteItemId);
+      const subItem = itemMap[p.substituteItemId];
+      let unitsOriginalAvoided = 0;
+      production.forEach(tx => {
+        if (tx.packKey !== p.packKey) return;
+        normalizeSubstitutions(tx.substitutions || []).forEach(sub => {
+          if (sub.insteadOf !== p.insteadOfItemId || sub.substitute !== p.substituteItemId) return;
+          const perPack = recipeQtyPerPack(p.packKey, sub.insteadOf, tx.optionalIncluded || [], tx.customExtras || []);
+          unitsOriginalAvoided += sub.packCount * perPack;
+        });
+      });
+      const shortageLikely = shortageDuring ? true : (p.packsAffected >= 3 ? false : "unknown");
+      const shortageEvidence = shortageDuring
+        ? `${p.insteadOfItemName} reached zero during the observation window.`
+        : "No direct stock-shortage evidence in transaction history.";
+      const meaning = opOperationalMeaning("substitution", {
+        shortageLikely: shortageLikely === "unknown" ? null : shortageLikely,
+        highRate: p.packsAffected >= 5,
+      });
+      return {
+        ...p,
+        dates: undefined,
+        ...habit,
+        possibleOperationalMeaning: meaning,
+        counterfactualIngredients: {
+          originalItemBalanceAtEnd: origBal,
+          substituteItemBalanceAtEnd: subBal,
+          originalItemCurrentlyZero: origBal <= 0,
+          substituteItemCurrentlyLow: subItem ? subBal < subItem.threshold : false,
+          packsThatWouldHaveNeededOriginal: p.packsAffected,
+          unitsOfOriginalAvoided: unitsOriginalAvoided,
+          unitsOfSubstituteUsed: p.unitsSubstituted,
+          shortageLikely,
+          shortageEvidence,
+        },
+      };
+    }).sort((a, b) => b.packsAffected - a.packsAffected);
+  }
+
+  function computeOptionalImpact(transactions, packingHabits) {
+    const { production } = opSplitBuilds(transactions);
+    const patterns = {};
+    let totalProdPacks = 0;
+
+    production.forEach(tx => {
+      const pk = tx.packKey;
+      const qty = opPackQty(tx);
+      totalProdPacks += qty;
+      const recipe = RECIPES[pk];
+      const included = tx.optionalIncluded || [];
+      (recipe.optional || []).forEach(opt => {
+        const key = opt.itemId || opt.id;
+        if (!opt.itemId || !opt.decrement) return;
+        if (!included.includes(key)) return;
+        const mapKey = `${pk}|${opt.itemId}`;
+        if (!patterns[mapKey]) {
+          patterns[mapKey] = {
+            packKey: pk,
+            packLabel: recipe.label,
+            itemId: opt.itemId,
+            itemName: itemName(opt.itemId),
+            inclusionEvents: 0,
+            packsIncluded: 0,
+            unitsConsumed: 0,
+          };
+        }
+        const p = patterns[mapKey];
+        p.inclusionEvents += 1;
+        p.packsIncluded += qty;
+        p.unitsConsumed += qty;
+      });
+    });
+
+    return Object.values(patterns).map(p => {
+      const habit = opLinkHabitFields(packingHabits, "optional_usage", p.packKey, p.itemId, "");
+      const packTotal = production.filter(t => t.packKey === p.packKey).reduce((s, t) => s + opPackQty(t), 0);
+      const inclusionRate = packTotal > 0 ? Math.round((p.packsIncluded / packTotal) * 100) / 100 : 0;
+      const bal = getBalance(p.itemId);
+      const it = itemMap[p.itemId];
+      return {
+        ...p,
+        inclusionRateByPacks: inclusionRate,
+        currentBalance: bal,
+        currentLowStock: it ? bal < it.threshold && bal > 0 : false,
+        currentZeroStock: bal <= 0,
+        ...habit,
+        possibleOperationalMeaning: opOperationalMeaning("optional", {
+          inclusionRate,
+          unitsConsumed: p.unitsConsumed,
+        }),
+      };
+    }).sort((a, b) => b.packsIncluded - a.packsIncluded);
+  }
+
+  function computeDonationImpact(transactions) {
+    return (transactions || []).filter(t => t.type === "donation").map(tx => {
+      const lines = (tx.lines || []).map(line => {
+        const unitsAdded = line.unitsAdded || Number(line.qty) || 0;
+        const roles = opRecipeRolesForItem(line.itemId);
+        const estimatedByPack = {};
+        roles.filter(r => r.role === "core").forEach(r => {
+          estimatedByPack[r.packKey] = opEstimatedPacksForItem(unitsAdded, r.packKey, line.itemId);
+        });
+        const enableParts = Object.entries(estimatedByPack)
+          .filter(([, n]) => n > 0)
+          .map(([pk, n]) => `up to ${n} ${RECIPES[pk]?.label || pk}s`);
+        return {
+          itemId: line.itemId,
+          itemName: itemName(line.itemId),
+          unitsAdded,
+          currentBalance: getBalance(line.itemId),
+          unitsLaterConsumedAfterDonation: opUnitsConsumedAfterDate(line.itemId, tx.date, transactions),
+          appearsInRecipe: roles.length > 0,
+          recipeRoles: roles,
+          estimatedPacksEnabledByThisLine: estimatedByPack,
+          estimateDescription: enableParts.length
+            ? `This donation added enough ${itemName(line.itemId)} for ${enableParts.join(" and ")}.`
+            : `${itemName(line.itemId)} does not appear as a core recipe item — no pack enablement estimate.`,
+        };
+      });
+      const totalUnitsAdded = lines.reduce((s, l) => s + l.unitsAdded, 0);
+      const estimatedPackEnablement = {};
+      Object.keys(RECIPES).forEach(pk => {
+        let minEnable = Infinity;
+        lines.forEach(l => {
+          const n = l.estimatedPacksEnabledByThisLine[pk];
+          if (n > 0) minEnable = Math.min(minEnable, n);
+        });
+        if (minEnable !== Infinity) estimatedPackEnablement[pk] = minEnable;
+      });
+      const itemsStillOnHand = lines.filter(l => l.currentBalance > 0).map(l => l.itemId);
+      const itemsLaterConsumed = lines.filter(l => l.unitsLaterConsumedAfterDonation > 0).map(l => l.itemId);
+      const dates = (transactions || []).map(t => t.date).filter(Boolean).sort();
+      return {
+        donationId: tx.id,
+        date: tx.date,
+        donor: tx.donor || "",
+        totalUnitsAdded,
+        lines,
+        estimatedPackEnablement,
+        itemsStillOnHand,
+        itemsLaterConsumed,
+        impactWindow: { from: tx.date, to: dates[dates.length - 1] || tx.date },
+      };
+    }).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  }
+
+  function computeRecountImpact(transactions) {
+    const { production } = opSplitBuilds(transactions);
+    return (transactions || []).filter(t => t.type === "recount").map(tx => {
+      const oldQty = Number(tx.oldQty) || 0;
+      const newQty = Number(tx.newQty) || 0;
+      const variance = newQty - oldQty;
+      const varianceAbs = Math.abs(variance);
+      const variancePercent = Math.round((varianceAbs / Math.max(oldQty, newQty, 1)) * 100);
+      let direction = "same";
+      if (variance > 0) direction = "higher_than_expected";
+      else if (variance < 0) direction = "lower_than_expected";
+
+      let confidenceEffect = "minor_adjustment";
+      if (varianceAbs <= 2) confidenceEffect = "minor_adjustment";
+      else if (variance > 0 && variancePercent >= 10) confidenceEffect = "revealed_understatement";
+      else if (variance < 0 && variancePercent >= 10) confidenceEffect = "revealed_overstatement";
+      else if (varianceAbs > 0 && variancePercent < 10) confidenceEffect = "increased_confidence";
+
+      let operationalRiskEffect = "Small correction.";
+      if (direction === "lower_than_expected" && variancePercent >= 15) {
+        operationalRiskEffect = "System had overstated available stock.";
+      } else if (direction === "higher_than_expected" && variancePercent >= 15) {
+        operationalRiskEffect = "System had understated available stock.";
+      }
+
+      let relatedBuildsBefore = 0;
+      let relatedBuildsAfter = 0;
+      production.forEach(btx => {
+        const { usage } = opConsumptionFromBuild(btx);
+        if (!(usage[tx.itemId] > 0)) return;
+        const days = opDaysBetween(btx.date, tx.date);
+        const qty = opPackQty(btx);
+        if (btx.date < tx.date && days <= OP_RECOUNT_BUILD_WINDOW_DAYS) relatedBuildsBefore += qty;
+        if (btx.date > tx.date && days <= OP_RECOUNT_BUILD_WINDOW_DAYS) relatedBuildsAfter += qty;
+      });
+
+      return {
+        recountId: tx.id,
+        date: tx.date,
+        itemId: tx.itemId,
+        itemName: itemName(tx.itemId),
+        oldQty,
+        newQty,
+        variance,
+        varianceAbs,
+        variancePercent,
+        direction,
+        confidenceEffect,
+        operationalRiskEffect,
+        relatedBuildsBefore,
+        relatedBuildsAfter,
+      };
+    }).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  }
+
+  function computeStockRisk(transactions, itemConfidence) {
+    const statsIndex = buildItemActivityStatsIndex(transactions, { excludeTesterBuilds: true });
+    const confMap = {};
+    (itemConfidence || []).forEach(row => { confMap[row.itemId] = row.volunteerConfidence; });
+
+    return ITEMS.map(item => {
+      const balance = getBalance(item.id);
+      const meta = itemRecipeMeta(item.id);
+      const roles = opRecipeRolesForItem(item.id);
+      const stats = deriveItemActivityStats(item.id, statsIndex);
+      const conf = confMap[item.id] || {};
+      const confBand = conf.confidenceBand || "needs_checking";
+      const confProb = Math.round(((conf.confidenceScore || 0) / 100) * 100) / 100;
+      const zeroStock = balance <= 0;
+      const lowStock = balance > 0 && balance < item.threshold;
+
+      const riskSignals = [];
+      if (zeroStock && meta.isCore) riskSignals.push("zero_stock_core_item");
+      if (lowStock && meta.isCore) riskSignals.push("low_stock_core_item");
+      if (stats.packDeductions >= 20) riskSignals.push("high_recent_consumption");
+      if (confBand === "needs_checking" || confBand === "uncertain") riskSignals.push("confidence_low");
+      if (stats.substitutionTouches >= 2) riskSignals.push("substitution_pressure");
+      if (stats.donationLineCount >= 3 && stats.packDeductions >= 10) riskSignals.push("donation_dependency");
+      if (item.seasonal) riskSignals.push("seasonal_relevance");
+
+      let riskBand = "low";
+      if (zeroStock && meta.isCore) riskBand = "critical";
+      else if (zeroStock || (lowStock && meta.isCore) || riskSignals.length >= 3) riskBand = "high";
+      else if (lowStock || riskSignals.length >= 1) riskBand = "medium";
+
+      return {
+        itemId: item.id,
+        itemName: item.name,
+        balance,
+        threshold: item.threshold,
+        zeroStock,
+        lowStock,
+        appearsInRecipes: roles.length > 0,
+        recipeRoles: roles,
+        recentConsumption: stats.packDeductions,
+        recentDonationAdds: stats.donationLineCount,
+        recentSubstitutionTouches: stats.substitutionTouches,
+        recentOmissionTouches: stats.omissionTouches,
+        confidenceBand: confBand,
+        confidenceProbability: confProb,
+        riskSignals,
+        riskBand,
+      };
+    }).sort((a, b) => {
+      const order = { critical: 4, high: 3, medium: 2, low: 1 };
+      return (order[b.riskBand] || 0) - (order[a.riskBand] || 0) || a.balance - b.balance;
+    });
+  }
+
+  function computeImpactReadiness(ctx) {
+    const reasons = [];
+    const blockers = [];
+    const recommendedNextDataToCollect = [];
+    let score = 0;
+
+    if (ctx.productionPacksCreated >= 50) { score += 20; reasons.push("At least 50 production packs recorded."); }
+    else blockers.push("Fewer than 50 production packs.");
+
+    if (ctx.uniqueBuildDays >= 14) { score += 15; reasons.push("Production builds span multiple weeks."); }
+    else blockers.push("Short observation window.");
+
+    if (ctx.donationCount >= 10) { score += 10; reasons.push("At least 10 donations recorded."); }
+    else recommendedNextDataToCollect.push("More donation history.");
+
+    if (ctx.recountCount >= 5) { score += 10; reasons.push("At least 5 recounts recorded."); }
+    else { blockers.push("Too few recounts."); recommendedNextDataToCollect.push("More physical recounts."); }
+
+    if (ctx.substitutionPatternCount >= 2) { score += 10; reasons.push("Repeated substitution patterns exist."); }
+    if (ctx.optionalPatternCount >= 2) { score += 5; reasons.push("Repeated optional inclusion patterns exist."); }
+
+    if (ctx.needsCheckingRatio < 0.5) { score += 15; reasons.push("Item confidence layer is reasonably mature."); }
+    else blockers.push("Confidence layer not mature — many items need checking.");
+
+    if (ctx.babyPackProductionPacks >= 10) { score += 10; reasons.push("Baby Pack has sufficient production history."); }
+    else recommendedNextDataToCollect.push("More Baby Pack production builds.");
+
+    if (!ctx.testerDominates) { score += 5; reasons.push("Production data is not dominated by tester builds."); }
+    else blockers.push("Too many tester events relative to production.");
+
+    if (!ctx.singlePackerDominates) { score += 5; reasons.push("Multiple packers contribute to production builds."); }
+    else blockers.push("One packer dominates production builds.");
+
+    if (ctx.unknownSessionRatio < 0.3) { score += 5; reasons.push("Most sessions have a known volunteer identity."); }
+    else blockers.push("Too many unknown sessions.");
+
+    if (ctx.synthetic) {
+      score = Math.min(score, 35);
+      blockers.push("Synthetic sample data.");
+    }
+
+    score = Math.min(100, Math.max(0, score));
+    const readyForImpactJudgement = !ctx.synthetic && score >= 70 && blockers.length <= 1;
+
+    return {
+      readyForImpactJudgement,
+      readinessScore: score,
+      reasons,
+      blockers,
+      recommendedNextDataToCollect,
+    };
+  }
+
+  function opBuildLimitations(ctx) {
+    const limits = ["Impact estimates are measurement ingredients, not recommendations."];
+    if (ctx.synthetic) limits.push("This export contains synthetic sample data.");
+    if (ctx.uniqueBuildDays < 14) limits.push("The observation window is short.");
+    if (ctx.singlePackerDominates) limits.push(`Most production builds are from ${ctx.dominantPacker}.`);
+    if (ctx.babyPackProductionPacks < 10) limits.push("Baby Pack has insufficient history.");
+    if (ctx.testerDominates) limits.push("Tester builds represent a large share of build events.");
+    if (ctx.recountCount < 5) limits.push("Few recounts — stock confidence measurements are limited.");
+    return limits;
+  }
+
+  function opBuildOperationalSummary(buildImpact, substitutionImpact, optionalImpact, donationImpact, recountImpact, stockRisk, impactReadiness) {
+    const productionPacksCreated = (buildImpact.byPackKey || []).reduce((s, p) => s + p.productionPacksCreated, 0);
+    const testerPacksExcluded = (buildImpact.byPackKey || []).reduce((s, p) => s + p.testerPacksExcluded, 0);
+    const highRiskItemCount = stockRisk.filter(r => r.riskBand === "high").length;
+    const criticalRiskItemCount = stockRisk.filter(r => r.riskBand === "critical").length;
+
+    return {
+      productionPacksCreated,
+      testerPacksExcluded,
+      topConsumedItems: (buildImpact.itemConsumption?.productionOnly || []).slice(0, 5),
+      topSubstitutionPatternsByPacksAffected: substitutionImpact.slice(0, 5),
+      topOptionalItemsByPacksIncluded: optionalImpact.slice(0, 5),
+      largestDonationsByEstimatedEnablement: [...donationImpact]
+        .sort((a, b) => {
+          const aMax = Math.max(0, ...Object.values(a.estimatedPackEnablement || {}));
+          const bMax = Math.max(0, ...Object.values(b.estimatedPackEnablement || {}));
+          return bMax - aMax;
+        })
+        .slice(0, 5),
+      highestVarianceRecounts: [...recountImpact].sort((a, b) => b.varianceAbs - a.varianceAbs).slice(0, 5),
+      highestRiskItems: stockRisk.filter(r => r.riskBand === "high" || r.riskBand === "critical").slice(0, 5),
+      highRiskItemCount,
+      criticalRiskItemCount,
+      impactReadiness,
+    };
+  }
+
+  function computeOperationalIntelligence(deps) {
+    deps = deps || {};
+    const transactions = state.transactions || [];
+    const packingHabits = deps.packingHabits || packingHabitSummary();
+    const itemConfidence = deps.itemConfidence || computeAllItemConfidence();
+
+    const buildImpact = computeBuildImpact(transactions);
+    const substitutionImpact = computeSubstitutionImpact(transactions, packingHabits);
+    const optionalImpact = computeOptionalImpact(transactions, packingHabits);
+    const donationImpact = computeDonationImpact(transactions);
+    const recountImpact = computeRecountImpact(transactions);
+    const stockRisk = computeStockRisk(transactions, itemConfidence);
+
+    const { production, all, tester } = opSplitBuilds(transactions);
+    const productionPacks = production.reduce((s, t) => s + opPackQty(t), 0);
+    const testerPacks = tester.reduce((s, t) => s + opPackQty(t), 0);
+    const buildDates = production.map(t => t.date).filter(Boolean);
+    const uniqueBuildDays = new Set(buildDates).size;
+    const donationCount = transactions.filter(t => t.type === "donation").length;
+    const recountCount = transactions.filter(t => t.type === "recount").length;
+    const babyPackProductionPacks = production.filter(t => t.packKey === "babyPack").reduce((s, t) => s + opPackQty(t), 0);
+
+    const packerCounts = {};
+    production.forEach(t => { packerCounts[t.packer || "unknown"] = (packerCounts[t.packer || "unknown"] || 0) + opPackQty(t); });
+    const dominantPacker = Object.entries(packerCounts).sort((a, b) => b[1] - a[1])[0];
+    const singlePackerDominates = Object.keys(packerCounts).length <= 1 && production.length > 3;
+    const testerDominates = all.length > 0 && tester.length / all.length > 0.4;
+
+    const confSummary = buildConfidenceSummary(itemConfidence);
+    const needsCheckingRatio = itemConfidence.length > 0
+      ? (confSummary.volunteer.uncertain + confSummary.volunteer.needs_checking) / itemConfidence.length
+      : 1;
+
+    const events = state.analytics?.events || [];
+    const sessionInfo = analyticsClassifySessions(events);
+    const unknownSessionRatio = (sessionInfo.productionVolunteerSessions + sessionInfo.testerSessions + sessionInfo.unknownSessions) > 0
+      ? sessionInfo.unknownSessions / (sessionInfo.productionVolunteerSessions + sessionInfo.testerSessions + sessionInfo.unknownSessions)
+      : 0;
+
+    const readinessCtx = {
+      synthetic: !!state.sampleData,
+      productionPacksCreated: productionPacks,
+      uniqueBuildDays,
+      donationCount,
+      recountCount,
+      substitutionPatternCount: substitutionImpact.length,
+      optionalPatternCount: optionalImpact.length,
+      needsCheckingRatio,
+      babyPackProductionPacks,
+      testerDominates,
+      singlePackerDominates,
+      dominantPacker: dominantPacker ? dominantPacker[0] : "",
+      unknownSessionRatio,
+    };
+
+    const impactReadiness = computeImpactReadiness(readinessCtx);
+    const limitations = opBuildLimitations(readinessCtx);
+    const summary = opBuildOperationalSummary(
+      buildImpact, substitutionImpact, optionalImpact, donationImpact, recountImpact, stockRisk, impactReadiness
+    );
+
+    return {
+      generatedAt: new Date().toISOString(),
+      dataQuality: { synthetic: !!state.sampleData, productionOnlyDefault: true },
+      summary,
+      buildImpact,
+      substitutionImpact,
+      optionalImpact,
+      donationImpact,
+      recountImpact,
+      stockRisk,
+      impactReadiness,
+      limitations,
+    };
+  }
+
+  function operationalIntelligenceSummaryConcise(full) {
+    if (!full) return null;
+    const facts = [];
+    const readyMom = state.readyPacks?.momPack || 0;
+    const readyBaby = state.readyPacks?.babyPack || 0;
+    if (readyMom > 0) facts.push({ score: readyMom, text: `${readyMom} Mom Packs are currently ready.` });
+    if (readyBaby > 0) facts.push({ score: readyBaby, text: `${readyBaby} Baby Packs are currently ready.` });
+
+    (full.stockRisk || []).filter(r => r.zeroStock && r.recipeRoles.some(role => role.role === "core")).forEach(r => {
+      facts.push({ score: 100 + r.balance, text: `${r.itemName} is currently at zero balance.` });
+    });
+
+    (full.substitutionImpact || []).slice(0, 3).forEach(s => {
+      facts.push({
+        score: 50 + s.packsAffected,
+        text: `${s.substituteItemName} substituted for ${s.insteadOfItemName} affected ${s.packsAffected} ${s.packLabel} pack records.`,
+      });
+    });
+
+    (full.donationImpact || []).slice(0, 2).forEach(d => {
+      const parts = Object.entries(d.estimatedPackEnablement || {}).map(([pk, n]) => `${n} ${RECIPES[pk]?.label || pk}s`);
+      if (parts.length) {
+        facts.push({ score: 40 + d.totalUnitsAdded, text: `Donation on ${d.date} from ${d.donor || "unknown donor"} may have enabled up to ${parts.join(" and ")}.` });
+      }
+    });
+
+    if (full.summary?.productionPacksCreated > 0) {
+      facts.push({
+        score: 30 + full.summary.productionPacksCreated,
+        text: `${full.summary.productionPacksCreated} production packs have been recorded in total.`,
+      });
+    }
+
+    facts.sort((a, b) => b.score - a.score);
+    return {
+      productionPacksCreated: full.summary?.productionPacksCreated || 0,
+      testerPacksExcluded: full.summary?.testerPacksExcluded || 0,
+      highRiskItemCount: full.summary?.highRiskItemCount || 0,
+      criticalRiskItemCount: full.summary?.criticalRiskItemCount || 0,
+      topThreeOperationalFacts: facts.slice(0, 3).map(f => f.text),
+      readyForImpactJudgement: full.impactReadiness?.readyForImpactJudgement || false,
     };
   }
 

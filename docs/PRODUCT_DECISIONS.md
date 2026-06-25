@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Operational intelligence foundation (Phase 3A, export only)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Read-only operational measurement layer in export and analytics summary only; no volunteer UI in Phase 3A |
+| **Date** | 2026-06-25 |
+| **Context** | Packing Habits describe behavioural patterns; item confidence describes trust. Ops and future SPE need quantity-weighted operational facts — which habits consumed stock, which donations may have enabled packs, which recounts shifted confidence, which items carry risk — before any system can judge whether actions were “good” or “bad.” |
+| **Decision** | Add Phase 3A pipeline: `computeOperationalIntelligence()` → sections `buildImpact`, `substitutionImpact`, `optionalImpact`, `donationImpact`, `recountImpact`, `stockRisk`, `impactReadiness`, `limitations`. Count packs via `tx.qty` and substitutions via `packCount` × `qtyPerPack`, not build-event counts. Default to production-only (`isTesterUser`); export `allMovements` where useful. Reuse `computeBuildStockPlan()` read-only for consumption. Cross-link packing habits where available. `impactReadiness` gates Phase 3B judgement. Cautious language only — may, appears, estimated, not enough evidence. No recommendations. Export `operationalIntelligence` in AI Data Pack; analytics summary includes `operationalIntelligenceSummary`. No localStorage schema change. No changes to commit flows, stock math, recipes, or volunteer UI. |
+| **Reasoning** | Separates measurement from judgement. Gives Phase 3B Operational Impact Engine structured ingredients without alarming Janet or overclaiming from sparse/synthetic data. |
+| **Alternatives Considered** | **Jump straight to Phase 3B recommendations** — rejected; insufficient epistemic foundation. **Persist operational state** — rejected; schema change forbidden. **Event-count metrics** — rejected; misrepresents qty-10 builds and packCount substitutions. |
+| **Status** | Accepted |
+
 ### Evidence-based habit trend classification
 
 | Field | Content |
