@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Entry screen Increment A (four verbs, no dashboard)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Simplify entry screen to calm “What happened today?” with four primary verbs; move ops tools behind **Need something else?** |
+| **Date** | 2026-06-25 |
+| **Context** | Home headline matched storeroom-memory direction but the body behaved like an inventory dashboard (pack counts, LOW stock, nudges, full stock list). Fourth verb (stock correction) was buried in Admin. |
+| **Decision** | Ship **Increment A** of the Recommended “Today loop” plan: primary surface shows We packed packs / A donation arrived / We delivered packs / I counted something again. Remove dashboard cards from entry. Relocate undo, stock levels view, backup, and analytics to discreet **Need something else?** Defer resume card, draft persistence, post-save loop, and today summary (Increment B). Render/CSS/navigation only — no business logic changes. |
+| **Reasoning** | Aligns entry UX with DESIGN_PRINCIPLES without the regression risk of Increment B before field validation. Volunteers see verbs, not inventory intelligence, on open. |
+| **Alternatives Considered** | **Conservative:** label tweaks only — rejected; dashboard contradiction remained. **Radical:** timeline-first, no home — rejected for Janet; deferred to Phase 2+. **Full Today loop (Increment B):** approved direction but explicitly deferred. |
+| **Status** | Accepted |
+
 ### Pack Creation screen redesign (common extras on main screen)
 
 | Field | Content |

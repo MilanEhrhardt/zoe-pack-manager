@@ -19,9 +19,10 @@
 
 ### Changed
 
+- Entry screen (Increment A): four verb-first actions on primary surface; admin dashboard, low-stock cards, and stock list removed from entry; backup/analytics/undo/stock levels behind **Need something else?**
 - Pack Creation: usage preview moved below optional toggles and renamed **“Stock this save will use”**
 - Pack Creation: **“+ Something else happened”** subflow limited to swaps, omissions, and unlisted extras (removed `choice-optional` / duplicate toggle list)
-- Pack Creation: admin footer removed from build and add-item views (export remains on home)
+- Pack Creation: admin footer removed from build and add-item views (export/backup on home **Need something else?**)
 - Legacy `addItemStep === "optional"` redirects to main build screen for backwards compatibility
 - `docs/AI_CONTEXT.md`: Janet and Judy both listed as primary users
 

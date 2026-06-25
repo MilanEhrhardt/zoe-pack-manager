@@ -51,11 +51,11 @@ Home screen actions volunteers use:
 
 | Action | Purpose |
 |--------|---------|
-| **Packed packs** | Record packs built from recipe + optional extras |
+| **We packed packs** | Record packs built from recipe + optional extras |
 | **A donation arrived** | Log incoming stock from donors |
 | **We delivered packs** | Record packs or complete units sent to clinics |
 | **I counted something again** | Stock correction / physical recount |
-| View stock | Check balances when needed — not a daily dashboard |
+| **Need something else?** | Undo, view stock levels, backup, analytics (not daily use) |
 
 ### Packing
 
@@ -136,7 +136,7 @@ See also `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
 
 - **Add-item subflow** — slimmed to exceptions only (swaps, omissions, unlisted extras); monitor June-style friction on Done/back navigation
 - **Donation and deliver flows** were not exercised in the same test session — need dedicated validation
-- **Admin/export** removed from build screen; still on home — confirm volunteers can find backup when needed
+- **Admin/export on home** — moved behind **Need something else?**; confirm volunteers can still find backup when needed
 
 ---
 
@@ -179,6 +179,7 @@ None. Pack Creation redesign shipped (render-only); awaiting volunteer field val
 | Reject “Today's Changes” build | **Rejected** — broke quick optional-item toggles |
 | Canonical app = `zoe-pack-manager.html` | **Accepted** |
 | Pack Creation: common extras on main screen | **Accepted** — see `PRODUCT_DECISIONS.md` |
+| Entry screen Increment A (four verbs, no dashboard) | **Accepted** — Increment B (Today loop) deferred |
 | Documentation-first AI workflow | **Accepted** — read this file before coding |
 | Lead Engineer six-phase workflow | **Superseded** — see Lead Product Engineer workflow |
 | Lead Product Engineer workflow | **Accepted** — three-solution proposals, approval gate, auto-commit; see `.cursor/rules.md` |

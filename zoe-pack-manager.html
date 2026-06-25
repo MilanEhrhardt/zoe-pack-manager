@@ -106,6 +106,18 @@
     }
 
     /* Home */
+    .view-content--home {
+      padding: 52px 42px 36px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,252,247,0.88) 100%);
+    }
+    .home-screen {
+      max-width: 640px;
+      margin: 0 auto;
+      min-height: min(68vh, 720px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
     .home-question {
       font-size: clamp(2.4rem, 5vw, 4.6rem);
       line-height: 1.02;
@@ -113,9 +125,9 @@
       font-weight: 650;
       text-align: center;
       color: var(--text);
-      margin: 14px 0 34px;
+      margin: 0 0 48px;
     }
-    .home-actions { display: grid; gap: 16px; max-width: 720px; margin: 0 auto 26px; }
+    .home-actions { display: grid; gap: 14px; max-width: 640px; margin: 0 auto; }
     .home-action-btn {
       display: grid;
       grid-template-columns: 54px 1fr auto;
@@ -157,31 +169,63 @@
     .home-action-btn--build .home-action-icon { color: var(--zoe-green); background: rgba(47,143,91,0.10); }
     .home-action-btn--donation .home-action-icon { color: var(--zoe-pink); background: rgba(198,74,139,0.10); }
     .home-action-btn--deliver .home-action-icon { color: var(--zoe-blue); background: rgba(49,107,158,0.10); }
+    .home-action-btn--stock { background: linear-gradient(135deg, #FFFFFF 0%, #FFFBF5 100%); }
+    .home-action-btn--stock .home-action-icon { color: #8B7355; background: rgba(139,115,85,0.10); }
     .home-action-label { text-align: left; padding-right: 0; }
     .stat-cards { display: none; }
 
-    /* Admin / secondary */
-    .admin-panel {
-      max-width: 720px;
-      margin: 18px auto 0;
-      border-top: 1px solid var(--border);
-      padding-top: 18px;
+    /* Home — discreet secondary */
+    .home-more-wrap {
+      margin-top: 56px;
+      text-align: center;
     }
-    .admin-panel > summary {
+    .home-more {
+      display: inline-block;
+      text-align: left;
+      max-width: 100%;
+    }
+    .home-more > summary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 18px;
       cursor: pointer;
       color: var(--text-muted);
-      font-size: 0.9rem;
+      font-weight: 550;
+      font-size: 0.92rem;
       list-style: none;
-      width: max-content;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: transparent;
+      transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
     }
-    .admin-panel > summary::-webkit-details-marker { display: none; }
-    .admin-panel-grid { margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .admin-card {
-      background: rgba(255,255,255,0.72);
+    .home-more > summary:hover {
+      color: var(--zoe-purple);
+      border-color: var(--border);
+      background: rgba(255,255,255,0.55);
+    }
+    .home-more[open] > summary {
+      color: var(--zoe-purple);
+      margin-bottom: 12px;
+    }
+    .home-more > summary::-webkit-details-marker { display: none; }
+    .home-more-body {
+      padding: 18px 20px 8px;
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      padding: 16px;
+      background: rgba(255,255,255,0.72);
       box-shadow: var(--shadow-soft);
+      min-width: min(100%, 420px);
+    }
+    .home-more-section { margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+    .home-more-section:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+    .home-more-section h3 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin: 0 0 10px;
+      font-weight: 650;
     }
     .home-secondary { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 8px 0 0; }
     .home-link, .home-undo, .footer button, .link-button {
@@ -412,10 +456,13 @@
       .header-logo { height: 44px; }
       .app-header--home .header-logo { height: 56px; }
       .header-date { font-size: 0.8rem; }
+      .view-content--home { padding: 28px 18px 24px; }
+      .home-screen { min-height: auto; }
+      .home-question { margin-bottom: 32px; }
+      .home-more-wrap { margin-top: 36px; }
       .home-action-btn { min-height: 82px; font-size: 1.28rem; padding: 18px; grid-template-columns: 46px 1fr auto; }
       .home-action-icon { width: 46px; height: 46px; border-radius: 15px; }
       .row { grid-template-columns: 1fr; }
-      .admin-panel-grid { grid-template-columns: 1fr; }
     }
 </style>
 </head>
@@ -1887,6 +1934,10 @@
     return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 7h12v8H1z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M13 10h3.5L20 14v3h-7V10z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="5.5" cy="17.5" r="1.8" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="17" cy="17.5" r="1.8" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`;
   }
 
+  function iconCount() {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H5a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V9l-6-4z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M9 5v4h4M8 13h8M8 17h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  }
+
   function renderHeader() {
     const isHome = view === "home";
     const homeClass = isHome ? " app-header--home" : "";
@@ -1918,77 +1969,15 @@
     else if (view === "build") body = renderBuild();
     else if (view === "deliver") body = renderDeliver();
     else if (view === "stock") body = renderStock();
-    app.innerHTML = renderHeader() + `<div class="view-content">` + body + `</div>`;
+    const viewClass = view === "home" ? "view-content view-content--home" : "view-content";
+    app.innerHTML = renderHeader() + `<div class="${viewClass}">` + body + `</div>`;
     bindEvents();
     analyticsAfterRender();
     if (confirmAction) showConfirmModal();
   }
 
-  function renderHome() {
-    const momB = buildableCount("momPack");
-    const babyB = buildableCount("babyPack");
-    const low = getLowStock();
-    const nudges = getSurplusNudges();
-    const readyMom = state.readyPacks.momPack || 0;
-    const readyBaby = state.readyPacks.babyPack || 0;
-    const canUndo = !!state.undoSnapshot;
-
-    let html = `
-      <p class="home-question">What happened today?</p>
-
-      <div class="home-actions">
-        <button type="button" class="home-action-btn home-action-btn--build" data-go="build">
-          <span class="home-action-icon">${iconBagHeart()}</span>
-          <span class="home-action-label">Packed packs</span>
-        </button>
-        <button type="button" class="home-action-btn home-action-btn--donation" data-go="donation">
-          <span class="home-action-icon">${iconGift()}</span>
-          <span class="home-action-label">Received donations</span>
-        </button>
-        <button type="button" class="home-action-btn home-action-btn--deliver" data-go="deliver">
-          <span class="home-action-icon">${iconTruck()}</span>
-          <span class="home-action-label">Delivered packs</span>
-        </button>
-      </div>
-
-      <details class="admin-panel">
-        <summary>Admin</summary>
-        <div class="admin-panel-grid">
-          <div class="admin-card">
-            <h3>Packs available</h3>
-            <div class="ready-line">Mom Packs: <strong>${readyMom}</strong> ready · <strong>${momB}</strong> can build</div>
-            <div class="ready-line">Baby Packs: <strong>${readyBaby}</strong> ready · <strong>${babyB}</strong> can build</div>
-          </div>`;
-
-    html += `<div class="admin-card"><h3>Stock attention</h3>`;
-    if (low.length) {
-      low.slice(0, 8).forEach(i => {
-        html += `<div class="low-item">${esc(i.name)} — LOW (${getBalance(i.id)} left)</div>`;
-      });
-      if (low.length > 8) html += `<div style="color:#888;font-size:0.9rem;">+ ${low.length - 8} more</div>`;
-    } else {
-      html += `<div style="color:#666;">No low stock flags.</div>`;
-    }
-    html += `</div>`;
-
-    if (nudges.length) {
-      html += `<div class="admin-card"><h3>Use-it-up nudges</h3>`;
-      nudges.forEach(n => { html += `<div class="nudge">${getBalance(n.item.id)} ${esc(n.item.name)} for ${esc(n.packLabel)}s</div>`; });
-      html += `</div>`;
-    }
-
-    html += `<div class="admin-card">
-        <h3>Controls</h3>
-        <div class="home-secondary"><button type="button" class="home-link" data-go="stock">Stock Count</button></div>
-        ${canUndo ? `<button type="button" class="home-undo" id="btn-undo">Undo last action</button>` : ``}
-      </div>
-      <div class="admin-card" style="grid-column: 1 / -1;">
-        <details class="stock-fold"><summary>View all stock levels</summary>
-          <div style="margin-top:12px;margin-bottom:8px;">
-            ${renderPackContextSelector("home-pack-context", getPackContext())}
-          </div>
-          <div class="stock-list">`;
-
+  function renderStockLevelsList(packContextSelectId) {
+    let html = `<div style="margin-bottom:12px;">${renderPackContextSelector(packContextSelectId, getPackContext())}</div><div class="stock-list">`;
     const byCat = {};
     ITEMS.forEach(i => {
       if (getBalance(i.id) <= 0) return;
@@ -2004,15 +1993,12 @@
       });
       html += `<br>`;
     }
-    html += `</div></details></div></div></details>`;
-    html += renderFooter();
+    html += `</div>`;
     return html;
   }
 
-  function renderFooter() {
-    return `<details class="footer">
-      <summary>Admin tools</summary>
-      <p>Your work saves automatically on this computer. Use Export Backup to keep a copy safe.</p>
+  function renderAdminToolsBody() {
+    return `<p>Your work saves automatically on this computer. Use Export Backup to keep a copy safe.</p>
       <div class="footer-tools">
         <button type="button" id="btn-export">Export Backup</button>
         <button type="button" id="btn-import">Import Backup</button>
@@ -2035,7 +2021,63 @@
           <button type="button" id="btn-clear-analytics-day" class="analytics-danger">Clear Day</button>
         </div>
       </div>
-      <div class="analytics-note"><strong>Local analytics:</strong> records screen flow, form friction, saves, errors, corrections and exports on this computer only. Pausing/clearing analytics never deletes operational records.</div>
+      <div class="analytics-note"><strong>Local analytics:</strong> records screen flow, form friction, saves, errors, corrections and exports on this computer only. Pausing/clearing analytics never deletes operational records.</div>`;
+  }
+
+  function renderHomeMore() {
+    const canUndo = !!state.undoSnapshot;
+    let html = `<div class="home-more-wrap"><details class="home-more">
+      <summary>Need something else?</summary>
+      <div class="home-more-body">`;
+    if (canUndo) {
+      html += `<div class="home-more-section">
+        <button type="button" class="home-undo" id="btn-undo">Undo last action</button>
+      </div>`;
+    }
+    html += `<div class="home-more-section">
+        <details class="stock-fold"><summary>View all stock levels</summary>
+          <div style="margin-top:12px;">${renderStockLevelsList("home-more-pack-context")}</div>
+        </details>
+      </div>
+      <div class="home-more-section home-more-section--tools">
+        ${renderAdminToolsBody()}
+      </div>
+    </div></details></div>`;
+    return html;
+  }
+
+  function renderHome() {
+    let html = `<div class="home-screen">
+      <p class="home-question">What happened today?</p>
+
+      <div class="home-actions">
+        <button type="button" class="home-action-btn home-action-btn--build" data-go="build">
+          <span class="home-action-icon">${iconBagHeart()}</span>
+          <span class="home-action-label">We packed packs</span>
+        </button>
+        <button type="button" class="home-action-btn home-action-btn--donation" data-go="donation">
+          <span class="home-action-icon">${iconGift()}</span>
+          <span class="home-action-label">A donation arrived</span>
+        </button>
+        <button type="button" class="home-action-btn home-action-btn--deliver" data-go="deliver">
+          <span class="home-action-icon">${iconTruck()}</span>
+          <span class="home-action-label">We delivered packs</span>
+        </button>
+        <button type="button" class="home-action-btn home-action-btn--stock" data-go="stock">
+          <span class="home-action-icon">${iconCount()}</span>
+          <span class="home-action-label">I counted something again</span>
+        </button>
+      </div>
+
+      ${renderHomeMore()}
+    </div>`;
+    return html;
+  }
+
+  function renderFooter() {
+    return `<details class="footer">
+      <summary>Admin tools</summary>
+      ${renderAdminToolsBody()}
     </details>`;
   }
 
@@ -2513,7 +2555,7 @@
     if (view === "build") bindBuild();
     if (view === "deliver") bindDeliver();
     if (view === "stock") bindStock();
-    if (view === "home") bindPackContextSelector("home-pack-context");
+    if (view === "home") bindPackContextSelector("home-more-pack-context");
   }
 
   function exportBackup() {
