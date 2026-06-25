@@ -78,13 +78,39 @@ Before marking work complete:
 
 ---
 
-## Documentation
+## Documentation maintenance protocol
 
-- **Product content** → `THE_ZOE_PROJECT_BIBLE.md`, `USER_RESEARCH.md`, etc.
-- **Current state for AI** → `AI_CONTEXT.md` (keep short; update when priorities change).
-- **Decisions** → `PRODUCT_DECISIONS.md` using the decision log template.
-- **Shipped changes** → `CHANGELOG.md` (newest first).
-- **Do not invent** interview quotes, personas, or requirements — use placeholders or ask the user.
+Documentation maintenance is **mandatory at the end of every implementation session**. Never finish a coding session without reviewing whether docs need updating.
+
+### End-of-session checklist
+
+1. Review every code change.
+2. Classify impact: decisions / UX / architecture / research / current state / changelog.
+3. Update only affected documents.
+4. Keep updates concise.
+5. **Never invent user research.**
+6. **Never overwrite historical decisions** — append new entries; mark prior entries `Superseded` if needed.
+7. **Preserve the repository as the single source of truth** — not chat history.
+
+### Change → document matrix
+
+| If the change affects… | Update… | Rule |
+|------------------------|---------|------|
+| A product or UX choice | `docs/PRODUCT_DECISIONS.md` | Append using template; never delete or rewrite past entries |
+| UX principles or language rules | `docs/DESIGN_PRINCIPLES.md` | Concise bullets only when a principle is established |
+| Technical shape (storage, analytics, file structure) | `docs/AI_CONTEXT.md` → Current Architecture / Engineering Rules | Current state only |
+| Long-term product reference | `docs/THE_ZOE_PROJECT_BIBLE.md` | Fill relevant section; do not duplicate `AI_CONTEXT.md` |
+| Interviews, testing, quotes | `docs/USER_RESEARCH.md` | **Only real user-provided material** |
+| Priorities, problems, experiments, deferred ideas | `docs/AI_CONTEXT.md` | Update current-state sections only |
+| Anything shipped or merged | `docs/CHANGELOG.md` | Newest first under `[Unreleased]` or a dated entry |
+
+### Document roles (quick reference)
+
+- **Current state for AI** → `AI_CONTEXT.md` (short; read first each session)
+- **Historical decisions** → `PRODUCT_DECISIONS.md`
+- **Shipped changes** → `CHANGELOG.md`
+- **Long-term philosophy** → `THE_ZOE_PROJECT_BIBLE.md`
+- **How to change code safely** → this file and `.cursor/rules.md`
 
 ---
 

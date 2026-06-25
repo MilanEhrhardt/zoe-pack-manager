@@ -35,11 +35,22 @@ Read this file at the start of every coding session. For fuller guidance, see `d
 
 ---
 
-## After implementation
+## Documentation maintenance (required)
 
-1. Update `docs/CHANGELOG.md` (newest first).
-2. Update `docs/AI_CONTEXT.md` if priorities, problems, or architecture changed.
-3. Commit only when the user asks; use clear commit messages focused on **why**.
+**Never finish a coding session without reviewing whether documentation should be updated.** Documentation maintenance is part of every implementation task, not a separate follow-up.
+
+Before ending the session:
+
+1. **Review every code change** (`git diff` or equivalent).
+2. **Classify impact** — does it affect product decisions, UX, architecture, user research, current project state, or the changelog?
+3. **Update affected docs** using the matrix in `docs/CURSOR_RULES.md`.
+4. **Keep updates concise.** Never invent user research. Never overwrite historical decisions — append to `PRODUCT_DECISIONS.md` and mark old entries `Superseded` if needed.
+5. If no doc update is needed, **state briefly why** (e.g. internal comment only, no behaviour change).
+6. **Repository is the single source of truth** — do not treat chat history as canonical.
+
+**Minimum on shipped work:** update `docs/CHANGELOG.md` (newest first).
+
+**Commit** only when the user asks; include doc updates in the same commit as code when possible.
 
 ---
 

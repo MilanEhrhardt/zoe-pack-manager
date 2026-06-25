@@ -6,15 +6,14 @@
 
 ## [Unreleased]
 
-<!-- TODO: Add upcoming changes -->
-
 ### Added
 
-<!-- TODO -->
+- Mandatory documentation maintenance protocol in `.cursor/rules.md`, `docs/CURSOR_RULES.md`, and `README.md`
+- Documentation maintenance pointer in `docs/AI_CONTEXT.md`
 
 ### Changed
 
-<!-- TODO -->
+- `docs/AI_CONTEXT.md`: Janet and Judy both listed as primary users
 
 ### Fixed
 

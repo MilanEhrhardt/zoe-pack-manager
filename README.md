@@ -25,12 +25,16 @@ Read AI_CONTEXT.md
         ↓
 Read PRODUCT_DECISIONS.md (if relevant)
         ↓
-Implement the requested feature
+Implement
         ↓
-Update CHANGELOG.md
+Review changes → update docs (mandatory)
+        ↓
+CHANGELOG.md (+ other docs if affected)
         ↓
 Commit
 ```
+
+Documentation maintenance is part of every implementation task, not optional.
 
 **Read `docs/AI_CONTEXT.md`** before making any code changes. It contains only the current state — not history or philosophy.
 
@@ -38,6 +42,6 @@ Commit
 
 **Implement** incrementally. Do not rewrite working business logic or remove analytics unless explicitly instructed. See `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
 
-**Update `docs/CHANGELOG.md`** with what changed, under the appropriate date or `[Unreleased]` section.
+**Review every code change** before ending the session. Update affected docs per the matrix in `docs/CURSOR_RULES.md`. At minimum, update `docs/CHANGELOG.md` for shipped work.
 
-**Commit** when the user requests it, with a message that explains why.
+**Commit** when the user requests it, with a message that explains why. Include doc updates in the same commit as code when possible.

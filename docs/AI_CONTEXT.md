@@ -12,11 +12,11 @@ The Zoe Project Pack Manager is a local-first HTML application for The Zoe Proje
 
 ---
 
-## Primary User
+## Primary Users
 
-Janet, a 65-year-old volunteer with very low technical confidence. Design for someone who does not know how to copy and paste.
+**Janet** and **Judy** are both primary users — storeroom volunteers with very low technical confidence. Design for people who do not know how to copy and paste.
 
-Other volunteers (e.g. Judy) may use the app; Janet is the design anchor for simplicity and language.
+Both are the design anchor for simplicity and language. If it works for Janet and Judy, it works for the storeroom.
 
 ---
 
@@ -70,9 +70,9 @@ Count one item at a time; optional reason for correction.
 ## UX Rules
 
 - One decision at a time
-- No dashboards for Janet
-- No charts for Janet
-- No tables for Janet
+- No dashboards for volunteers
+- No charts for volunteers
+- No tables for volunteers
 - No transaction language
 - No session language
 - No inventory jargon
@@ -141,7 +141,7 @@ See also `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
 ## Future AI Features
 
 - Usability analysis from exported analytics / AI Data Pack
-- Inventory intelligence and low-stock signals (ops-facing, not Janet-facing)
+- Inventory intelligence and low-stock signals (ops-facing, not volunteer-facing)
 - Forecasting and donor ask lists
 
 *Not in scope until core volunteer flows are stable.*
@@ -152,7 +152,7 @@ See also `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
 
 - Baby Pack recipe confirmation with volunteers
 - Optimal placement of admin/export without interrupting packing
-- Field testing of donation and deliver flows with Janet
+- Field testing of donation and deliver flows with Janet and Judy
 
 ---
 
@@ -172,3 +172,9 @@ None. Stabilisation phase — no active UX experiments on the canonical build.
 | Redesign before stable packing proven | **Deferred** |
 
 Full decision log: `docs/PRODUCT_DECISIONS.md` (to be populated).
+
+---
+
+## Documentation maintenance
+
+At the end of every implementation session, review all code changes and update affected docs before finishing. See `.cursor/rules.md` and `docs/CURSOR_RULES.md` for the mandatory checklist and change → document matrix. The repository is the single source of truth.
