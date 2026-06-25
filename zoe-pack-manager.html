@@ -1773,6 +1773,7 @@
     const sessionBreakdown = analyticsClassifySessions(events);
     const itemConfidence = computeAllItemConfidence();
     const confidenceSummary = buildConfidenceSummary(itemConfidence);
+    const packingHabitsSummary = packingHabitsSummaryConcise(packingHabitSummary());
 
     return {
       generatedAt: new Date().toISOString(),
@@ -1805,6 +1806,7 @@
       confusionHotspots,
       operationalSnapshot: analyticsOperationalSnapshot(),
       confidenceSummary,
+      packingHabitsSummary,
       ...sessionBreakdown,
     };
   }
@@ -1845,6 +1847,7 @@
     analyticsTrack("ai_data_pack_export_requested", { format: "ai_data_pack" });
     const userCtx = analyticsUserFields();
     const itemConfidence = computeAllItemConfidence();
+    const packingHabits = packingHabitSummary();
     const payload = {
       exportedAt: new Date().toISOString(),
       app: "Zoe Pack Manager",
@@ -1872,6 +1875,7 @@
         transactions: state.transactions,
       },
       itemConfidence,
+      packingHabits,
       analytics: state.analytics,
       summary: analyticsDerivedSummary(),
     };
@@ -2375,6 +2379,208 @@
         ...allBands,
         lowConfidenceCount: allBands.uncertain + allBands.needs_checking,
       },
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PACKING HABITS — read-only habit pattern intelligence (export / ops)
+  // ═══════════════════════════════════════════════════════════════════
+
+  const PACKING_HABIT_MIN_DENOMINATOR = 5;
+  const PACKING_HABIT_MIN_COUNT = 3;
+  const PACKING_HABIT_MIN_PERCENT = 40;
+
+  function isProductionBuild(tx) {
+    return tx.type === "build" && !isTesterUser(tx.packer);
+  }
+
+  function recipeOptionalLabel(packKey, key) {
+    const recipe = RECIPES[packKey];
+    if (!recipe) return itemName(key);
+    for (const opt of recipe.optional || []) {
+      if (opt.itemId === key || opt.id === key) {
+        return opt.label || itemName(opt.itemId || key);
+      }
+    }
+    return itemName(key);
+  }
+
+  function packingHabitConfidenceBand(denominator, percentage) {
+    if (denominator >= 20 && percentage >= 70) return "high";
+    if (denominator >= 10 && percentage >= 60) return "medium";
+    return "low";
+  }
+
+  function packingHabitRecommendation(type, packLabel, percentage, confidenceBand) {
+    if (confidenceBand === "low" && percentage < 60) return "No action yet.";
+    if (type === "optional_usage" && percentage >= 70) return "Consider making this a usual item.";
+    if (type === "custom_extra") return "Check whether this is temporary or a new habit.";
+    if (type === "substitution" || type === "omission") {
+      if (percentage >= 70) return `Review ${packLabel} recipe.`;
+      return "Check whether this is temporary or a new habit.";
+    }
+    return "No action yet.";
+  }
+
+  function extractPackingHabitEvents(transactions) {
+    const all = transactions || [];
+    let excludedTesterBuildCount = 0;
+    const productionBuilds = [];
+    all.forEach(tx => {
+      if (tx.type !== "build") return;
+      if (isTesterUser(tx.packer)) {
+        excludedTesterBuildCount += 1;
+        return;
+      }
+      productionBuilds.push(tx);
+    });
+    productionBuilds.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    return {
+      productionBuilds,
+      productionBuildCount: productionBuilds.length,
+      excludedTesterBuildCount,
+    };
+  }
+
+  function computePackingHabitPatterns(events) {
+    const patterns = {};
+    const denominatorByPack = {};
+
+    const addPattern = (type, packKey, itemId, replacementItemId, date) => {
+      const key = [type, packKey, itemId, replacementItemId || ""].join("|");
+      if (!patterns[key]) {
+        patterns[key] = { type, packKey, itemId, replacementItemId: replacementItemId || "", dates: [], count: 0 };
+      }
+      patterns[key].dates.push(date);
+      patterns[key].count += 1;
+    };
+
+    events.productionBuilds.forEach(tx => {
+      const packKey = tx.packKey || "unknown";
+      const date = tx.date || "";
+      denominatorByPack[packKey] = (denominatorByPack[packKey] || 0) + 1;
+
+      const subsSeen = new Set();
+      (tx.substitutions || []).forEach(sub => {
+        if (!sub.insteadOf || !sub.substitute || sub.insteadOf === sub.substitute) return;
+        const pairKey = sub.insteadOf + "->" + sub.substitute;
+        if (subsSeen.has(pairKey)) return;
+        subsSeen.add(pairKey);
+        addPattern("substitution", packKey, sub.insteadOf, sub.substitute, date);
+      });
+
+      const optionalsSeen = new Set();
+      (tx.optionalIncluded || []).forEach(optKey => {
+        if (!optKey || optionalsSeen.has(optKey)) return;
+        optionalsSeen.add(optKey);
+        addPattern("optional_usage", packKey, optKey, "", date);
+      });
+
+      const extrasSeen = new Set();
+      (tx.customExtras || []).forEach(extra => {
+        if (!extra.itemId || extrasSeen.has(extra.itemId)) return;
+        extrasSeen.add(extra.itemId);
+        addPattern("custom_extra", packKey, extra.itemId, "", date);
+      });
+
+      const omitsSeen = new Set();
+      (tx.omissions || []).forEach(omit => {
+        if (!omit.itemId || omitsSeen.has(omit.itemId)) return;
+        omitsSeen.add(omit.itemId);
+        addPattern("omission", packKey, omit.itemId, "", date);
+      });
+    });
+
+    return { patterns: Object.values(patterns), denominatorByPack };
+  }
+
+  function generatePackingHabitObservations(patternData) {
+    const { patterns, denominatorByPack } = patternData;
+    const observations = [];
+
+    patterns.forEach(p => {
+      const denominator = denominatorByPack[p.packKey] || 0;
+      const count = p.count;
+      const percentage = denominator > 0 ? Math.round((count / denominator) * 100) : 0;
+      if (denominator < PACKING_HABIT_MIN_DENOMINATOR) return;
+      if (count < PACKING_HABIT_MIN_COUNT) return;
+      if (percentage < PACKING_HABIT_MIN_PERCENT) return;
+
+      const packLabel = RECIPES[p.packKey]?.label || p.packKey;
+      const itemNameStr = p.type === "optional_usage"
+        ? recipeOptionalLabel(p.packKey, p.itemId)
+        : itemName(p.itemId);
+      const replacementNameStr = p.replacementItemId ? itemName(p.replacementItemId) : "";
+      const dates = p.dates.filter(Boolean).sort();
+      const firstSeen = dates[0] || "";
+      const lastSeen = dates[dates.length - 1] || "";
+      const confidenceBand = packingHabitConfidenceBand(denominator, percentage);
+      const recommendation = packingHabitRecommendation(p.type, packLabel, percentage, confidenceBand);
+
+      let volunteerText = "";
+      if (p.type === "substitution") {
+        volunteerText = `${replacementNameStr} replaced ${itemNameStr} in ${count} of the last ${denominator} ${packLabel}s.`;
+      } else if (p.type === "optional_usage") {
+        volunteerText = `${itemNameStr} was included in ${count} of the last ${denominator} ${packLabel}s.`;
+      } else if (p.type === "custom_extra") {
+        volunteerText = `${itemNameStr} were added to ${count} of the last ${denominator} ${packLabel}s.`;
+      } else if (p.type === "omission") {
+        volunteerText = `${itemNameStr} was left out of ${count} of the last ${denominator} ${packLabel}s.`;
+      }
+
+      const adminText = `${volunteerText.slice(0, -1)} (${percentage}%). ${recommendation}`;
+
+      observations.push({
+        type: p.type,
+        packKey: p.packKey,
+        packLabel,
+        itemId: p.itemId,
+        itemName: itemNameStr,
+        replacementItemId: p.replacementItemId || "",
+        replacementItemName: replacementNameStr,
+        count,
+        denominator,
+        percentage,
+        firstSeen,
+        lastSeen,
+        volunteerText,
+        adminText,
+        recommendation,
+        confidenceBand,
+      });
+    });
+
+    observations.sort((a, b) => b.count - a.count || b.percentage - a.percentage);
+    return observations;
+  }
+
+  function packingHabitSummary() {
+    const events = extractPackingHabitEvents(state.transactions || []);
+    const patternData = computePackingHabitPatterns(events);
+    const observations = generatePackingHabitObservations(patternData);
+    return {
+      generatedAt: new Date().toISOString(),
+      productionBuildCount: events.productionBuildCount,
+      excludedTesterBuildCount: events.excludedTesterBuildCount,
+      observations,
+    };
+  }
+
+  function packingHabitsSummaryConcise(fullSummary) {
+    const byType = { substitution: 0, optional_usage: 0, custom_extra: 0, omission: 0 };
+    (fullSummary.observations || []).forEach(o => {
+      byType[o.type] = (byType[o.type] || 0) + 1;
+    });
+    return {
+      observationCount: (fullSummary.observations || []).length,
+      productionBuildCount: fullSummary.productionBuildCount,
+      excludedTesterBuildCount: fullSummary.excludedTesterBuildCount,
+      byType,
+      topObservations: (fullSummary.observations || []).slice(0, 5).map(o => ({
+        type: o.type,
+        volunteerText: o.volunteerText,
+        confidenceBand: o.confidenceBand,
+      })),
     };
   }
 

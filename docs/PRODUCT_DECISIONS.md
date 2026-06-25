@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Packing habits intelligence (Phase 1, export only)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Production-only packing habit observations in export and analytics summary only; no volunteer UI in Phase 1 |
+| **Date** | 2026-06-25 |
+| **Context** | Volunteers develop substitutions, usual optionals, custom extras, and omissions that may diverge from written recipes. This signal is buried in raw build transactions. SPE Phase 1 needs recipe-importance and habit signals without alarming Janet or changing stock math. |
+| **Decision** | Add read-only pipeline: `extractPackingHabitEvents` → `computePackingHabitPatterns` → `generatePackingHabitObservations` → `packingHabitSummary`. Patterns: substitution pairs, optional usage, custom extras, omissions. Thresholds: min 5 production builds per pack, min 3 occurrences, min 40%. Export includes `packingHabits` in AI Data Pack; analytics summary includes `packingHabitsSummary`. Excludes Milan tester builds via `isTesterUser`. Human `volunteerText` with counts only — no “drift detected” language. No localStorage schema change. No changes to `commitBuild`, `computeBuildStockPlan`, or volunteer UI. |
+| **Reasoning** | Mirrors item-confidence Increment A: testable read-model, ops-facing export, SPE-ready. Milan sandbox will show few observations until enough Janet/Judy builds exist — correct behaviour. |
+| **Alternatives Considered** | **Extend existing `optionUsage`** — rejected; includes tester builds, no substitution detail, no thresholds. **Persist habit profiles in localStorage** — rejected; schema change forbidden. |
+| **Status** | Accepted |
+
 ### Item-level confidence (Increment A, export only)
 
 | Field | Content |

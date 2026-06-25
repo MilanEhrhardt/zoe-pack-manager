@@ -80,6 +80,12 @@ Say “20 mothers now have packs ready,” not “20 transactions saved.” Hide
 
 See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
+### Packing Habits Intelligence Engine (Phase 1 — export only)
+
+**Phase 1 (shipped):** A read-only pipeline over **production build transactions** (tester builds excluded) surfaces counted habit observations: substitutions, optional inclusions, custom extras, and omissions. Each observation includes human `volunteerText` with counts (e.g. “Deodorant was included in 8 of the last 10 Mom Packs”), confidence band, and ops `recommendation`. Exported in AI Data Pack as `packingHabits`; analytics summary includes `packingHabitsSummary`. Janet sees nothing new yet. Feeds future SPE **recipe importance** signals.
+
+See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
+
 ## Design Principles
 
 See [`docs/DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md) for the full design contract used before shipping UI changes.
