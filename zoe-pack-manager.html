@@ -971,6 +971,20 @@
   let analyticsExposureBindRaf = 0;
   let analyticsExposureClickBound = false;
 
+  const EPISODE_MODEL_VERSION = "3D.1";
+  const EPISODE_IDLE_TIMEOUT_MS = 30000;
+  let analyticsEpisodeSeq = 0;
+  const analyticsInteractionEpisodes = new Map();
+  const EPISODE_FIELD_ID_MAP = {
+    "stock-item": "stock_item_selector",
+    "stock-count": "stock_count_input",
+    "build-save": "build_save_packs",
+    "btn-export": "admin_export_backup",
+    "btn-import": "admin_import_backup",
+    "btn-export-ai-pack": "admin_export_ai_pack",
+    "exceptions-panel": "build_something_different",
+  };
+
   let analyticsSessionUser = "";
 
   function isTesterUser(userName) {
@@ -1002,6 +1016,7 @@
     "app_open", "screen_view", "flow_start", "transaction_commit",
     "flow_complete", "analytics_export_requested", "ai_data_pack_export_requested",
     "ui_exposure",
+    "interaction_episode_complete",
   ]);
 
   analyticsTrack("app_open", {
@@ -1464,6 +1479,8 @@
       classes: el.className && typeof el.className === "string" ? el.className.split(/\s+/).filter(Boolean).slice(0, 5) : [],
       text: analyticsSafeText(label, 60),
       dataGo: el.dataset?.go || "",
+      dataTrackExposure: el.getAttribute("data-track-exposure") || "",
+      dataExposureLabel: el.getAttribute("data-exposure-label") || "",
     };
   }
 
@@ -1500,6 +1517,15 @@
     try {
       state = analyticsUpgradeState(state);
       if (state.analytics.recordingEnabled === false && !details.forceRecord) return;
+      const eventView = opts.viewOverride || view;
+      let episodeId = opts.interactionEpisodeId || null;
+      if (!episodeId && event !== "interaction_episode_complete") {
+        const ctrl = analyticsEpisodeResolveControl(details, eventView);
+        if (ctrl) episodeId = analyticsEpisodeActiveId(ctrl.screen, ctrl.controlId);
+      }
+      if (event !== "interaction_episode_complete") {
+        analyticsEpisodeObserveEvent(event, details, eventView);
+      }
       const userFields = ANALYTICS_USER_EVENTS.has(event) ? analyticsUserFields() : {};
       const e = {
         eventId: analyticsId("evt"),
@@ -1507,9 +1533,10 @@
         sessionId: ANALYTICS_SESSION_ID || "session_pending",
         installId: state.analytics.installId,
         event,
-        view: opts.viewOverride || view,
+        view: eventView,
         flowId: analyticsCurrentFlow?.id || "",
         flow: analyticsCurrentFlow?.flow || "",
+        ...(episodeId ? { interactionEpisodeId: episodeId } : {}),
         details,
         ...userFields,
       };
@@ -1586,6 +1613,7 @@
   function analyticsAfterRender() {
     if (analyticsCurrentView !== view) {
       analyticsExposureFlushScreenExit();
+      analyticsEpisodeCompleteAllForScreen(analyticsCurrentView, "navigation");
       if (analyticsCurrentView) {
         analyticsTrack("screen_exit", { from: analyticsCurrentView, durationMs: Date.now() - analyticsViewEnteredAt });
       }
@@ -1612,6 +1640,7 @@
 
     analyticsTrackUIExposure();
     analyticsExposureBind();
+    analyticsEpisodeTimeoutSweep();
   }
 
   function analyticsExposureKeyFrom(controlId, screen) {
@@ -1710,16 +1739,29 @@
           if (!entry.label) entry.label = analyticsExposureLabel(el);
         }
         analyticsExposurePending.set(key, entry);
+        const ep = analyticsEpisodeBegin(screen, controlId, entry.label, el);
+        if (ep) {
+          if (!ep.visibleSince) ep.visibleSince = now;
+          const ratio = ioEntry.intersectionRatio;
+          if (ratio > ep.maxVisibility) ep.maxVisibility = ratio;
+          ep.el = el;
+        }
       } else {
         const entry = analyticsExposurePending.get(key);
         if (!entry || entry.flushed) return;
         if (entry.el && entry.el !== el) return;
         const visibleMs = analyticsExposureTotalMs(entry, now);
+        const ep = analyticsInteractionEpisodes.get(analyticsEpisodeMapKey(entry.screen, controlId));
+        if (ep) {
+          analyticsEpisodeFinalizeVisibility(ep, now);
+          if (ioEntry.intersectionRatio > ep.maxVisibility) ep.maxVisibility = ioEntry.intersectionRatio;
+        }
         if (visibleMs >= EXPOSURE_MIN_VISIBLE_MS) {
           entry.flushed = true;
           analyticsTrackControlExposure(entry, visibleMs, false);
         }
         analyticsExposurePending.delete(key);
+        if (ep && !ep.clicked) analyticsEpisodeComplete(entry.screen, controlId, "hidden");
       }
     });
   }
@@ -1754,6 +1796,9 @@
     analyticsExposurePending.forEach(entry => {
       if (entry.flushed) return;
       if (entry.el && !document.contains(entry.el)) entry.el = null;
+    });
+    analyticsInteractionEpisodes.forEach(ep => {
+      if (ep.el && !document.contains(ep.el)) ep.el = null;
     });
     if (typeof IntersectionObserver === "undefined") return;
     analyticsExposureObserver = new IntersectionObserver(analyticsExposureOnIntersect, {
@@ -1821,6 +1866,262 @@
         averageVisibleMs: g.exposures ? Math.round(g.visibleMsTotal / g.exposures) : 0,
       }))
       .sort((a, b) => b.ignored - a.ignored || b.exposures - a.exposures);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // INTERACTION EPISODES — Phase 3D behavioural layer
+  // ═══════════════════════════════════════════════════════════════════
+
+  function analyticsEpisodeMapKey(screen, controlId) {
+    return `${screen}|${controlId}`;
+  }
+
+  function generateInteractionEpisodeId(controlId) {
+    analyticsEpisodeSeq += 1;
+    const slug = String(controlId || "unknown").replace(/_/g, "").slice(0, 20);
+    return `ep_${slug}_${String(analyticsEpisodeSeq).padStart(6, "0")}`;
+  }
+
+  function analyticsEpisodeResolveControl(details, eventView) {
+    if (!details) return null;
+    if (details.controlId) {
+      return {
+        screen: details.screen || eventView,
+        controlId: details.controlId,
+        label: details.label || EXPOSURE_CONTROL_LABELS[details.controlId] || details.controlId,
+      };
+    }
+    const target = details.target;
+    if (target?.dataTrackExposure) {
+      return {
+        screen: eventView,
+        controlId: target.dataTrackExposure,
+        label: target.dataExposureLabel || EXPOSURE_CONTROL_LABELS[target.dataTrackExposure] || target.dataTrackExposure,
+      };
+    }
+    const idKey = target?.id || details.field || "";
+    if (idKey && EPISODE_FIELD_ID_MAP[idKey]) {
+      const controlId = EPISODE_FIELD_ID_MAP[idKey];
+      return {
+        screen: eventView,
+        controlId,
+        label: EXPOSURE_CONTROL_LABELS[controlId] || controlId,
+      };
+    }
+    return null;
+  }
+
+  function analyticsEpisodeActiveId(screen, controlId) {
+    const ep = analyticsInteractionEpisodes.get(analyticsEpisodeMapKey(screen, controlId));
+    return ep ? ep.interactionEpisodeId : null;
+  }
+
+  function analyticsEpisodeBegin(screen, controlId, label, el) {
+    if (!screen || !controlId) return null;
+    const key = analyticsEpisodeMapKey(screen, controlId);
+    const now = Date.now();
+    let ep = analyticsInteractionEpisodes.get(key);
+    if (ep) {
+      ep.lastActivity = now;
+      if (el) ep.el = el;
+      if (label && !ep.label) ep.label = label;
+      return ep;
+    }
+    ep = {
+      interactionEpisodeId: generateInteractionEpisodeId(controlId),
+      screen,
+      controlId,
+      label: label || EXPOSURE_CONTROL_LABELS[controlId] || controlId,
+      el: el || null,
+      startedAt: now,
+      lastActivity: now,
+      visibleSince: null,
+      totalVisibleMs: 0,
+      hoverCount: 0,
+      clickCount: 0,
+      focusCount: 0,
+      blurCount: 0,
+      changeCount: 0,
+      hesitationCount: 0,
+      maxVisibility: 0,
+      clicked: false,
+      focused: false,
+      changed: false,
+      abandoned: false,
+      completed: false,
+      completionReason: "",
+    };
+    analyticsInteractionEpisodes.set(key, ep);
+    return ep;
+  }
+
+  function analyticsEpisodeTouch(screen, controlId) {
+    const ep = analyticsInteractionEpisodes.get(analyticsEpisodeMapKey(screen, controlId));
+    if (ep) ep.lastActivity = Date.now();
+    return ep;
+  }
+
+  function analyticsEpisodeAddVisibility(screen, controlId, visibleMs, maxVisibility) {
+    const ep = analyticsEpisodeTouch(screen, controlId);
+    if (!ep) return;
+    if (visibleMs > 0) ep.totalVisibleMs += visibleMs;
+    if (typeof maxVisibility === "number" && maxVisibility > ep.maxVisibility) {
+      ep.maxVisibility = maxVisibility;
+    }
+  }
+
+  function analyticsEpisodeIncrement(screen, controlId, field) {
+    const ep = analyticsEpisodeTouch(screen, controlId);
+    if (!ep || !field) return ep;
+    ep[field] = (ep[field] || 0) + 1;
+    return ep;
+  }
+
+  function analyticsEpisodeFinalizeVisibility(ep, now) {
+    if (!ep || !ep.visibleSince) return;
+    ep.totalVisibleMs += now - ep.visibleSince;
+    ep.visibleSince = null;
+  }
+
+  function analyticsEpisodeComplete(screen, controlId, reason) {
+    const key = analyticsEpisodeMapKey(screen, controlId);
+    const ep = analyticsInteractionEpisodes.get(key);
+    if (!ep) return;
+    const now = Date.now();
+    analyticsEpisodeFinalizeVisibility(ep, now);
+    const durationMs = now - ep.startedAt;
+    const clicked = reason === "clicked" || ep.clicked;
+    const completed = clicked;
+    const abandoned = !clicked && ["navigation", "timeout", "hidden", "blurred", "cancelled"].includes(reason);
+    ep.clicked = clicked;
+    ep.completed = completed;
+    ep.abandoned = abandoned;
+    ep.completionReason = reason;
+    analyticsInteractionEpisodes.delete(key);
+    const payload = {
+      interactionEpisodeId: ep.interactionEpisodeId,
+      episodeModelVersion: EPISODE_MODEL_VERSION,
+      screen: ep.screen,
+      controlId: ep.controlId,
+      label: ep.label,
+      durationMs,
+      totalVisibleMs: ep.totalVisibleMs,
+      hoverCount: ep.hoverCount,
+      clickCount: ep.clickCount,
+      focusCount: ep.focusCount,
+      blurCount: ep.blurCount,
+      changeCount: ep.changeCount,
+      hesitationCount: ep.hesitationCount,
+      maxVisibility: ep.maxVisibility,
+      clicked,
+      focused: ep.focused,
+      changed: ep.changed,
+      abandoned,
+      completed,
+      completionReason: reason,
+    };
+    analyticsTrack("interaction_episode_complete", payload, {
+      viewOverride: ep.screen,
+      interactionEpisodeId: ep.interactionEpisodeId,
+    });
+  }
+
+  function analyticsEpisodeCompleteAllForScreen(screen, reason) {
+    if (!screen) return;
+    const pending = [];
+    analyticsInteractionEpisodes.forEach(ep => {
+      if (ep.screen === screen) pending.push(ep.controlId);
+    });
+    pending.forEach(controlId => analyticsEpisodeComplete(screen, controlId, reason));
+  }
+
+  function analyticsEpisodeTimeoutSweep() {
+    const now = Date.now();
+    const pending = [];
+    analyticsInteractionEpisodes.forEach(ep => {
+      if (now - ep.lastActivity >= EPISODE_IDLE_TIMEOUT_MS) {
+        pending.push({ screen: ep.screen, controlId: ep.controlId });
+      }
+    });
+    pending.forEach(({ screen, controlId }) => analyticsEpisodeComplete(screen, controlId, "timeout"));
+  }
+
+  function analyticsEpisodeObserveEvent(event, details, eventView) {
+    const ctrl = analyticsEpisodeResolveControl(details, eventView);
+    if (!ctrl) return;
+    const { screen, controlId, label } = ctrl;
+    analyticsEpisodeBegin(screen, controlId, label);
+    if (event === "click") {
+      const ep = analyticsEpisodeIncrement(screen, controlId, "clickCount");
+      if (ep) ep.clicked = true;
+      analyticsEpisodeComplete(screen, controlId, "clicked");
+    } else if (event === "field_focus") {
+      const ep = analyticsEpisodeIncrement(screen, controlId, "focusCount");
+      if (ep) ep.focused = true;
+    } else if (event === "field_blur") {
+      analyticsEpisodeIncrement(screen, controlId, "blurCount");
+      analyticsEpisodeComplete(screen, controlId, "blurred");
+    } else if (event === "field_change") {
+      const ep = analyticsEpisodeIncrement(screen, controlId, "changeCount");
+      if (ep) ep.changed = true;
+    } else if (event === "mouse_hesitation") {
+      analyticsEpisodeIncrement(screen, controlId, "hesitationCount");
+      analyticsEpisodeIncrement(screen, controlId, "hoverCount");
+    } else if (event === "ui_exposure" && details.controlId) {
+      analyticsEpisodeAddVisibility(screen, controlId, Number(details.visibleMs) || 0);
+      if (details.clicked) {
+        const ep = analyticsEpisodeTouch(screen, controlId);
+        if (ep) ep.clicked = true;
+      }
+    }
+  }
+
+  function analyticsInteractionEpisodeSummary(events) {
+    const episodes = (events || []).filter(e => e.event === "interaction_episode_complete");
+    const avg = vals => vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+    const durations = episodes.map(e => Number(e.details?.durationMs) || 0);
+    const visibleMs = episodes.map(e => Number(e.details?.totalVisibleMs) || 0);
+    const clickCounts = episodes.map(e => Number(e.details?.clickCount) || 0);
+    const episodesByScreen = {};
+    const byControl = {};
+    episodes.forEach(e => {
+      const d = e.details || {};
+      const screen = d.screen || e.view || "unknown";
+      episodesByScreen[screen] = (episodesByScreen[screen] || 0) + 1;
+      const cid = d.controlId || "unknown";
+      if (!byControl[cid]) {
+        byControl[cid] = { controlId: cid, screen, label: d.label || cid, episodes: 0 };
+      }
+      byControl[cid].episodes += 1;
+    });
+    const episodeRows = episodes.map(e => {
+      const d = e.details || {};
+      return {
+        interactionEpisodeId: d.interactionEpisodeId || e.interactionEpisodeId,
+        screen: d.screen || e.view,
+        controlId: d.controlId,
+        label: d.label,
+        durationMs: Number(d.durationMs) || 0,
+        totalVisibleMs: Number(d.totalVisibleMs) || 0,
+        completionReason: d.completionReason,
+        clicked: !!d.clicked,
+        abandoned: !!d.abandoned,
+      };
+    });
+    return {
+      episodeModelVersion: EPISODE_MODEL_VERSION,
+      episodeCount: episodes.length,
+      averageEpisodeDuration: avg(durations),
+      averageVisibleMs: avg(visibleMs),
+      averageClicks: avg(clickCounts),
+      abandonedEpisodes: episodes.filter(e => e.details?.abandoned).length,
+      completedEpisodes: episodes.filter(e => e.details?.completed).length,
+      timeoutEpisodes: episodes.filter(e => e.details?.completionReason === "timeout").length,
+      episodesByScreen,
+      topControlsByEpisodes: Object.values(byControl).sort((a, b) => b.episodes - a.episodes).slice(0, 15),
+      longestEpisodes: episodeRows.slice().sort((a, b) => b.durationMs - a.durationMs).slice(0, 10),
+      shortestEpisodes: episodeRows.filter(r => r.durationMs > 0).sort((a, b) => a.durationMs - b.durationMs).slice(0, 10),
+    };
   }
 
   function analyticsControlKey(el) {
@@ -2030,6 +2331,7 @@
     const operationalMemorySummary = operationalMemorySummaryConcise(operationalMemory);
     const productionIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { productionOnly: true });
     const testerIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { testerOnly: true });
+    const interactionEpisodeSummary = analyticsInteractionEpisodeSummary(events);
 
     return {
       generatedAt: new Date().toISOString(),
@@ -2070,6 +2372,7 @@
       operationalIntelligenceSummary,
       beliefEngineSummary,
       operationalMemorySummary,
+      interactionEpisodeSummary,
       ...sessionBreakdown,
     };
   }

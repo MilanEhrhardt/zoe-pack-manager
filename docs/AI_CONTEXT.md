@@ -135,6 +135,7 @@ See also `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
 - **Belief engine (Phase 3B):** read-only belief scaffolding in AI Data Pack (`beliefEngine`) and analytics summary (`beliefEngineSummary`) — consumes item confidence, packing habits, and operational intelligence; belief types for balance, shortage, habit, recipe alignment, and readiness; deterministic confidence with caps; `observe_only` / `monitor` actionability in sandbox; `readyForRecommendations: false` on synthetic data. Not SPE, not recommendations, not volunteer-facing. Export-only. See `PRODUCT_DECISIONS.md`.
 - **Operational memory (Phase 3C):** read-only memory recall layer in AI Data Pack (`operationalMemory`) and analytics summary (`operationalMemorySummary`) — consolidates repeated signals into stable memory objects with `firstSeen`/`lastSeen`; memory types for stock, habit, recipe, donation, confidence, and readiness; derived at export time (not persisted). Phase 3C.1 polish: unique donation IDs, deduped evidence, config-fact confidence floor, cautious optional-habit copy. Not SPE, not recommendations, not volunteer-facing. Export-only. See `PRODUCT_DECISIONS.md`.
 - **Exposure tracking (v1):** `IntersectionObserver` per-control `ui_exposure` events for high-value controls only; 750ms minimum visible duration; `ignoredVisibleControls` summary (production default) plus tester split in analytics/AI Data Pack export. Per-control events use `details.controlId`, `visibleMs`, and `clicked` (distinct from legacy batch `details.controls[]` snapshots). Admin backup/export/import tracked only when visible inside opened **Need something else?** — not footer admin on donation/deliver/stock screens. No volunteer UI. See `PRODUCT_DECISIONS.md`.
+- **Interaction episodes (Phase 3D):** export-only behavioural layer — active episodes per tracked control (`screen` + `controlId`); `interaction_episode_complete` events on episode end; `interactionEpisodeId` auto-attached to related analytics events; `interactionEpisodeSummary` in AI Data Pack export. Future AI should consume episodes rather than raw events. No volunteer UI, no SPE. See `PRODUCT_DECISIONS.md`.
 - **Backup:** manual export/import from hidden admin area
 - **Packers:** Janet, Judy (volunteers); Milan (tester — analytics tagged `isTesterSession` when selected)
 
@@ -198,6 +199,7 @@ None. Pack Creation redesign shipped (render-only); awaiting volunteer field val
 | Belief engine framework (Phase 3B, export only) | **Accepted** — see `PRODUCT_DECISIONS.md` |
 | Operational memory layer (Phase 3C, export only) | **Accepted** — see `PRODUCT_DECISIONS.md` |
 | Operational memory polish (Phase 3C.1) | **Accepted** — see `PRODUCT_DECISIONS.md` |
+| Interaction episodes foundation (Phase 3D, export only) | **Accepted** — see `PRODUCT_DECISIONS.md` |
 | Documentation-first AI workflow | **Accepted** — read this file before coding |
 | Lead Engineer six-phase workflow | **Superseded** — see Lead Product Engineer workflow |
 | Lead Product Engineer workflow | **Accepted** — three-solution proposals, approval gate, auto-commit; see `.cursor/rules.md` |

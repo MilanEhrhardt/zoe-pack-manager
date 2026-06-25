@@ -132,6 +132,18 @@ Copy this block for each new decision:
 | **Alternatives Considered** | **Recency-only labels** — rejected as too coarse. **Volunteer UI in Phase 1** — rejected; Increment B deferred until field validation. **Persisted belief state** — rejected; schema migration risk. |
 | **Status** | Accepted |
 
+### Interaction Episodes Foundation (Phase 3D)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Export-only behavioural episode layer; no volunteer UI |
+| **Date** | 2026-06-25 |
+| **Context** | Raw analytics exports thousands of disconnected events (click, focus, blur, scroll, ui_exposure). Future AI must reconstruct behaviour manually. Need a coherent behavioural primitive between analytics events and higher intelligence layers. |
+| **Decision** | Add Phase 3D Interaction Episodes: active episode map keyed by `screen` + `controlId` for tracked controls; episode lifecycle from visibility or first interaction through click/blur/navigation/hidden/timeout/cancelled; emit `interaction_episode_complete` on end; auto-attach `interactionEpisodeId` to related events via `analyticsTrack()` without modifying every emitter; `interactionEpisodeSummary` in analytics derived summary / AI Data Pack. `EPISODE_MODEL_VERSION = 3D.1`, `EPISODE_IDLE_TIMEOUT_MS = 30000`. Export-only. No changes to Packing Habits, Operational Intelligence, Belief Engine, Operational Memory, volunteer UI, commit flows, stock, recipes, or localStorage schema. |
+| **Reasoning** | Episodes become the behavioural object future SPE and AI consume. Volunteers see nothing. Isolated from higher layers — episodes read from analytics instrumentation only. |
+| **Alternatives Considered** | **New analytics event type only** — rejected; episodes need stateful lifecycle not one-shot events. **Persist episodes in localStorage** — rejected; schema migration risk. **Modify every emitter** — rejected; centralise via `analyticsTrack()`. |
+| **Status** | Accepted |
+
 ### Exposure Tracking v1 (ignored visible controls)
 
 | Field | Content |
