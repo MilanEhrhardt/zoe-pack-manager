@@ -142,6 +142,7 @@ See also `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
 
 ## Deferred Ideas
 
+- **Storeroom Prioritisation Engine (SPE):** future multi-objective decision layer; not currently implemented (see `THE_ZOE_PROJECT_BIBLE.md` → AI Roadmap)
 - Major build-screen wizard or collapsed accordions
 - “Today's Changes” style UX
 - Dashboards, charts, or table-heavy views for volunteers
@@ -180,6 +181,7 @@ None. Pack Creation redesign shipped (render-only); awaiting volunteer field val
 | Canonical app = `zoe-pack-manager.html` | **Accepted** |
 | Pack Creation: common extras on main screen | **Accepted** — see `PRODUCT_DECISIONS.md` |
 | Entry screen Increment A (four verbs, no dashboard) | **Accepted** — Increment B (Today loop) deferred |
+| SPE documented, implementation deferred | **Deferred** — see `PRODUCT_DECISIONS.md` |
 | Documentation-first AI workflow | **Accepted** — read this file before coding |
 | Lead Engineer six-phase workflow | **Superseded** — see Lead Product Engineer workflow |
 | Lead Product Engineer workflow | **Accepted** — three-solution proposals, approval gate, auto-commit; see `.cursor/rules.md` |

@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### SPE is a future intelligence layer, not a Phase 1 UI feature
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Document SPE as future roadmap; do not implement yet |
+| **Date** | 2026-06-25 |
+| **Context** | Explored multi-objective recommendation systems inspired by large-scale recommender architecture (candidate generation, Pareto filtering, context policies). SPE-Ω captured as theoretical north star in `THE_ZOE_PROJECT_BIBLE.md`. |
+| **Decision** | SPE and SPE-Ω are documented in `THE_ZOE_PROJECT_BIBLE.md` only. No engine code, no Janet whisper, no UI changes until core workflows are field-validated. |
+| **Reasoning** | Current priority is stabilising Janet's core workflows. SPE is valuable but premature as a visible UI layer. |
+| **Alternatives Considered** | **Implement Phase 1 now** — rejected; distracts from Pack Creation / donation / deliver field validation. **Do not document** — rejected; would lose design work. |
+| **Status** | Accepted / Deferred |
+
 ### Entry screen Increment A (four verbs, no dashboard)
 
 | Field | Content |

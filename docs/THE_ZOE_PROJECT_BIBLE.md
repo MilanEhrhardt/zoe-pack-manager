@@ -122,7 +122,71 @@ See [`docs/DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md) for the full design cont
 
 ## AI Roadmap
 
-<!-- TODO: Add AI roadmap -->
+### Storeroom Prioritisation Engine (SPE)
+
+The **Storeroom Prioritisation Engine** is a future **multi-objective recommendation layer**. Its job is to suggest what action may be most useful next for a volunteer or administrator — not to optimise inventory, and not to replace human judgment in the storeroom.
+
+**What SPE is**
+
+- A decision-support layer that evaluates competing objectives simultaneously and recommends a single best next action when appropriate
+- Inspired by large-scale recommender architecture: **candidate generation → multi-objective evaluation → Pareto filtering → context policy selection → guardrails**
+- A companion to the four verbs, not a replacement for them
+
+**What SPE is not**
+
+- An inventory optimiser or stock dashboard
+- A weighted score shown to volunteers
+- A wizard that forces one path through the app
+
+**Product constraints (non-negotiable)**
+
+- **Must not replace the four core verbs** — We packed packs / A donation arrived / I counted something again / We delivered packs remain the spine of daily use
+- **Must never become a dashboard for Janet** — no charts, tables, LOW flags, or inventory jargon on the volunteer surface
+- **Optimise for confidence before throughput** — see Design Principles and the future Confidence Meter
+
+**Surfaces**
+
+| Audience | Experience |
+|----------|------------|
+| **Janet / Judy** | Begin **invisible**. Eventually: at most **one calm whisper** (dismissible, never blocking). Example tone: *"Good morning for Mom Packs — you have everything you need."* Silence is a valid output when uncertain. |
+| **Milan / Admin** | Full **recommendation slate** — Pareto non-dominated actions, objective profiles, and rationale. Consumed via export / Mission Control, not on Janet's entry screen. |
+
+**Objectives SPE evaluates** (independently, not as one weighted score)
+
+- Confidence improvement
+- Packing impact (mothers and clinics served)
+- Stock-out risk (ops-facing; guardrails only for volunteers)
+- Volunteer effort required
+- Seasonal relevance
+- Recipe importance
+- Historical correction rate
+- Donation uncertainty
+- Matching quality ("we always have everything matching")
+
+**Phased rollout**
+
+| Phase | Scope |
+|-------|-------|
+| **Phase 1** | Engine runs invisibly; recommendations appear in AI Data Pack / ops export only. No Janet UI. |
+| **Phase 2** | Confidence Meter + optional single whisper after field validation; outcome telemetry. |
+| **Phase 3** | Cross-install learning; richer ops briefs (donor asks, clinic-aware priorities). Janet surface stays one whisper maximum. |
+
+**Status:** Documented roadmap only — **not implemented**. See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
+
+### SPE-Ω (theoretical north star)
+
+**SPE-Ω** is the theoretical maximum intelligence architecture for the Zoe Project — a north star for long-term design, **not a build target for Phase 1**.
+
+Where SPE uses multi-objective ranking with context policies, SPE-Ω reframes the storeroom as a **partially observed system**:
+
+- Shelf quantities are **beliefs** (distributions with uncertainty), not assumed truth
+- Actions are **interventions** on a causal model of donations → packing → delivery → mission impact
+- Recommendations come from **counterfactual planning** over expected futures, with **distributionally robust** selection when data is sparse
+- A **constitutional layer** enforces Janet invariants above all optimisation: one whisper max, four verbs sacred, silence when confidence is low
+
+The same **presentation firewall** applies: Janet sees companion language; Milan sees Pareto slates, uncertainty, and causal rationale.
+
+SPE-Ω is explicitly **deferred** beyond SPE Phase 1–3. It requires belief-state instrumentation, recommendation outcome logging, and enough real volunteer sessions to avoid optimising on seed or developer test data.
 
 ## Future Vision
 

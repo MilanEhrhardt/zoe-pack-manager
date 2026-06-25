@@ -8,6 +8,7 @@
 
 ### Added
 
+- Document Storeroom Prioritisation Engine (SPE) and SPE-Ω north star in `THE_ZOE_PROJECT_BIBLE.md`; deferral decision in `PRODUCT_DECISIONS.md`
 - Pack Creation: **“Did you include these?”** section on main build screen with recipe optional Yes/No toggles (Mom and Baby packs)
 - Pack Creation: `choice-extra` menu path for unlisted custom extras
 - CSS for `.common-extras` and `.add-item-strip` on build screen
