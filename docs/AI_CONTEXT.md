@@ -26,6 +26,14 @@ The software follows the volunteer's physical workflow, not the database.
 
 ---
 
+## Current north-star direction
+
+The app is evolving from a basic local inventory tracker into a **storeroom memory system**. Phase 1 still keeps the running-stock model: opening stock + donations − packed recipe items − deliveries ± corrections. The UX should increasingly feel like a calm companion that follows Janet’s physical workflow.
+
+See `docs/THE_ZOE_PROJECT_BIBLE.md` and `docs/DESIGN_PRINCIPLES.md`.
+
+---
+
 ## Current Operating Model
 
 One major manual stock take creates opening balances. After that, the system maintains stock by:
@@ -68,6 +76,8 @@ Count one item at a time; optional reason for correction.
 ---
 
 ## UX Rules
+
+See `docs/DESIGN_PRINCIPLES.md` for the full storeroom-memory direction. In short:
 
 - One decision at a time
 - No dashboards for volunteers
