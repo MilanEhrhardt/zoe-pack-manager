@@ -2668,28 +2668,76 @@
     return comparisons;
   }
 
-  function computeHabitTrend(comparison) {
+  function computeHabitEvidenceStage(comparison) {
+    const totalObs = comparison.recentCount + comparison.previousCount;
+    const maxCount = Math.max(comparison.recentCount, comparison.previousCount);
     const recentPasses = passesPackingHabitThreshold(comparison.recentCount, comparison.recentDenominator);
     const previousPasses = passesPackingHabitThreshold(comparison.previousCount, comparison.previousDenominator);
-    const delta = comparison.deltaPercent;
+    const absDelta = Math.abs(comparison.deltaPercent);
 
-    if (comparison.windowSize <= 10
-      && comparison.recentCount >= 1
-      && comparison.previousCount >= 1
-      && !recentPasses
-      && !previousPasses) {
-      return "unstable";
+    if (totalObs < 4 || maxCount < 2) return "too_early";
+    if (!recentPasses && !previousPasses && totalObs < 6) return "early";
+    if (recentPasses || previousPasses || (totalObs >= 6 && absDelta >= 5)) return "sufficient";
+    return "early";
+  }
+
+  function habitTrendReason(trend, evidence, comparison) {
+    if (trend === "too_early_to_tell") {
+      return "We have started to see this, but it is too early to tell whether it means anything.";
     }
-    if (comparison.windowSize <= 10 && Math.abs(delta) >= 20 && comparison.recentCount + comparison.previousCount < 8) {
-      return "unstable";
+    if (trend === "emerging" && evidence === "early") {
+      if (comparison.deltaPercent >= 5) {
+        return "Behaviour has increased recently, but there are not yet enough observations to know whether this is sustained.";
+      }
+      return "Behaviour has changed recently, but there are not yet enough observations to know whether this is sustained.";
     }
-    if (!previousPasses && recentPasses) return "new";
-    if (comparison.previousCount === 0 && comparison.recentCount > 0 && recentPasses) return "new";
-    if (delta <= -15) return "disappearing";
-    if (delta >= 15) return "emerging";
-    if (delta >= 5) return "strengthening";
-    if (delta <= -5) return "weakening";
-    return "stable";
+    if (trend === "emerging") {
+      return "This behaviour appears to be increasing, but we need more packs before calling it established.";
+    }
+    if (trend === "established") {
+      return "This has become an established packing habit across recent production builds.";
+    }
+    if (trend === "declining" && evidence === "early") {
+      return "This behaviour appears less common recently, but there are not yet enough observations to be sure.";
+    }
+    if (trend === "declining") {
+      return "This behaviour appears to be declining across recent production builds.";
+    }
+    return "No meaningful change detected across the comparison windows.";
+  }
+
+  function computeHabitTrendClassification(comparison) {
+    const evidence = computeHabitEvidenceStage(comparison);
+    const delta = comparison.deltaPercent;
+    const absDelta = Math.abs(delta);
+    const recentPasses = passesPackingHabitThreshold(comparison.recentCount, comparison.recentDenominator);
+    const previousPasses = passesPackingHabitThreshold(comparison.previousCount, comparison.previousDenominator);
+    let trend;
+
+    if (evidence === "too_early" && absDelta < 15) {
+      trend = "too_early_to_tell";
+    } else if (absDelta <= 5 && (comparison.recentCount > 0 || comparison.previousCount > 0)) {
+      trend = "stable";
+    } else if (delta >= 5) {
+      if (recentPasses && comparison.recentPercent >= PACKING_HABIT_MIN_PERCENT) {
+        trend = "established";
+      } else {
+        trend = "emerging";
+      }
+    } else if (delta <= -5) {
+      if (previousPasses || comparison.previousCount >= PACKING_HABIT_MIN_COUNT) {
+        trend = "declining";
+      } else {
+        trend = "emerging";
+      }
+    } else if (evidence === "too_early") {
+      trend = "too_early_to_tell";
+    } else {
+      trend = "stable";
+    }
+
+    const trendReason = habitTrendReason(trend, evidence, comparison);
+    return { trend, evidence, trendReason };
   }
 
   function habitReplayItemZeroDates(itemId, transactions) {
@@ -2739,7 +2787,7 @@
     });
   }
 
-  function detectHabitLikelyCause(comparison, trend, transactions) {
+  function detectHabitLikelyCause(comparison, trend, evidence, transactions) {
     const stockItemId = comparison.type === "substitution" ? comparison.itemId : comparison.itemId;
     const start = comparison.recentStartDate;
     const end = comparison.recentEndDate;
@@ -2758,7 +2806,8 @@
       return "recipe_change_candidate";
     }
     if (comparison.type === "optional_usage"
-      && (trend === "emerging" || trend === "strengthening")
+      && (trend === "emerging" || trend === "established")
+      && evidence !== "too_early"
       && !itemReachedZeroDuringWindow(stockItemId, start, end, transactions)) {
       return "volunteer_preference";
     }
@@ -2784,16 +2833,17 @@
     return "No clear cause identified.";
   }
 
-  function habitTrendConfidence(comparison, trend, likelyCause) {
+  function habitTrendConfidence(comparison, trend, evidence, likelyCause) {
+    if (trend === "too_early_to_tell" || evidence === "too_early") return "low";
     let score = 0;
     if (comparison.windowSize >= 25) score += 2;
     else if (comparison.windowSize >= 20) score += 1;
     else if (comparison.windowSize <= 10) score -= 1;
-    if (["emerging", "strengthening", "disappearing", "new"].includes(trend) && Math.abs(comparison.deltaPercent) >= 15) {
+    if (evidence === "sufficient") score += 1;
+    if (["emerging", "established", "declining"].includes(trend) && Math.abs(comparison.deltaPercent) >= 15) {
       score += 1;
     }
     if (likelyCause && likelyCause !== "none") score += 1;
-    if (trend === "unstable") score -= 2;
     if (comparison.recentCount + comparison.previousCount < 6) score -= 1;
     if (trend === "stable" && comparison.windowSize >= 20) score += 1;
     if (score >= 3) return "high";
@@ -2824,7 +2874,7 @@
     return `${itemNameStr} in ${count} of the last ${denom} ${packLabel}s`;
   }
 
-  function generateHabitInsightText(comparison, trend, likelyCause) {
+  function generateHabitInsightText(comparison, trend, evidence, trendReason, likelyCause) {
     const packLabel = RECIPES[comparison.packKey]?.label || comparison.packKey;
     const itemNameStr = comparison.type === "optional_usage"
       ? recipeOptionalLabel(comparison.packKey, comparison.itemId)
@@ -2834,36 +2884,35 @@
     const causeLine = habitLikelyCauseText(likelyCause);
     let text = "";
 
-    if (trend === "new") {
-      text = `I noticed something new.\n\n${recentLine}.\n\nPreviously this happened in only ${comparison.previousCount} of the previous ${comparison.previousDenominator}.\n\nThis appears to be becoming normal.`;
-    } else if (trend === "emerging" || trend === "strengthening") {
-      text = `I noticed a change.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.`;
-      if (comparison.recentCount <= 1 && comparison.previousCount <= 1) {
-        text += "\n\nThis has only happened once, so it may not mean anything yet.";
-      } else {
+    if (trend === "too_early_to_tell") {
+      text = `I noticed something starting to appear.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\n${trendReason}`;
+    } else if (trend === "emerging") {
+      text = `I noticed a change.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\n${trendReason}`;
+      if (evidence === "sufficient" && comparison.deltaPercent >= 5) {
         text += "\n\nThis has become much more common.";
       }
-    } else if (trend === "weakening" || trend === "disappearing") {
-      text = `I noticed a change.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\nThis seems to be fading.`;
+    } else if (trend === "established") {
+      text = `I noticed something that has become normal.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\n${trendReason}`;
+    } else if (trend === "declining") {
+      text = `I noticed a change.\n\n${recentLine}.\n\nPreviously, ${previousLine.charAt(0).toLowerCase() + previousLine.slice(1)}.\n\n${trendReason}`;
     } else if (trend === "stable") {
-      text = `${itemNameStr} continue to appear in about the same share of ${packLabel}s. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} did; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. No meaningful change detected.`;
+      text = `${itemNameStr} continue to appear in about the same share of ${packLabel}s. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} did; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. ${trendReason}`;
       if (comparison.type === "optional_usage") {
-        text = `${itemNameStr} continue to be included in about the same share of ${packLabel}s. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} included them; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. No meaningful change detected.`;
+        text = `${itemNameStr} continue to be included in about the same share of ${packLabel}s. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} included them; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. ${trendReason}`;
       } else if (comparison.type === "substitution") {
         const replacementNameStr = itemName(comparison.replacementItemId);
-        text = `${replacementNameStr} replacing ${itemNameStr} has stayed remarkably consistent. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} did; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. No meaningful change detected.`;
+        text = `${replacementNameStr} replacing ${itemNameStr} has stayed remarkably consistent. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount} did; in the previous ${comparison.previousDenominator}, ${comparison.previousCount} did. ${trendReason}`;
       }
-    } else {
-      text = `The pattern here is hard to read with the history we have. In the most recent ${comparison.recentDenominator}, ${comparison.recentCount}; in the previous ${comparison.previousDenominator}, ${comparison.previousCount}.`;
     }
 
-    if (trend !== "stable" && causeLine) {
+    if (trend !== "stable" && trend !== "too_early_to_tell" && causeLine && likelyCause !== "none") {
       text += `\n\n${causeLine}`;
     }
     return text;
   }
 
   function habitInsightQualifiesForTopSummary(insight) {
+    if (insight.trend === "too_early_to_tell") return false;
     if (insight.recentCount <= 1 && insight.previousCount <= 1) return false;
     if (insight.confidence === "medium" || insight.confidence === "high") return true;
     if (insight.recentCount >= 3) return true;
@@ -2886,6 +2935,8 @@
         itemId: r.itemId,
         replacementItemId: r.replacementItemId || "",
         trend: r.trend,
+        evidence: r.evidence,
+        trendReason: r.trendReason,
         recentCount: r.recentCount,
         previousCount: r.previousCount,
         deltaPercentage: r.deltaPercent,
@@ -2894,7 +2945,9 @@
         volunteerText: r.insightText,
       }))
       .sort((a, b) => {
-        const trendRank = { new: 0, emerging: 1, strengthening: 2, disappearing: 3, weakening: 4, unstable: 5, stable: 6 };
+        const trendRank = {
+          established: 0, emerging: 1, declining: 2, stable: 3, too_early_to_tell: 4,
+        };
         const ra = trendRank[a.trend] ?? 9;
         const rb = trendRank[b.trend] ?? 9;
         if (ra !== rb) return ra - rb;
@@ -2907,15 +2960,15 @@
     const windows = deriveHistoricalHabitWindows(events.productionBuilds);
     const comparisons = compareHabitWindows(windows);
     const trendRows = comparisons.map(c => {
-      const trend = computeHabitTrend(c);
-      const likelyCause = detectHabitLikelyCause(c, trend, transactions);
-      const confidence = habitTrendConfidence(c, trend, likelyCause);
-      const insightText = generateHabitInsightText(c, trend, likelyCause);
-      return { ...c, trend, likelyCause, confidence, insightText };
+      const { trend, evidence, trendReason } = computeHabitTrendClassification(c);
+      const likelyCause = detectHabitLikelyCause(c, trend, evidence, transactions);
+      const confidence = habitTrendConfidence(c, trend, evidence, likelyCause);
+      const insightText = generateHabitInsightText(c, trend, evidence, trendReason, likelyCause);
+      return { ...c, trend, evidence, trendReason, likelyCause, confidence, insightText };
     });
     const insights = generateHabitInsights(trendRows);
     const counts = {
-      new: 0, emerging: 0, strengthening: 0, stable: 0, weakening: 0, disappearing: 0, unstable: 0,
+      too_early_to_tell: 0, emerging: 0, established: 0, declining: 0, stable: 0,
     };
     trendRows.forEach(r => { counts[r.trend] = (counts[r.trend] || 0) + 1; });
     const windowsSummary = {};
@@ -2934,12 +2987,15 @@
     const counts = trends?.counts || {};
     const topInsights = filterTopHabitInsights(trends?.insights || []).slice(0, 3);
     return {
-      numberOfEmergingHabits: (counts.new || 0) + (counts.emerging || 0),
+      numberOfEmergingHabits: counts.emerging || 0,
+      numberOfEstablishedHabits: counts.established || 0,
+      numberOfDecliningHabits: counts.declining || 0,
+      numberOfTooEarlyToTell: counts.too_early_to_tell || 0,
       numberOfStableHabits: counts.stable || 0,
-      numberOfWeakeningHabits: (counts.weakening || 0) + (counts.disappearing || 0),
-      numberOfStrengtheningHabits: counts.strengthening || 0,
       topThreeInsights: topInsights.map(i => ({
         trend: i.trend,
+        evidence: i.evidence,
+        trendReason: i.trendReason,
         volunteerText: i.volunteerText,
         confidence: i.confidence,
         likelyCause: i.likelyCause,
@@ -2967,6 +3023,8 @@
         return {
           ...obs,
           trend: null,
+          evidence: null,
+          trendReason: null,
           previousCount: null,
           previousPercentage: null,
           recentCount: null,
@@ -2980,6 +3038,8 @@
       return {
         ...obs,
         trend: t.trend,
+        evidence: t.evidence,
+        trendReason: t.trendReason,
         previousCount: t.previousCount,
         previousPercentage: t.previousPercent,
         recentCount: t.recentCount,

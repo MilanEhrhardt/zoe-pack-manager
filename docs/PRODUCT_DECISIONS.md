@@ -24,6 +24,18 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Evidence-based habit trend classification
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Replace `unstable`/directional sub-labels with `trend` + `evidence` + `trendReason` |
+| **Date** | 2026-06-25 |
+| **Context** | Phase 2 labelled low-sample changes (e.g. 1/10 → 3/10) as `unstable`, implying volunteer inconsistency when the dataset was simply too small. |
+| **Decision** | `trend`: too_early_to_tell, emerging, established, declining, stable. `evidence`: too_early, early, sufficient. Add human `trendReason`. Remove `unstable`, `new`, `strengthening`, `weakening`, `disappearing` from export. Exclude `too_early_to_tell` from `topThreeInsights`. Raw `trendRows` remain unfiltered. |
+| **Reasoning** | Separates “we don't yet know” from “behaviour appears to be emerging/established/declining.” Avoids blaming volunteers for insufficient data. |
+| **Alternatives Considered** | **Single combined trend field** — rejected; user approved two-field model. **Keep unstable for flip-flops** — rejected; conflates concepts. |
+| **Status** | Accepted |
+
 ### Packing habit trend insight noise filter
 
 | Field | Content |
