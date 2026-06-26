@@ -24,6 +24,29 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Operational reasoning engine (Phase 4, export only)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Add Phase 4 Operational Reasoning Engine as the primary epistemic layer between Evidence Fusion and Belief Engine. `computeOperationalReasoning` with six reasoning types (`stock`, `habit`, `recipe`, `donation`, `confidence`, `readiness`) and generators (`item_constraint`, `substitution_cause`, `optional_item`, `recipe_alignment`, `donation_impact`, `inventory_confidence`, `workflow_friction`). Reasoning objects carry hypotheses with `normalizeProbabilities`, reasoning metadata (`reasoningSteps`, `assumptions`, `counterfactuals`, `wouldChangeConclusion`, `nextBestEvidence`, `dependencyEdges`), maturity/stability scores, and top-level `dependencyGraph`. `deriveBeliefsFromReasoning` projects lightweight beliefs with stable IDs and traceability fields (`derivedFromReasoningId`, `leadingHypothesisId`, `wouldChangeMyMind`, `nextBestEvidence`). `computeBeliefEngine` becomes a thin wrapper only (`compatibilityLayer: true`, `BE_MODEL_VERSION` 4.0). Donation/confidence reasoning-only — no new belief types. Full `operationalReasoning` in AI Data Pack; analytics `operationalReasoningSummary` only. `activeLearning: { enabled: false }`. Operational Memory thin ctx + `belief.actionability` fix in `omFilterRedundantMemories` only. Reuses Phase 3E freshness helpers. No localStorage, commit, render, recipe, or volunteer UI changes. |
+| **Date** | 2026-06-26 |
+| **Context** | Phase 3B beliefs mixed measurement conclusions with epistemic scaffolding. Phase 4 reframes reasoning as the source of truth; beliefs are a compatibility projection for existing export consumers. |
+| **Reasoning** | Separates evidence → hypotheses → reasoning → beliefs → memory; enables future SPE/Mission Control consumers to read `operationalReasoning` first while preserving `beliefEngine` contract. |
+| **Alternatives Considered** | Enrich beliefs in place (superseded); reasoning-only export without top-level `beliefEngine` (rejected — breaks backward compat); dual-path shadow layer (rejected — maintenance burden). |
+| **Status** | Accepted |
+
+### Evidence freshness layer (Phase 3E, export only)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Read-only evidence ageing calibration in export and analytics summary only; no volunteer UI, no SPE, no schema migration in Phase 3E |
+| **Date** | 2026-06-24 |
+| **Context** | Intelligence layers treated old and recent evidence similarly — e.g. a six-month-old substitution or year-old donation could still support beliefs and memories at full weight. Phase 3B beliefs and 3C memories need explicit current-relevance without discarding history. |
+| **Decision** | Add Phase 3E shared helpers (`evidenceFreshnessBand`, `evidenceFreshnessWeight`, `annotateEvidenceFreshness`, `summarizeEvidenceFreshness`) with half-life weights and deterministic bands. Add thin **Evidence Fusion** (`computeEvidenceFusion`) collecting normalized evidence from operational intelligence, packing habits, item confidence, stock belief-state, config, and interaction episodes — each record annotated with `freshness`. Belief Engine keeps raw `confidenceProbability`; adds `evidenceFreshnessSummary`, `freshnessConfidenceModifier`, and `freshnessAdjustedConfidenceProbability` (conservative caps). Operational Memory exports `evidenceFreshnessSummary`; historical-only evidence may become `stale` with capped confidence. Analytics `evidenceFusionSummary`. Model version `3E.1`. No localStorage or transaction schema changes. No commit/render/recipe changes. |
+| **Reasoning** | Makes evidence age explicit for export-time reasoning; aligns with storeroom-memory principle of confidence over false certainty. Retains old evidence as historical context, not as equally current fact. |
+| **Alternatives Considered** | **Freshness only on beliefs, skip fusion** — rejected; user approved Option B with thin fusion. **Push freshness into every upstream layer at source** — deferred; higher regression risk. **Volunteer-facing staleness labels** — rejected. |
+| **Status** | Accepted |
+
 ### Operational memory polish (Phase 3C.1)
 
 | Field | Content |
