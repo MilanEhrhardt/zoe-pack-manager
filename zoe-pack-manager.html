@@ -930,6 +930,18 @@
   const RECOUNT_TOLERANCE_PCT = 0.10;
   const RECOUNT_MIN_LABELED = 8; // real labeled recounts needed before calibration is meaningful
 
+  // Stock belief-state: model each item's true on-hand quantity as a
+  // distribution (mean μ, variance σ²) by replaying the log with uncertainty
+  // propagation. Recounts collapse variance; donations/builds grow it. These
+  // are the tunable parameters the calibration loop (rc.*) will eventually fit.
+  const BELIEF_MODEL_VERSION = "bs.1";
+  const BELIEF_RECOUNT_VAR = 0.5;       // variance just after a physical count (~±0.7)
+  const BELIEF_NO_ANCHOR_VAR = 64;      // variance for never-counted items (~±8): genuinely unknown
+  const BELIEF_DONATION_REL_SD = 0.10;  // donor counts are ~10% rough
+  const BELIEF_DONATION_BASE_VAR = 1;   // variance floor added per donation line
+  const BELIEF_BUILD_REL_SD = 0.04;     // packing/delivery deductions are fairly precise
+  const BELIEF_MOVE_BASE_VAR = 0.25;    // variance floor added per deduction movement
+
   const itemMap = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 
   var ANALYTICS_SCHEMA_VERSION = "1.3.0";
@@ -2315,6 +2327,8 @@
     const operationalMemorySummary = operationalMemorySummaryConcise(operationalMemory);
     const recountCalibration = opts.recountCalibration || buildRecountCalibration(tx);
     const recountCalibrationSummary = recountCalibrationSummaryConcise(recountCalibration);
+    const stockBeliefState = opts.stockBeliefState || computeStockBeliefState(tx);
+    const stockBeliefSummary = buildStockBeliefSummary(stockBeliefState);
     const productionIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { productionOnly: true });
     const testerIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { testerOnly: true });
     const interactionEpisodeSummary = analyticsInteractionEpisodeSummary(events);
@@ -2358,6 +2372,7 @@
       beliefEngineSummary,
       operationalMemorySummary,
       recountCalibrationSummary,
+      stockBeliefSummary,
       interactionEpisodeSummary,
       ...sessionBreakdown,
     };
@@ -2410,6 +2425,7 @@
       itemConfidence, packingHabits, operationalIntelligence, beliefEngine, synthetic: !!state.sampleData,
     });
     const recountCalibration = buildRecountCalibration(state.transactions);
+    const stockBeliefState = computeStockBeliefState(state.transactions);
     const payload = {
       exportedAt: new Date().toISOString(),
       app: "Zoe Pack Manager",
@@ -2442,8 +2458,9 @@
       beliefEngine,
       operationalMemory,
       recountCalibration,
+      stockBeliefState,
       analytics: state.analytics,
-      summary: analyticsDerivedSummary({ itemConfidence, packingHabits, operationalIntelligence, beliefEngine, operationalMemory, recountCalibration }),
+      summary: analyticsDerivedSummary({ itemConfidence, packingHabits, operationalIntelligence, beliefEngine, operationalMemory, recountCalibration, stockBeliefState }),
     };
     downloadTextFile(JSON.stringify(payload, null, 2), `zoe-ai-data-pack-${todayISO()}.json`, "application/json");
   }
@@ -3127,6 +3144,175 @@
       catchRate: cal.catchRate,
       falseAlarmRate: cal.falseAlarmRate,
       headline,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // STOCK BELIEF STATE — probabilistic shelf model (export / ops)
+  // ═══════════════════════════════════════════════════════════════════
+  // The shelf is a belief, not a number. Each item carries a distribution
+  // (mean μ, variance σ²) over its true quantity, derived by replaying the
+  // log: recounts collapse variance to ground truth; donations and builds add
+  // it. Confidence and stock-out risk are read off the distribution rather
+  // than hand-tuned — and confidence uses the SAME tolerance the recount
+  // calibration loop scores against, so the two are unified by construction.
+
+  function beliefErf(x) { // Abramowitz & Stegun 7.1.26
+    const t = 1 / (1 + 0.3275911 * Math.abs(x));
+    const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+    return x >= 0 ? y : -y;
+  }
+
+  function beliefNormalCdf(z) {
+    return 0.5 * (1 + beliefErf(z / Math.SQRT2));
+  }
+
+  function beliefBandFromScore(score) {
+    if (score >= 80) return "trusted";
+    if (score >= 60) return "probably_right";
+    if (score >= 40) return "uncertain";
+    return "needs_checking";
+  }
+
+  // P(|true − μ| ≤ tolerance): the model's self-assessed probability that its
+  // belief is within the calibration tolerance. tol = max(abs floor, pct·μ).
+  function beliefWithinToleranceProbability(mu, sd) {
+    if (!(sd > 0)) return 1;
+    const tol = Math.max(RECOUNT_TOLERANCE_ABS, RECOUNT_TOLERANCE_PCT * Math.max(mu, 0));
+    return Math.max(0, Math.min(1, 2 * beliefNormalCdf(tol / sd) - 1));
+  }
+
+  function beliefReason(anchored, daysSinceAnchor, lowStockProb) {
+    if (!anchored) return "Never physically counted — the shelf number is an estimate.";
+    if (Number.isFinite(daysSinceAnchor) && daysSinceAnchor <= 7) return "Counted recently — the estimate is tight.";
+    if (lowStockProb >= 0.5) return "Estimate is drifting and may be near running out.";
+    if (Number.isFinite(daysSinceAnchor) && daysSinceAnchor > 90) return "Not counted for a while — uncertainty has grown.";
+    return "Estimate has widened since the last count.";
+  }
+
+  function computeStockBeliefState(transactions, opts = {}) {
+    const sampleData = opts.sampleData != null ? opts.sampleData : !!state.sampleData;
+    const txs = [...(transactions || [])]
+      .filter(t => t.type !== "undo")
+      .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+
+    const mu = {}, variance = {}, anchored = {}, lastAnchorDate = {};
+    ITEMS.forEach(i => { mu[i.id] = 0; variance[i.id] = BELIEF_NO_ANCHOR_VAR; anchored[i.id] = false; lastAnchorDate[i.id] = null; });
+    const ensure = id => { if (mu[id] === undefined) { mu[id] = 0; variance[id] = BELIEF_NO_ANCHOR_VAR; anchored[id] = false; lastAnchorDate[id] = null; } };
+
+    for (const tx of txs) {
+      if (tx.type === "recount" && tx.itemId) {
+        ensure(tx.itemId);
+        mu[tx.itemId] = Number(tx.newQty) || 0;
+        variance[tx.itemId] = BELIEF_RECOUNT_VAR;
+        anchored[tx.itemId] = true;
+        lastAnchorDate[tx.itemId] = tx.date || null;
+      } else if (tx.type === "donation") {
+        for (const line of tx.lines || []) {
+          if (!line.itemId) continue;
+          ensure(line.itemId);
+          const u = Number(line.unitsAdded) || Number(line.qty) || 0;
+          mu[line.itemId] += u;
+          variance[line.itemId] += Math.pow(BELIEF_DONATION_REL_SD * u, 2) + BELIEF_DONATION_BASE_VAR;
+        }
+      } else if (tx.type === "build") {
+        const { usage } = computeBuildStockPlan(
+          tx.packKey, tx.qty, tx.optionalIncluded || [], tx.customExtras || [],
+          tx.substitutions || [], tx.omissions || []
+        );
+        for (const [id, d] of Object.entries(usage)) {
+          if (d <= 0) continue;
+          ensure(id);
+          mu[id] -= d;
+          variance[id] += Math.pow(BELIEF_BUILD_REL_SD * d, 2) + BELIEF_MOVE_BASE_VAR;
+        }
+      } else if (tx.type === "deliver" && tx.deliverType === "completeUnit" && tx.itemId) {
+        ensure(tx.itemId);
+        const d = Number(tx.qty) || 0;
+        mu[tx.itemId] -= d;
+        variance[tx.itemId] += Math.pow(BELIEF_BUILD_REL_SD * d, 2) + BELIEF_MOVE_BASE_VAR;
+      }
+    }
+
+    const items = ITEMS.map(item => {
+      const m = mu[item.id];
+      const v = Math.max(variance[item.id], BELIEF_RECOUNT_VAR);
+      const sd = Math.sqrt(v);
+      const threshold = Number(item.threshold) || 0;
+      const p = beliefWithinToleranceProbability(m, sd);
+      const score = Math.round(p * 100);
+      const days = anchored[item.id] ? confidenceDaysSince(lastAnchorDate[item.id]) : Infinity;
+      // Stock-out / zero risk read straight off the distribution.
+      const lowStockProbability = threshold > 0 ? Math.max(0, Math.min(1, beliefNormalCdf((threshold - m) / sd))) : 0;
+      const zeroProbability = Math.max(0, Math.min(1, beliefNormalCdf((0.5 - m) / sd)));
+      return {
+        itemId: item.id,
+        itemName: item.name,
+        threshold,
+        believedQty: Math.round(m),
+        rawMean: Math.round(m * 100) / 100,
+        standardDeviation: Math.round(sd * 100) / 100,
+        variance: Math.round(v * 100) / 100,
+        anchored: anchored[item.id],
+        daysSinceAnchor: Number.isFinite(days) ? days : null,
+        confidenceProbability: Math.round(p * 100) / 100,
+        confidenceScore: score,
+        confidenceBand: beliefBandFromScore(score),
+        lowStockProbability: Math.round(lowStockProbability * 100) / 100,
+        zeroProbability: Math.round(zeroProbability * 100) / 100,
+        reason: beliefReason(anchored[item.id], days, lowStockProbability),
+        isCore: itemRecipeMeta(item.id).isCore,
+        isOutOfSeason: isOutOfSeason(item),
+      };
+    });
+
+    return {
+      modelVersion: BELIEF_MODEL_VERSION,
+      generatedFromTransactions: txs.length,
+      sampleData,
+      parameters: {
+        recountVar: BELIEF_RECOUNT_VAR,
+        noAnchorVar: BELIEF_NO_ANCHOR_VAR,
+        donationRelSd: BELIEF_DONATION_REL_SD,
+        buildRelSd: BELIEF_BUILD_REL_SD,
+        toleranceAbs: RECOUNT_TOLERANCE_ABS,
+        tolerancePct: RECOUNT_TOLERANCE_PCT,
+      },
+      items,
+      note: "Confidence = P(true qty within tolerance of the estimate); stock-out risk = P(true qty < threshold). Export-only; no volunteer UI.",
+    };
+  }
+
+  function bsMean(nums) {
+    if (!nums.length) return 0;
+    return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100;
+  }
+
+  function buildStockBeliefSummary(beliefState) {
+    const items = (beliefState && beliefState.items) || [];
+    const bandCounts = { trusted: 0, probably_right: 0, uncertain: 0, needs_checking: 0 };
+    items.forEach(i => { bandCounts[i.confidenceBand] = (bandCounts[i.confidenceBand] || 0) + 1; });
+    const anchoredCount = items.filter(i => i.anchored).length;
+    const leastConfident = [...items]
+      .sort((a, b) => a.confidenceScore - b.confidenceScore)
+      .slice(0, 10)
+      .map(i => ({ itemId: i.itemId, itemName: i.itemName, confidenceScore: i.confidenceScore, band: i.confidenceBand, believedQty: i.believedQty, sd: i.standardDeviation }));
+    const highestStockOutRisk = items
+      .filter(i => i.threshold > 0 && i.lowStockProbability >= 0.2)
+      .sort((a, b) => b.lowStockProbability - a.lowStockProbability)
+      .slice(0, 10)
+      .map(i => ({ itemId: i.itemId, itemName: i.itemName, lowStockProbability: i.lowStockProbability, believedQty: i.believedQty, threshold: i.threshold, isCore: i.isCore }));
+    return {
+      modelVersion: beliefState ? beliefState.modelVersion : BELIEF_MODEL_VERSION,
+      itemCount: items.length,
+      anchoredCount,
+      unanchoredCount: items.length - anchoredCount,
+      bandCounts,
+      lowConfidenceCount: bandCounts.uncertain + bandCounts.needs_checking,
+      meanConfidence: bsMean(items.map(i => i.confidenceScore)),
+      leastConfident,
+      highestStockOutRisk,
+      sampleData: !!(beliefState && beliefState.sampleData),
     };
   }
 
