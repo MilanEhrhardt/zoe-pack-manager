@@ -2315,18 +2315,28 @@
     const operationalIntelligence = opts.operationalIntelligence
       || computeOperationalIntelligence({ itemConfidence, packingHabits: packingHabitsFull });
     const operationalIntelligenceSummary = operationalIntelligenceSummaryConcise(operationalIntelligence);
-    const beliefEngine = opts.beliefEngine || computeBeliefEngine({
-      itemConfidence, packingHabits: packingHabitsFull, operationalIntelligence,
-      synthetic: !!state.sampleData,
-    });
-    const beliefEngineSummary = beliefEngineSummaryConcise(beliefEngine);
     const recountCalibration = opts.recountCalibration || buildRecountCalibration(tx);
     const recountCalibrationSummary = recountCalibrationSummaryConcise(recountCalibration);
     const stockBeliefState = opts.stockBeliefState || computeStockBeliefState(tx);
     const stockBeliefSummary = buildStockBeliefSummary(stockBeliefState);
+    const evidenceFusion = opts.evidenceFusion || computeEvidenceFusion({
+      itemConfidence,
+      packingHabits: packingHabitsFull,
+      operationalIntelligence,
+      stockBeliefState,
+      recountCalibration,
+      analyticsEvents: events,
+      synthetic: !!state.sampleData,
+    });
+    const evidenceFusionSummary = evidenceFusionSummaryConcise(evidenceFusion);
+    const beliefEngine = opts.beliefEngine || computeBeliefEngine({
+      itemConfidence, packingHabits: packingHabitsFull, operationalIntelligence, evidenceFusion,
+      synthetic: !!state.sampleData,
+    });
+    const beliefEngineSummary = beliefEngineSummaryConcise(beliefEngine);
     const operationalMemory = opts.operationalMemory || computeOperationalMemory({
       itemConfidence, packingHabits: packingHabitsFull, operationalIntelligence, beliefEngine,
-      stockBeliefState, recountCalibration,
+      evidenceFusion, stockBeliefState, recountCalibration,
       synthetic: !!state.sampleData,
     });
     const operationalMemorySummary = operationalMemorySummaryConcise(operationalMemory);
@@ -2370,6 +2380,7 @@
       packingHabitsSummary,
       packingHabitTrends,
       operationalIntelligenceSummary,
+      evidenceFusionSummary,
       beliefEngineSummary,
       operationalMemorySummary,
       recountCalibrationSummary,
@@ -2419,13 +2430,19 @@
     const itemConfidence = computeAllItemConfidence();
     const packingHabits = packingHabitSummary();
     const operationalIntelligence = computeOperationalIntelligence({ itemConfidence, packingHabits });
-    const beliefEngine = computeBeliefEngine({
-      itemConfidence, packingHabits, operationalIntelligence, synthetic: !!state.sampleData,
-    });
     const recountCalibration = buildRecountCalibration(state.transactions);
     const stockBeliefState = computeStockBeliefState(state.transactions);
+    const evidenceFusion = computeEvidenceFusion({
+      itemConfidence, packingHabits, operationalIntelligence, stockBeliefState, recountCalibration,
+      analyticsEvents: state.analytics?.events || [],
+      synthetic: !!state.sampleData,
+    });
+    const beliefEngine = computeBeliefEngine({
+      itemConfidence, packingHabits, operationalIntelligence, evidenceFusion,
+      synthetic: !!state.sampleData,
+    });
     const operationalMemory = computeOperationalMemory({
-      itemConfidence, packingHabits, operationalIntelligence, beliefEngine,
+      itemConfidence, packingHabits, operationalIntelligence, beliefEngine, evidenceFusion,
       stockBeliefState, recountCalibration,
       synthetic: !!state.sampleData,
     });
@@ -2458,12 +2475,16 @@
       itemConfidence,
       packingHabits,
       operationalIntelligence,
+      evidenceFusion,
       beliefEngine,
       operationalMemory,
       recountCalibration,
       stockBeliefState,
       analytics: state.analytics,
-      summary: analyticsDerivedSummary({ itemConfidence, packingHabits, operationalIntelligence, beliefEngine, operationalMemory, recountCalibration, stockBeliefState }),
+      summary: analyticsDerivedSummary({
+        itemConfidence, packingHabits, operationalIntelligence, evidenceFusion, beliefEngine,
+        operationalMemory, recountCalibration, stockBeliefState,
+      }),
     };
     downloadTextFile(JSON.stringify(payload, null, 2), `zoe-ai-data-pack-${todayISO()}.json`, "application/json");
   }
@@ -5168,6 +5189,565 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // EVIDENCE FRESHNESS — Phase 3E evidence ageing model
+  // ═══════════════════════════════════════════════════════════════════
+
+  const EVIDENCE_FRESHNESS_MODEL_VERSION = "3E.1";
+  const EF_MODEL_VERSION = EVIDENCE_FRESHNESS_MODEL_VERSION;
+
+  function efNormalizeDate(val) {
+    if (val == null || val === "") return null;
+    const s = String(val);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    return null;
+  }
+
+  function evidenceDate(value) {
+    if (!value || typeof value !== "object") return null;
+    const candidates = [
+      value.lastSeen, value.endedAt, value.timestamp, value.date,
+      value.generatedAt, value.firstSeen, value.startedAt, value.exportedAt,
+    ];
+    for (const c of candidates) {
+      const norm = efNormalizeDate(c);
+      if (norm) return norm;
+    }
+    return null;
+  }
+
+  function efDaysBetween(dateA, dateB) {
+    const a = efNormalizeDate(dateA);
+    const b = efNormalizeDate(dateB);
+    if (!a || !b) return null;
+    const da = new Date(`${a}T12:00:00Z`);
+    const db = new Date(`${b}T12:00:00Z`);
+    return Math.max(0, Math.floor((db - da) / 86400000));
+  }
+
+  function evidenceFreshnessBand(ageDays) {
+    if (ageDays == null) return "unknown";
+    if (ageDays <= 14) return "fresh";
+    if (ageDays <= 45) return "recent";
+    if (ageDays <= 90) return "ageing";
+    if (ageDays <= 180) return "stale";
+    return "historical";
+  }
+
+  function evidenceFreshnessHalfLifeDays(evidenceType) {
+    const map = {
+      recount: 45,
+      stock_balance: 14,
+      substitution: 60,
+      optional_usage: 60,
+      donation: 30,
+      delivery: 30,
+      recipe_config: 365,
+      volunteer_preference: 120,
+      interaction_episode: 14,
+      analytics_signal: 30,
+      operational_memory: 180,
+      unknown: 60,
+    };
+    return map[evidenceType] || map.unknown;
+  }
+
+  function evidenceFreshnessWeight(ageDays, evidenceType) {
+    if (ageDays == null) return 0.5;
+    const halfLife = evidenceFreshnessHalfLifeDays(evidenceType);
+    const raw = Math.exp(-ageDays / halfLife);
+    return Math.max(0.10, Math.min(1.00, Math.round(raw * 100) / 100));
+  }
+
+  function annotateEvidenceFreshness(evidence, opts) {
+    opts = opts || {};
+    const referenceAt = opts.referenceAt || new Date().toISOString();
+    const evidenceType = opts.evidenceType || evidence.evidenceType || "unknown";
+    const evidenceDateStr = evidenceDate(evidence);
+    const refDate = efNormalizeDate(referenceAt) || todayISO();
+    const ageDays = evidenceDateStr != null ? efDaysBetween(evidenceDateStr, refDate) : null;
+    const freshnessBand = evidenceFreshnessBand(ageDays);
+    const freshnessWeight = evidenceFreshnessWeight(ageDays, evidenceType);
+    const freshnessReason = ageDays == null
+      ? "No usable date was available for this evidence."
+      : `Evidence is ${freshnessBand} (${ageDays} days old relative to export time).`;
+    return {
+      ...evidence,
+      freshness: {
+        modelVersion: EVIDENCE_FRESHNESS_MODEL_VERSION,
+        evidenceDate: evidenceDateStr,
+        ageDays,
+        freshnessBand,
+        freshnessWeight,
+        evidenceType,
+        freshnessReason,
+      },
+    };
+  }
+
+  function annotateEvidenceListFreshness(evidenceList, opts) {
+    return (evidenceList || []).map(item => annotateEvidenceFreshness(item, opts));
+  }
+
+  function summarizeEvidenceFreshness(evidenceList) {
+    const list = evidenceList || [];
+    const byFreshnessBand = {};
+    let weightSum = 0;
+    let weightCount = 0;
+    let staleEvidenceCount = 0;
+    let historicalEvidenceCount = 0;
+    let unknownDateEvidenceCount = 0;
+    const dates = [];
+    list.forEach(e => {
+      const f = e.freshness || {};
+      const band = f.freshnessBand || evidenceFreshnessBand(f.ageDays);
+      byFreshnessBand[band] = (byFreshnessBand[band] || 0) + 1;
+      if (band === "stale") staleEvidenceCount += 1;
+      if (band === "historical") historicalEvidenceCount += 1;
+      if (band === "unknown" || f.evidenceDate == null) unknownDateEvidenceCount += 1;
+      if (typeof f.freshnessWeight === "number") {
+        weightSum += f.freshnessWeight;
+        weightCount += 1;
+      }
+      if (f.evidenceDate) dates.push(f.evidenceDate);
+    });
+    dates.sort();
+    return {
+      totalEvidence: list.length,
+      byFreshnessBand,
+      averageFreshnessWeight: weightCount ? Math.round((weightSum / weightCount) * 100) / 100 : 0,
+      freshestEvidenceDate: dates.length ? dates[dates.length - 1] : null,
+      oldestEvidenceDate: dates.length ? dates[0] : null,
+      staleEvidenceCount,
+      historicalEvidenceCount,
+      unknownDateEvidenceCount,
+    };
+  }
+
+  function freshnessWeightedMean(evidenceList, fieldName) {
+    const list = evidenceList || [];
+    let sum = 0;
+    let weightSum = 0;
+    list.forEach(e => {
+      const w = e.freshness?.freshnessWeight;
+      const v = Number(e[fieldName]);
+      if (typeof w !== "number" || Number.isNaN(v)) return;
+      sum += v * w;
+      weightSum += w;
+    });
+    return weightSum > 0 ? Math.round((sum / weightSum) * 100) / 100 : 0;
+  }
+
+  function efFreshnessConfidenceModifier(summary) {
+    const avg = summary?.averageFreshnessWeight ?? 0;
+    const count = summary?.totalEvidence ?? 0;
+    if (avg < 0.40) return -0.15;
+    if (avg < 0.60) return -0.08;
+    if (avg > 0.85 && count >= 2) return 0.03;
+    return 0;
+  }
+
+  function efFreshnessObject(objectId, partial, referenceAt) {
+    const evidence = annotateEvidenceListFreshness(partial.evidence || [], {
+      referenceAt,
+      evidenceType: partial.defaultEvidenceType,
+    });
+    evidence.forEach(rec => {
+      if (!rec.evidenceType) rec.evidenceType = partial.defaultEvidenceType || "unknown";
+    });
+    const evidenceFreshnessSummary = summarizeEvidenceFreshness(evidence);
+    return {
+      objectId,
+      source: partial.source,
+      group: partial.group,
+      subject: partial.subject || null,
+      description: partial.description || "",
+      evidence,
+      evidenceFreshnessSummary,
+    };
+  }
+
+  function computeEvidenceFusion(deps) {
+    const referenceAt = deps.referenceAt || new Date().toISOString();
+    const oi = deps.operationalIntelligence || {};
+    const objects = [];
+    const push = (objectId, partial) => objects.push(efFreshnessObject(objectId, partial, referenceAt));
+
+    (oi.stockRisk || []).forEach(risk => {
+      const evidence = [];
+      evidence.push({
+        source: "operationalIntelligence", group: "inventory",
+        description: `${risk.itemName} balance is ${risk.balance} (threshold ${risk.threshold}).`,
+        date: todayISO(), evidenceType: "stock_balance",
+      });
+      if (risk.zeroStock) {
+        evidence.push({
+          source: "operationalIntelligence", group: "inventory",
+          description: `${risk.itemName} is at zero balance.`,
+          date: todayISO(), evidenceType: "stock_balance",
+        });
+      }
+      if (risk.recentSubstitutionTouches >= 2) {
+        evidence.push({
+          source: "operationalIntelligence", group: "inventory",
+          description: `Recent substitution pressure on ${risk.itemName}.`,
+          date: todayISO(), evidenceType: "substitution",
+        });
+      }
+      push(`stock:${risk.itemId}`, {
+        source: "operationalIntelligence", group: "inventory",
+        subject: { itemId: risk.itemId, itemName: risk.itemName },
+        description: `Inventory evidence for ${risk.itemName}`,
+        defaultEvidenceType: "stock_balance", evidence,
+      });
+    });
+
+    (oi.substitutionImpact || []).forEach(sub => {
+      if (sub.packsAffected < 1) return;
+      push(`habit:substitution:${sub.packKey}:${sub.insteadOfItemId}:${sub.substituteItemId}`, {
+        source: "operationalIntelligence", group: "packing_habits",
+        subject: { packKey: sub.packKey, itemId: sub.insteadOfItemId, replacementItemId: sub.substituteItemId },
+        description: `${sub.substituteItemName} substituted for ${sub.insteadOfItemName} in ${sub.packLabel}`,
+        defaultEvidenceType: "substitution",
+        evidence: [{
+          source: "operationalIntelligence", group: "packing_habits",
+          description: `${sub.packsAffected} ${sub.packLabel} pack records affected.`,
+          lastSeen: sub.lastSeen, firstSeen: sub.firstSeen, evidenceType: "substitution",
+        }],
+      });
+    });
+
+    (oi.optionalImpact || []).forEach(opt => {
+      if ((opt.inclusionRateByPacks || 0) < 0.2 && (opt.unitsConsumed || 0) < 5) return;
+      push(`habit:optional:${opt.packKey}:${opt.itemId}`, {
+        source: "operationalIntelligence", group: "packing_habits",
+        subject: { packKey: opt.packKey, itemId: opt.itemId },
+        description: `Optional ${opt.itemName} usage in ${opt.packLabel}`,
+        defaultEvidenceType: "optional_usage",
+        evidence: [{
+          source: "operationalIntelligence", group: "packing_habits",
+          description: `Included in ${Math.round((opt.inclusionRateByPacks || 0) * 100)}% of ${opt.packLabel} records.`,
+          lastSeen: opt.lastSeen, firstSeen: opt.firstSeen, evidenceType: "optional_usage",
+        }],
+      });
+    });
+
+    (oi.donationImpact || []).slice(0, 10).forEach(d => {
+      push(`donation:${d.donationId}`, {
+        source: "operationalIntelligence", group: "donations",
+        subject: { donationId: d.donationId, donor: d.donor },
+        description: `Donation from ${d.donor || "unknown donor"} on ${d.date}`,
+        defaultEvidenceType: "donation",
+        evidence: [{
+          source: "operationalIntelligence", group: "donations",
+          description: `Donation may enable up to ${d.maxEstimatedPackEnablement || 0} packs (estimated).`,
+          date: d.date, evidenceType: "donation",
+        }],
+      });
+    });
+
+    (oi.recountImpact || []).forEach(r => {
+      push(`recount:${r.recountId}`, {
+        source: "operationalIntelligence", group: "recounts",
+        subject: { itemId: r.itemId, recountId: r.recountId },
+        description: `Recount for ${r.itemName} on ${r.date}`,
+        defaultEvidenceType: "recount",
+        evidence: [{
+          source: "operationalIntelligence", group: "recounts",
+          description: `Variance ${r.varianceAbs} units (${r.direction || "adjustment"}).`,
+          date: r.date, evidenceType: "recount",
+        }],
+      });
+    });
+
+    (deps.packingHabits?.observations || []).forEach(obs => {
+      const key = packingHabitPatternKey(obs.type, obs.packKey, obs.itemId, obs.replacementItemId || "");
+      const evType = obs.type === "substitution" ? "substitution"
+        : obs.type === "optional_usage" ? "optional_usage" : "volunteer_preference";
+      push(`packing_habit:${key}`, {
+        source: "packingHabits", group: "packing_habits",
+        subject: { type: obs.type, packKey: obs.packKey, itemId: obs.itemId },
+        description: obs.volunteerText || `${obs.itemName} pattern in ${obs.packLabel}`,
+        defaultEvidenceType: evType,
+        evidence: [{
+          source: "packingHabits", group: "packing_habits",
+          description: obs.volunteerText || `${obs.percentage}% in ${obs.denominator} ${obs.packLabel} builds.`,
+          lastSeen: obs.lastSeen, firstSeen: obs.firstSeen, evidenceType: evType,
+        }],
+      });
+    });
+
+    (deps.itemConfidence || []).forEach(row => {
+      const stats = row.volunteerConfidence?.stats;
+      if (!stats?.hasEverBeenRecounted && !stats?.totalMovements) return;
+      const evidence = [];
+      if (stats.lastRecountDate) {
+        evidence.push({
+          source: "itemConfidence", group: "confidence",
+          description: row.volunteerConfidence?.confidenceReason || `Confidence for ${row.itemName}.`,
+          date: stats.lastRecountDate, evidenceType: "recount",
+        });
+      }
+      if (stats.totalMovements > 0) {
+        evidence.push({
+          source: "itemConfidence", group: "confidence",
+          description: `${stats.totalMovements} units moved since last count.`,
+          date: stats.lastRecountDate || todayISO(), evidenceType: "stock_balance",
+        });
+      }
+      if (!evidence.length) return;
+      push(`item_confidence:${row.itemId}`, {
+        source: "itemConfidence", group: "confidence",
+        subject: { itemId: row.itemId, itemName: row.itemName },
+        description: `Item confidence evidence for ${row.itemName}`,
+        defaultEvidenceType: "stock_balance", evidence,
+      });
+    });
+
+    (deps.stockBeliefState?.items || []).forEach(item => {
+      if (!item.anchored && item.confidenceScore < 40) return;
+      push(`belief_state:${item.itemId}`, {
+        source: "stockBeliefState", group: "inventory",
+        subject: { itemId: item.itemId },
+        description: `Belief-state for ${item.itemName}: μ ${item.rawMean ?? item.believedQty}`,
+        defaultEvidenceType: "stock_balance",
+        evidence: [{
+          source: "stockBeliefState", group: "inventory",
+          description: item.reason || `${item.confidenceBand} confidence band.`,
+          date: todayISO(), evidenceType: "stock_balance",
+        }],
+      });
+    });
+
+    if (RECIPES.babyPack && !RECIPES.babyPack.confirmed) {
+      push("recipe:babyPack:unconfirmed", {
+        source: "config", group: "recipe",
+        subject: { packKey: "babyPack" },
+        description: "Baby Pack recipe is marked unconfirmed in configuration.",
+        defaultEvidenceType: "recipe_config",
+        evidence: [{
+          source: "config", group: "recipe",
+          description: "Baby Pack recipe flag is unconfirmed.",
+          date: todayISO(), evidenceType: "recipe_config",
+        }],
+      });
+    }
+
+    (deps.analyticsEvents || []).filter(e => e.event === "interaction_episode_complete").slice(-20).forEach(ep => {
+      const id = ep.details?.interactionEpisodeId || ep.flowId || ep.timestamp;
+      push(`episode:${id}`, {
+        source: "analytics", group: "behaviour",
+        subject: { controlId: ep.details?.controlId, screen: ep.details?.screen },
+        description: `Interaction episode on ${ep.details?.screen || ep.view}`,
+        defaultEvidenceType: "interaction_episode",
+        evidence: [{
+          source: "analytics", group: "behaviour",
+          description: `Episode completed (${ep.details?.completionReason || "unknown"}).`,
+          endedAt: ep.details?.endedAt || ep.timestamp,
+          timestamp: ep.timestamp, evidenceType: "interaction_episode",
+        }],
+      });
+    });
+
+    const allEvidence = objects.flatMap(o => o.evidence);
+    return {
+      generatedAt: referenceAt,
+      modelVersion: EF_MODEL_VERSION,
+      dataQuality: { synthetic: !!deps.synthetic, productionOnlyDefault: true },
+      objects,
+      summary: {
+        totalObjects: objects.length,
+        totalEvidence: allEvidence.length,
+        evidenceFreshnessSummary: summarizeEvidenceFreshness(allEvidence),
+      },
+      limitations: [
+        "Freshness weights reflect current operational relevance, not truth probabilities.",
+        "Older evidence is retained but should be treated cautiously in current reasoning.",
+      ],
+    };
+  }
+
+  function evidenceFusionSummaryConcise(evidenceFusion) {
+    if (!evidenceFusion) return null;
+    const s = evidenceFusion.summary?.evidenceFreshnessSummary || {};
+    return {
+      totalObjects: evidenceFusion.summary?.totalObjects || 0,
+      totalEvidence: evidenceFusion.summary?.totalEvidence || 0,
+      averageFreshnessWeight: s.averageFreshnessWeight,
+      staleEvidenceCount: s.staleEvidenceCount,
+      historicalEvidenceCount: s.historicalEvidenceCount,
+      unknownDateEvidenceCount: s.unknownDateEvidenceCount,
+    };
+  }
+
+  function beBeliefEvidenceType(belief) {
+    if (belief.beliefType === "habit") {
+      return belief.subject?.type === "optional_usage" ? "optional_usage" : "substitution";
+    }
+    if (belief.beliefType === "recipe_alignment") return "recipe_config";
+    if (belief.beliefType === "readiness") return "analytics_signal";
+    if (belief.beliefType === "shortage" || belief.beliefType === "item_balance") return "stock_balance";
+    return "unknown";
+  }
+
+  function beInferBeliefEvidenceDate(belief, ctx) {
+    const subj = belief.subject || {};
+    if (belief.beliefType === "habit") {
+      const obs = (ctx.packingHabits?.observations || []).find(o =>
+        o.type === subj.type && o.packKey === subj.packKey && o.itemId === subj.itemId
+        && (o.replacementItemId || "") === (subj.replacementItemId || "")
+      );
+      return obs?.lastSeen || obs?.firstSeen || null;
+    }
+    if (belief.beliefType === "item_balance" || belief.beliefType === "shortage") {
+      const row = beItemConfidenceRow(ctx, subj.itemId);
+      return row?.volunteerConfidence?.stats?.lastRecountDate || null;
+    }
+    if (belief.beliefType === "recipe_alignment") return todayISO();
+    return null;
+  }
+
+  function beFusionObjectForBelief(belief, ctx) {
+    const objects = ctx.evidenceFusion?.objects || [];
+    const direct = objects.find(o => o.objectId === belief.beliefId);
+    if (direct) return direct;
+    const subj = belief.subject || {};
+    if (belief.beliefType === "item_balance" || belief.beliefType === "shortage") {
+      return objects.find(o => o.objectId === `stock:${subj.itemId}`)
+        || objects.find(o => o.objectId === `item_confidence:${subj.itemId}`);
+    }
+    if (belief.beliefType === "habit") {
+      const habitKey = packingHabitPatternKey(
+        subj.type, subj.packKey, subj.itemId, subj.replacementItemId || ""
+      );
+      return objects.find(o => o.objectId === `packing_habit:${habitKey}`);
+    }
+    if (belief.beliefType === "recipe_alignment") {
+      return objects.find(o => o.objectId === `recipe:${subj.packKey}:unconfirmed`);
+    }
+    return null;
+  }
+
+  function beBuildEvidenceDetail(strings, belief, ctx, referenceAt) {
+    const fusionObj = beFusionObjectForBelief(belief, ctx);
+    if (fusionObj?.evidence?.length) {
+      return fusionObj.evidence.map(e => ({
+        description: e.description,
+        timestamp: e.freshness?.evidenceDate || e.date || e.timestamp,
+        evidenceType: e.evidenceType,
+        freshness: e.freshness,
+      }));
+    }
+    const evidenceType = beBeliefEvidenceType(belief);
+    const defaultDate = beInferBeliefEvidenceDate(belief, ctx);
+    return (strings || []).map(desc => {
+      const rec = annotateEvidenceFreshness({
+        description: desc, date: defaultDate, timestamp: defaultDate, evidenceType,
+      }, { referenceAt, evidenceType });
+      return {
+        description: desc,
+        timestamp: rec.freshness.evidenceDate,
+        evidenceType,
+        freshness: rec.freshness,
+      };
+    });
+  }
+
+  function beApplyFreshnessToBelief(belief, ctx, referenceAt) {
+    const supportingEvidenceDetail = beBuildEvidenceDetail(belief.supportingEvidence, belief, ctx, referenceAt);
+    const contradictingEvidenceDetail = beBuildEvidenceDetail(belief.contradictingEvidence, belief, ctx, referenceAt);
+    const evidenceFreshnessSummary = summarizeEvidenceFreshness(
+      supportingEvidenceDetail.map(d => ({ freshness: d.freshness }))
+    );
+    const contradictingSummary = summarizeEvidenceFreshness(
+      contradictingEvidenceDetail.map(d => ({ freshness: d.freshness }))
+    );
+    const freshnessConfidenceModifier = efFreshnessConfidenceModifier(evidenceFreshnessSummary);
+    let freshnessAdjustedConfidenceProbability = belief.confidenceProbability + freshnessConfidenceModifier;
+    const bands = evidenceFreshnessSummary.byFreshnessBand || {};
+    const supportingOnlyStale = evidenceFreshnessSummary.totalEvidence > 0
+      && !(bands.fresh || bands.recent)
+      && ((bands.stale || 0) + (bands.historical || 0) + (bands.ageing || 0)) > 0;
+    if (supportingOnlyStale && evidenceFreshnessSummary.averageFreshnessWeight < 0.40) {
+      freshnessAdjustedConfidenceProbability = Math.min(freshnessAdjustedConfidenceProbability, 0.55);
+    }
+    const conBands = contradictingSummary.byFreshnessBand || {};
+    const contradictingFresh = (conBands.fresh || 0) + (conBands.recent || 0) > 0;
+    if (contradictingFresh && supportingOnlyStale) {
+      freshnessAdjustedConfidenceProbability = Math.min(freshnessAdjustedConfidenceProbability, belief.confidenceProbability);
+      freshnessAdjustedConfidenceProbability -= 0.05;
+    }
+    freshnessAdjustedConfidenceProbability = Math.max(0, Math.min(1, Math.round(freshnessAdjustedConfidenceProbability * 100) / 100));
+    return {
+      ...belief,
+      supportingEvidenceDetail,
+      contradictingEvidenceDetail,
+      evidenceFreshnessSummary,
+      freshnessConfidenceModifier,
+      freshnessAdjustedConfidenceProbability,
+      freshnessAdjustedConfidenceBand: beConfidenceBand(freshnessAdjustedConfidenceProbability),
+    };
+  }
+
+  function omMemoryEvidenceType(memory) {
+    const map = {
+      stock_memory: "stock_balance",
+      habit_memory: "substitution",
+      recipe_memory: "recipe_config",
+      donation_memory: "donation",
+      confidence_memory: "analytics_signal",
+      readiness_memory: "analytics_signal",
+    };
+    if (memory.memoryType === "habit_memory" && memory.subject?.type === "optional_usage") {
+      return "optional_usage";
+    }
+    return map[memory.memoryType] || "operational_memory";
+  }
+
+  function omApplyFreshnessToMemory(memory, ctx, referenceAt) {
+    const evidenceType = omMemoryEvidenceType(memory);
+    const evidenceDetail = (memory.evidence || []).map(desc => {
+      const rec = annotateEvidenceFreshness({
+        description: desc,
+        lastSeen: memory.lastSeen,
+        firstSeen: memory.firstSeen,
+        date: memory.lastSeen || memory.firstSeen,
+        evidenceType,
+      }, { referenceAt, evidenceType });
+      return { description: desc, freshness: rec.freshness };
+    });
+    const evidenceFreshnessSummary = summarizeEvidenceFreshness(evidenceDetail);
+    let status = memory.status;
+    let confidenceProbability = memory.confidenceProbability;
+    const limitations = [...(memory.limitations || [])];
+    const bands = evidenceFreshnessSummary.byFreshnessBand || {};
+    const allHistorical = evidenceFreshnessSummary.totalEvidence > 0
+      && (bands.historical || 0) === evidenceFreshnessSummary.totalEvidence;
+    const noFreshRecent = !(bands.fresh || bands.recent);
+    if (allHistorical && noFreshRecent) {
+      status = "stale";
+      confidenceProbability = Math.min(confidenceProbability, 0.45);
+      if (!limitations.includes("Supporting evidence is stale.")) {
+        limitations.push("Supporting evidence is stale.");
+      }
+    }
+    if (status === "active" && evidenceFreshnessSummary.averageFreshnessWeight < 0.40) {
+      status = "emerging";
+      confidenceProbability = Math.min(confidenceProbability, 0.55);
+    }
+    return {
+      ...memory,
+      evidenceDetail,
+      evidenceFreshnessSummary,
+      status,
+      confidenceProbability,
+      confidenceBand: omConfidenceBand(confidenceProbability),
+      limitations,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // BELIEF ENGINE — Phase 3B framework (export / ops only)
   // ═══════════════════════════════════════════════════════════════════
 
@@ -5221,6 +5801,7 @@
       itemConfidence: deps.itemConfidence,
       packingHabits: deps.packingHabits,
       operationalIntelligence: deps.operationalIntelligence,
+      evidenceFusion: deps.evidenceFusion || null,
       synthetic: deps.synthetic != null ? deps.synthetic : !!state.sampleData,
     };
   }
@@ -5680,23 +6261,28 @@
 
   function computeBeliefEngine(deps) {
     const ctx = beBeliefCtx(deps || {});
+    const referenceAt = deps.referenceAt || new Date().toISOString();
     const beliefs = [
       ...computeItemBalanceBeliefs(ctx),
       ...computeShortageBeliefs(ctx),
       ...computeHabitBeliefs(ctx),
       ...computeRecipeAlignmentBeliefs(ctx),
       ...computeReadinessBeliefs(ctx),
-    ];
+    ].map(b => beApplyFreshnessToBelief(b, ctx, referenceAt));
+    const freshnessRollup = summarizeEvidenceFreshness(
+      beliefs.flatMap(b => (b.supportingEvidenceDetail || []).map(d => ({ freshness: d.freshness })))
+    );
     const limitations = [
       "Beliefs are export-only scaffolding, not volunteer instructions.",
       ctx.synthetic ? "Synthetic sample data limits belief confidence." : null,
       !beImpactReady(ctx) ? "Impact readiness gate is closed — beliefs remain cautious." : null,
+      "Evidence freshness adjusts confidence for current relevance — older evidence is not discarded.",
     ].filter(Boolean);
     return {
-      generatedAt: new Date().toISOString(),
+      generatedAt: referenceAt,
       modelVersion: BE_MODEL_VERSION,
       dataQuality: { synthetic: ctx.synthetic, productionOnlyDefault: true },
-      summary: beBuildBeliefSummary(beliefs, ctx),
+      summary: { ...beBuildBeliefSummary(beliefs, ctx), evidenceFreshnessSummary: freshnessRollup },
       beliefs,
       limitations,
     };
@@ -5713,6 +6299,7 @@
       readyForRecommendations: beliefEngine.summary?.readyForRecommendations ?? false,
       monitorBeliefCount: byAction.monitor || 0,
       observeOnlyBeliefCount: byAction.observe_only || 0,
+      evidenceFreshnessSummary: beliefEngine.summary?.evidenceFreshnessSummary || null,
       topThreeBeliefs: sorted.slice(0, 3).map(b => ({
         beliefId: b.beliefId,
         beliefType: b.beliefType,
@@ -5796,6 +6383,7 @@
       packingHabits: deps.packingHabits,
       operationalIntelligence: deps.operationalIntelligence,
       beliefEngine: deps.beliefEngine || null,
+      evidenceFusion: deps.evidenceFusion || null,
       stockBeliefState: deps.stockBeliefState || null,
       recountCalibration: deps.recountCalibration || null,
       synthetic: deps.synthetic != null ? deps.synthetic : !!state.sampleData,
@@ -6298,6 +6886,7 @@
 
   function computeOperationalMemory(deps) {
     const ctx = buildMemoryCtx(deps || {});
+    const referenceAt = deps.referenceAt || new Date().toISOString();
     const memories = omDedupeOperationalMemories(omFilterRedundantMemories([
       ...computeStockMemories(ctx),
       ...computeHabitMemories(ctx),
@@ -6305,7 +6894,7 @@
       ...computeDonationMemories(ctx),
       ...computeConfidenceMemories(ctx),
       ...computeReadinessMemories(ctx),
-    ], ctx)).slice(0, 10);
+    ], ctx).map(m => omApplyFreshnessToMemory(m, ctx, referenceAt))).slice(0, 10);
     const limitations = [
       "Memories are export-only recall objects, not volunteer instructions.",
       "Memories are derived at export time from transaction history — not persisted across sessions.",

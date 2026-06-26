@@ -112,6 +112,10 @@ See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 **Phase 3D.1 (shipped):** Consolidation — removed legacy batch `ui_exposure` screen snapshots (`details.controlCount`, `details.controls[]`). Interaction Episodes are the canonical behavioural primitive. Per-control exposure only in new sessions. Deprecated `ignoredControls` summary removed.
 
+### Evidence Freshness Layer (Phase 3E — export only)
+
+**Phase 3E (shipped):** A read-only **evidence ageing calibration layer** makes evidence age explicit without discarding history. Shared helpers classify evidence as **fresh** (0–14d), **recent** (15–45d), **ageing** (46–90d), **stale** (91–180d), or **historical** (181+d) and assign **current-relevance weights** via half-life decay (clamped 0.10–1.00). Thin **Evidence Fusion** (`evidenceFusion`) collects normalized evidence from upstream export layers; each record carries `freshness` metadata. **Belief Engine** keeps raw `confidenceProbability` and adds `freshnessAdjustedConfidenceProbability` plus `freshnessConfidenceModifier`. **Operational Memory** downgrades stale-only memories. Exported in AI Data Pack; analytics summary includes `evidenceFusionSummary`. **Older evidence is not wrong — it is less current.** Janet sees nothing new.
+
 See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 ## Design Principles

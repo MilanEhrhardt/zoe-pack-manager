@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Evidence Freshness Layer (Phase 3E.1, export-only): shared evidence ageing model (`EVIDENCE_FRESHNESS_MODEL_VERSION` 3E.1) with deterministic bands (fresh/recent/ageing/stale/historical/unknown), half-life exponential weights (0.10–1.00), and `annotateEvidenceFreshness` helpers. Thin **Evidence Fusion** collector (`evidenceFusion`) normalizes evidence from operational intelligence, packing habits, item confidence, stock belief-state, config, and interaction episodes — each record carries `freshness` metadata and per-object `evidenceFreshnessSummary`. **Belief Engine** keeps raw `confidenceProbability` / `confidenceBand`; adds parallel `supportingEvidenceDetail` / `contradictingEvidenceDetail`, `evidenceFreshnessSummary`, `freshnessConfidenceModifier`, and `freshnessAdjustedConfidenceProbability`. **Operational Memory** exports `evidenceDetail` and `evidenceFreshnessSummary`; stale-only historical evidence downgrades status and caps confidence. Analytics summary includes `evidenceFusionSummary`. Headless test `tests/evidence-freshness.test.js`. No volunteer UI, no transaction/localStorage schema changes.
+
 ### Changed
 
 - Packing habit trend windows prefer **calendar comparison** (last 90 days vs previous 90 days per pack type) with count-based fallback when a date window is too sparse; denominators use actual builds in each window; `windowsSummary` exports `windowMode`, `windowDays`, and date spans
