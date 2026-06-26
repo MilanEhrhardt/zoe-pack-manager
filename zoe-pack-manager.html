@@ -542,6 +542,31 @@
     }
     .admin-mind-btn small { display: block; color: var(--text-muted); font-weight: 400; font-size: 0.82rem; margin-top: 2px; }
     .admin-mind-btn:hover { border-color: var(--zoe-purple); }
+
+    /* By the numbers — hand-rolled charts (no libraries; offline / CSP-safe) */
+    .mind-chart { margin: 0 0 18px; }
+    .mind-chart:last-child { margin-bottom: 0; }
+    .mind-chart-title { font-weight: 600; font-size: 0.95rem; color: var(--text); margin: 0 0 10px; }
+    .mind-bars { max-height: 360px; overflow-y: auto; padding-right: 4px; }
+    .mind-bar-row { display: grid; grid-template-columns: 110px 1fr auto; align-items: center; gap: 10px; padding: 4px 0; }
+    .mind-bar-name { font-size: 0.85rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mind-bar-track {
+      position: relative; height: 16px; border-radius: 8px;
+      background: #EFEAE0; overflow: visible;
+    }
+    .mind-bar-fill { height: 100%; border-radius: 8px; background: var(--zoe-green); }
+    .mind-bar-fill.is-below { background: #C4574E; }
+    .mind-bar-line {
+      position: absolute; top: -3px; bottom: -3px; width: 2px;
+      background: var(--text); opacity: 0.55;
+    }
+    .mind-bar-val { font-size: 0.82rem; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .mind-bar-val b { color: var(--text); font-weight: 600; }
+    .mind-chart-note { font-size: 0.8rem; color: var(--text-muted); margin: 8px 0 0; }
+    .mind-svg-chart { width: 100%; height: auto; display: block; }
+    .mind-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 0; font-size: 0.8rem; color: var(--text-muted); }
+    .mind-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .mind-legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
 </style>
 </head>
 <body>
@@ -8470,9 +8495,14 @@
       label: RECIPES[k].label, count: buildableCount(k),
     })), []);
 
+    const charts = {
+      stockVsLine: mindSafe(() => chartStockVsLineRows(), []),
+      packsByMonth: mindSafe(() => chartPacksByMonth(state.transactions), []),
+    };
+
     return {
       sampleData: !!state.sampleData,
-      calibration, countPriorities, beliefSummary, reasoning, lowStock, buildable,
+      calibration, countPriorities, beliefSummary, reasoning, lowStock, buildable, charts,
     };
   }
 
@@ -8639,6 +8669,138 @@
     </div>`;
   }
 
+  // ── By the numbers: real operational data, no model (hand-rolled charts) ──
+  const MIND_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  function chartMonthLabel(ym) {
+    const parts = String(ym || "").split("-");
+    const mo = parseInt(parts[1], 10);
+    return MIND_MONTHS[mo - 1] || ym;
+  }
+
+  // Each in-season tracked item: current balance against its reorder line.
+  // Sorted most-deficient first (balance ÷ threshold) so risk surfaces at top.
+  function chartStockVsLineRows() {
+    return ITEMS
+      .filter(i => i.threshold > 0 && !isOutOfSeason(i))
+      .map(i => {
+        const balance = getBalance(i.id);
+        return { name: i.name, balance, threshold: i.threshold, below: balance < i.threshold };
+      })
+      .sort((a, b) => (a.balance / a.threshold) - (b.balance / b.threshold) || a.name.localeCompare(b.name));
+  }
+
+  // Packs built (type "build") and delivered (assembled deliveries) per month,
+  // split Mom / Baby. Complete-unit deliveries are items, not packs — excluded.
+  function chartPacksByMonth(transactions) {
+    const byMonth = {};
+    const ensure = (m) => byMonth[m] || (byMonth[m] = { month: m, builtMom: 0, builtBaby: 0, delMom: 0, delBaby: 0 });
+    (transactions || []).forEach(tx => {
+      if (!tx || !tx.date) return;
+      const m = String(tx.date).slice(0, 7);
+      const qty = Number(tx.qty) || 0;
+      if (tx.type === "build") {
+        const e = ensure(m);
+        if (tx.packKey === "babyPack") e.builtBaby += qty; else e.builtMom += qty;
+      } else if (tx.type === "deliver" && tx.deliverType === "assembled") {
+        const e = ensure(m);
+        if (tx.packKey === "babyPack") e.delBaby += qty; else e.delMom += qty;
+      }
+    });
+    return Object.values(byMonth)
+      .filter(r => r.builtMom || r.builtBaby || r.delMom || r.delBaby)
+      .sort((a, b) => a.month.localeCompare(b.month));
+  }
+
+  function renderChartStockVsLine(rows) {
+    if (!rows || !rows.length) {
+      return `<p class="mind-empty">No tracked items with a reorder line yet.</p>`;
+    }
+    // Every item's reorder line sits at the same x (the 1.0 mark), with room to
+    // 1.5× so surplus is visible; bars are clamped, exact numbers shown at right.
+    const LINE_FRAC = 1 / 1.5; // 66.7% across = the reorder line
+    const bars = rows.map(r => {
+      const ratio = r.threshold > 0 ? r.balance / r.threshold : 0;
+      const fillPct = Math.max(0, Math.min(ratio, 1.5)) / 1.5 * 100;
+      return `<div class="mind-bar-row">
+        <span class="mind-bar-name" title="${esc(r.name)}">${esc(r.name)}</span>
+        <span class="mind-bar-track">
+          <span class="mind-bar-fill${r.below ? " is-below" : ""}" style="width:${fillPct.toFixed(1)}%;"></span>
+          <span class="mind-bar-line" style="left:${(LINE_FRAC * 100).toFixed(1)}%;"></span>
+        </span>
+        <span class="mind-bar-val"><b>${esc(String(r.balance))}</b> / ${esc(String(r.threshold))}</span>
+      </div>`;
+    }).join("");
+    return `<div class="mind-bars">${bars}</div>
+      <p class="mind-chart-note">The vertical line is each item's reorder level. Red bars are below it.</p>`;
+  }
+
+  function renderChartPacksByMonth(months) {
+    if (!months || !months.length) {
+      return `<p class="mind-empty">No packs built or delivered yet.</p>`;
+    }
+    const maxVal = Math.max(1, ...months.map(m => Math.max(m.builtMom + m.builtBaby, m.delMom + m.delBaby)));
+    const W = 320, H = 150, padL = 24, padR = 8, padT = 8, padB = 22;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const baseY = padT + plotH;
+    const groupW = plotW / months.length;
+    const barW = Math.min(18, groupW * 0.30);
+    const gap = barW * 0.35;
+    const yOf = (v) => (v / maxVal) * plotH;
+    const seg = (x, yTop, h, fill, op) =>
+      h > 0 ? `<rect x="${x.toFixed(1)}" y="${yTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${fill}" fill-opacity="${op}"></rect>` : "";
+
+    let bars = "";
+    months.forEach((m, k) => {
+      const cx = padL + k * groupW + groupW / 2;
+      const builtX = cx - barW - gap / 2;
+      const delX = cx + gap / 2;
+      // Built (solid): Mom bottom, Baby stacked on top.
+      const bMomH = yOf(m.builtMom), bBabyH = yOf(m.builtBaby);
+      bars += seg(builtX, baseY - bMomH, bMomH, "var(--zoe-purple)", "1");
+      bars += seg(builtX, baseY - bMomH - bBabyH, bBabyH, "var(--zoe-pink)", "1");
+      // Delivered (faded): same colours, lower opacity.
+      const dMomH = yOf(m.delMom), dBabyH = yOf(m.delBaby);
+      bars += seg(delX, baseY - dMomH, dMomH, "var(--zoe-purple)", "0.45");
+      bars += seg(delX, baseY - dMomH - dBabyH, dBabyH, "var(--zoe-pink)", "0.45");
+      bars += `<text x="${cx.toFixed(1)}" y="${(baseY + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${esc(chartMonthLabel(m.month))}</text>`;
+    });
+    // baseline + max gridline
+    const grid = `<line x1="${padL}" y1="${baseY}" x2="${W - padR}" y2="${baseY}" stroke="var(--border-strong)" stroke-width="1"></line>
+      <line x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}" stroke="var(--border)" stroke-width="1" stroke-dasharray="2 3"></line>
+      <text x="${padL - 4}" y="${(padT + 3).toFixed(1)}" text-anchor="end" font-size="8" fill="var(--text-muted)">${maxVal}</text>
+      <text x="${padL - 4}" y="${(baseY).toFixed(1)}" text-anchor="end" font-size="8" fill="var(--text-muted)">0</text>`;
+    return `<svg class="mind-svg-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Packs built and delivered per month">
+      ${grid}${bars}
+    </svg>
+    <div class="mind-legend">
+      <span><i style="background:var(--zoe-purple);"></i>Mom Pack</span>
+      <span><i style="background:var(--zoe-pink);"></i>Baby Pack</span>
+      <span><i style="background:var(--zoe-purple);opacity:0.45;"></i>Faded = delivered, solid = built</span>
+    </div>`;
+  }
+
+  function renderMindNumbersSection(model) {
+    const stock = (model.charts && model.charts.stockVsLine) || [];
+    const packs = (model.charts && model.charts.packsByMonth) || [];
+    return `<div class="mind-section">
+      <h3>By the numbers</h3>
+      <p class="mind-sub">Straight from the records — counts, not predictions.</p>
+      <div class="mind-card">
+        <div class="mind-chart">
+          <p class="mind-chart-title">Stock against its reorder line</p>
+          ${renderChartStockVsLine(stock)}
+        </div>
+      </div>
+      <div class="mind-card">
+        <div class="mind-chart">
+          <p class="mind-chart-title">Packs built &amp; delivered, by month</p>
+          ${renderChartPacksByMonth(packs)}
+        </div>
+      </div>
+    </div>`;
+  }
+
   function renderIntelligenceDashboard() {
     const model = mindSafe(() => computeIntelligenceDashboardModel(), null);
     if (!model) {
@@ -8657,7 +8819,8 @@
       ${renderMindCountNextSection(model)}
       ${renderMindShelfSection(model)}
       ${renderMindNoticedSection(model)}
-      ${renderMindStockSection(model)}`;
+      ${renderMindStockSection(model)}
+      ${renderMindNumbersSection(model)}`;
   }
 
   function getDonationQtyErrors(lines) {
