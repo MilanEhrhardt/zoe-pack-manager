@@ -103,7 +103,7 @@ The canonical app is `zoe-pack-manager.html`. Pack Creation now shows common opt
 
 ## Current Priority
 
-Field-validate the redesigned Pack Creation flow with Janet and Judy; then donation and deliver flows.
+Field-validate the redesigned Pack Creation flow with Janet and Judy; then donation and deliver flows. **Kit:** `docs/FIELD_VALIDATION.md` · **Capture:** `docs/USER_RESEARCH.md`
 
 ---
 

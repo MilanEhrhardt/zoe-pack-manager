@@ -4,6 +4,8 @@ The Zoe Project inventory and packing system.
 
 Single-file offline app: open `zoe-pack-manager.html` in a browser. No install or server required. Data persists in the browser via localStorage.
 
+**Tests:** `for f in tests/*.test.js; do node "$f"; done` (Node 22+). CI runs the same on push and PR.
+
 ## Documentation
 
 | File | Purpose |
@@ -15,6 +17,7 @@ Single-file offline app: open `zoe-pack-manager.html` in a browser. No install o
 | `docs/DESIGN_PRINCIPLES.md` | Design and UX principles |
 | `docs/DESIGN_REVIEW_CHECKLIST.md` | Pre-ship UI review gate |
 | `docs/USER_RESEARCH.md` | Interviews, testing, insights |
+| `docs/FIELD_VALIDATION.md` | Field session script, checklist, rubric for Janet/Judy validation |
 | `docs/CHANGELOG.md` | Shipped changes (newest first) |
 
 ## AI Development Workflow

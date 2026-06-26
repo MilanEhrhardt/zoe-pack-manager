@@ -8,7 +8,11 @@
 
 ### Added
 
+- GitHub Actions workflow `tests.yml` — runs all headless `tests/*.test.js` on push (`main`, `feat/**`) and pull requests
+- Field validation kit: `docs/FIELD_VALIDATION.md` (session script, observation checklist, pass/fail rubric); structured capture templates in `docs/USER_RESEARCH.md`
+- Bible documentation pass: filled User Personas, Physical Workflow, Information Architecture, Screen Specifications, Inventory/Donation/Packing/Delivery logic, Rejected Ideas, Technical Architecture, and Glossary in `docs/THE_ZOE_PROJECT_BIBLE.md`
 - Content-Security-Policy meta tag in `zoe-pack-manager.html` for defense-in-depth when hosted (`default-src 'self'`, inline script/style allowed, `connect-src 'none'`, `data:` images); comment documents equivalent server header for deploys including `frame-ancestors 'none'`
+
 - njsscan CI now runs on all pull requests and on pushes to `feat/**` branches (not only `main`), so feature branches like `feat/belief-calibration` are scanned before merge
 - Export hygiene note in admin tools (**Need something else?** / footer): inline warning that Backup and AI Data Pack files may include sensitive local data (donors, packers, clinics, transaction history, analytics); no export payload or volunteer flow changes
 - Backup import hardening (M1): shared `normalizeImportedState()` for `loadState()` and file import — 10 MB file cap, transaction/donor/analytics/undo bounds, `undoSnapshot` migration; import validates before confirm and reports trim counts in analytics. Headless test `tests/backup-import.test.js`

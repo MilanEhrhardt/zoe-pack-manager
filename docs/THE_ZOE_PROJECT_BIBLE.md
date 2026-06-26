@@ -1,6 +1,6 @@
 # The Zoe Project Bible
 
-> Table of contents only. Content to be added later.
+> Long-term product reference for The Zoe Project Pack Manager. For **current** engineering state, read [`AI_CONTEXT.md`](AI_CONTEXT.md) first.
 
 ## Table of Contents
 
@@ -128,39 +128,102 @@ See [`docs/DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md) for the full design cont
 
 ## User Personas
 
-<!-- TODO: Add user personas -->
+### Janet (primary volunteer)
+
+Storeroom volunteer, ~60, low technical confidence. Uses WhatsApp and email; does not copy-paste. Primary design anchor: if Janet can use it calmly, the storeroom can. Afraid of breaking “the computer thing,” not afraid of the work. Packs Mom and Baby packs, logs donations, delivers to clinics, occasional recounts.
+
+### Judy (primary volunteer)
+
+Same profile as Janet — co-primary user and design anchor. Shares one storeroom laptop. Workflow and language must work for both without training.
+
+### Milan (tester / builder)
+
+Product and technical tester. Appears in the packer dropdown; sessions tagged `isTesterSession` in analytics and excluded from production habit/confidence summaries. Uses exports and AI Data Pack for ops analysis — not the volunteer path.
+
+### Claire (stakeholder)
+
+Leadership / coordination context (interviews in `USER_RESEARCH.md`). Consumes impact and delivery narrative; not a daily app user in the storeroom.
 
 ## User Research
 
-<!-- TODO: Add user research summary (see also USER_RESEARCH.md) -->
+Field sessions, quotes, and insights live in [`USER_RESEARCH.md`](USER_RESEARCH.md). **Procedure:** [`FIELD_VALIDATION.md`](FIELD_VALIDATION.md) (session script, checklist, pass/fail rubric). Current priority: validate Pack Creation, then Donation and Deliver.
 
 ## Current Physical Workflow
 
-<!-- TODO: Add current physical workflow -->
+Typical storeroom rhythm (simplified):
+
+1. **Donations arrive** — mixed bags, multiple items, one donor event; counting is quick, not the pain point.
+2. **Packs built through the month** — recipe core + optional extras (deo, tissues, etc.); ready Mom/Baby counts grow.
+3. **Occasional recount** — one item when something feels off; not a monthly full stock take.
+4. **Delivery batch** — often first Wednesday of month; draws down ready packs to clinics (Retreat, Mowbray, Gugulethu, Mitchell's Plain, Zimbabwe).
+5. **Pre-assembled units** — some donations (nappy bags, Avo packs, Lions packs) skip Build; logged as donation, delivered as complete units.
+
+Build and Deliver are **weeks apart** in real life; the app must not merge them mentally.
 
 ## Information Architecture
 
-<!-- TODO: Add information architecture -->
+```
+Home — "What happened today?"
+├── We packed packs        → build flow
+├── A donation arrived     → donation flow
+├── We delivered packs     → deliver flow (assembled + complete units tabs)
+├── I counted something again → stock recount
+└── Need something else?   → undo, stock list, backup/import, analytics exports
+```
+
+Volunteers never see: dashboards, charts, transaction lists, analytics toggles on the main path. Admin and exports sit behind **Need something else?** (and footer admin on some views).
 
 ## Screen Specifications
 
-<!-- TODO: Add screen specifications -->
+| Screen | Volunteer goal | Key controls | Confirm? |
+|--------|------------------|--------------|----------|
+| **Home** | Choose what happened; see buildable/ready/low stock | Four verb buttons; pack context; Need something else? | No |
+| **Donation** | Log incoming stock | Donor, date, multi-line items, packet sizes | Yes |
+| **Build** | Record packs built | Pack type, qty, packer, destination, optional toggles, subflow for swaps/omissions/extras | Yes |
+| **Deliver** | Record outbound | Tab: assembled packs OR complete units; qty, destination, date | Yes |
+| **Stock** | Recount one item | Item, physical count, optional reason | Yes |
+| **Admin** | Backup, import, analytics, AI pack | Hidden; not daily | Import: yes |
+
+Undo: multi-level (last 25 actions), home **Undo last action** when stack non-empty.
 
 ## Inventory Logic
 
-<!-- TODO: Add inventory logic -->
+**Running stock model (Phase 1):**
+
+```
+opening balances + donations − recipe deductions (build) − complete-unit deliveries ± recount corrections
+```
+
+- Balances are per **item id** in CONFIG (`ITEMS`).
+- **Ready packs** (`readyPacks.momPack` / `babyPack`) are separate from raw item stock — assembled inventory waiting for delivery.
+- **Never** silently negative; build blocked with clear shortage message.
+- **Low stock:** item below threshold shows **LOW** (red); suppressed for out-of-season seasonal items.
+- **Snack** in Mom Pack optional: recorded as included, **no stock decrement**.
 
 ## Donation Logic
 
-<!-- TODO: Add donation logic -->
+- One **donation event** per save: donor (optional free text), date, multiple lines.
+- Each line: item, quantity; **packet items** (e.g. pads) may include pack size → units added to balance.
+- Optional per-line note (stored; not central to volunteer UI).
+- Donor list rebuilt from transactions; new donors normalized on save.
+- Increments `balances`; append-only transaction log.
 
 ## Packing Logic
 
-<!-- TODO: Add packing logic -->
+- **Mom Pack / Baby Pack** recipes: locked **core** + **optional** toggles on main screen.
+- `computeBuildStockPlan` determines shelf usage: core, included optionals (with decrement rules), substitutions, omissions, custom extras.
+- Optional surplus nudge: tissues/hand cream default on when stock high.
+- **Something was different** subflow: substitutions, omissions, unlisted extras only — not for common optionals.
+- On save: decrement items, increase `readyPacks[packKey]`, record build transaction (packer, destination, optional included, subs, omissions).
+- Baby Pack: recipe treated as draft until volunteers confirm (`PRODUCT_DECISIONS.md`).
 
 ## Delivery Logic
 
-<!-- TODO: Add delivery logic -->
+**Tab A — Assembled packs:** decrements `readyPacks`; records destination and date; does not re-deduct recipe items.
+
+**Tab B — Complete units:** nappy bags, Avo packs, Lions packs — decrements item stock directly; no ready-pack change.
+
+Impact reporting is a by-product of logged deliveries, not extra volunteer steps.
 
 ## Analytics Strategy
 
@@ -260,12 +323,50 @@ The app should increasingly feel like a **companion that follows Janet’s physi
 
 ## Rejected Ideas
 
-<!-- TODO: Add rejected ideas -->
+| Idea | Why rejected |
+|------|----------------|
+| **"Today's Changes" build UX** | Broke quick multi-select for common extras (deo, tissues, wipes, hand cream). Canonical app restored verb-first pack flow with toggles on main screen. |
+| **Dashboard / charts / tables for volunteers** | Violates storeroom-memory philosophy; Janet sees verbs, not analytics. |
+| **Raw editable balance grid** | Volunteers must not “fix Excel”; only Donation / Build / Deliver / Stock Count change balances. |
+| **Inventory / transaction jargon in UI** | Hidden from volunteers; celebrate people not records. |
+| **Major build wizard or one-item-per-screen** | Repeats failed Today's Changes pattern. |
+| **SPE / whispers in volunteer UI (now)** | Deferred until field validation and real session data; export-only intelligence first. |
+| **Server login / accounts / cloud dependency** | Conflicts with offline, one-laptop, no-fear constraint. |
+| **v2 insurance valuation UI** | Optional `value` on items only; no volunteer surface. |
+| **Monthly full-stock reconciliation nag** | Recount is occasional, one item, low pressure. |
 
 ## Technical Architecture
 
-<!-- TODO: Add technical architecture -->
+| Layer | Implementation |
+|-------|----------------|
+| **App** | Single file `zoe-pack-manager.html` — HTML, CSS, inline JS |
+| **Runtime** | Browser; `file://` double-click or hosted static |
+| **Persistence** | `localStorage` key `zoePackManager_v1`; Export/Import JSON backup |
+| **Config** | `ITEMS`, `RECIPES`, `CLINICS`, `PACKERS` in-script block |
+| **Transactions** | Append-only log: donation, build, deliver, recount, undo |
+| **Undo** | Bounded `undoStack` (25); snapshot balances + readyPacks + tx count |
+| **Analytics** | Local events; Interaction Episodes (3D); per-control exposure (v1) |
+| **Intelligence** | Export-only pipeline → AI Data Pack (confidence, habits, OI, fusion, reasoning, beliefs, memory, belief-state, recount calibration) |
+| **Security** | CSP meta (hosted); backup import normalization; confirm modal allowlist |
+| **Tests** | Headless `tests/*.test.js` — extract functions from HTML by brace-matching; CI on push/PR |
+| **CI** | `njsscan` SARIF + headless test workflow |
+
+No npm runtime dependencies for volunteers. Node used only for dev tests.
 
 ## Glossary
 
-<!-- TODO: Add glossary terms and definitions -->
+| Term (internal) | Volunteer-facing | Meaning |
+|-----------------|------------------|---------|
+| Transaction | *(hidden)* | One logged donation, build, delivery, recount, or undo |
+| Balance | stock / count | Units on shelf for an item |
+| Ready packs | packs ready | Assembled Mom/Baby packs waiting for delivery |
+| Recount | counted something again | Physical count replaces balance for one item |
+| Substitution | something was different | Swapped item in some packs |
+| Optional | did you include these? | Recipe add-ins toggled per build |
+| Packer | Janet / Judy / Milan | Who built the packs |
+| Destination | clinic | Where packs or units went |
+| AI Data Pack | *(admin only)* | JSON export for ops analysis and future AI |
+| Belief / confidence | *(export only)* | How sure the system is about shelf quantities |
+| Session / analytics | *(hidden)* | Local usability telemetry for Milan |
+| SPE | *(future)* | Storeroom Prioritisation Engine — multi-objective recommendations, export-first |
+

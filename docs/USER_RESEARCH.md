@@ -1,33 +1,136 @@
 # User Research
 
-> Structure only. Content to be added later.
+> Raw notes, sessions, and quotes from Janet, Judy, Claire, and field observation. **Procedure:** see [`FIELD_VALIDATION.md`](FIELD_VALIDATION.md).
 
 ---
 
 ## Janet Interviews
 
-<!-- TODO: Add Janet interview notes -->
+<!-- Copy template below for each interview -->
+
+<!--
+### YYYY-MM-DD — [topic]
+
+**Attendees:** Janet, [observer]
+
+**Context:**
+
+**Notes:**
+
+**Quotes:**
+
+**Follow-ups:**
+-->
+
+*(No interviews logged yet.)*
+
+---
 
 ## Judy Interviews
 
-<!-- TODO: Add Judy interview notes -->
+<!--
+### YYYY-MM-DD — [topic]
+
+**Attendees:** Judy, [observer]
+
+**Context:**
+
+**Notes:**
+
+**Quotes:**
+
+**Follow-ups:**
+-->
+
+*(No interviews logged yet.)*
+
+---
 
 ## Claire Interviews
 
-<!-- TODO: Add Claire interview notes -->
+<!--
+### YYYY-MM-DD — [topic]
+
+**Attendees:** Claire, [observer]
+
+**Context:**
+
+**Notes:**
+-->
+
+*(No interviews logged yet.)*
+
+---
 
 ## User Testing Sessions
 
-<!-- TODO: Add user testing session records -->
+<!--
+### Session YYYY-MM-DD
+
+| Field | Value |
+|-------|--------|
+| **Date** | |
+| **Volunteer(s)** | Janet / Judy |
+| **Observer** | |
+| **App version** | git commit or “main @ date” |
+| **Data** | fresh / production backup / sample (avoid sample for production conclusions) |
+| **Flows run** | Pack / Donate / Deliver / Stock / Admin |
+
+#### Rubric (from FIELD_VALIDATION.md)
+
+| Flow | Pass | Concern | Fail | Notes |
+|------|------|---------|------|-------|
+| Pack (common extras) | | | | |
+| Pack (subflow) | | | | |
+| Donation | | | | |
+| Deliver assembled | | | | |
+| Deliver complete units | | | | |
+| Stock recount | | | | |
+| Undo | | | | |
+| Find backup export | | | | |
+
+#### Checklist signals
+
+| Signal | Pack | Donate | Deliver | Stock | Admin |
+|--------|------|--------|---------|-------|-------|
+| Hesitated / asked for help | | | | | |
+| Wrong screen / back button | | | | | |
+| Confirm summary mismatch | | | | | |
+| Validation error confusing | | | | | |
+| Positive surprise / relief | | | | | |
+| Language not understood | | | | | |
+
+#### Summary
+
+**What worked:**
+
+**What blocked them:**
+
+**Design review:** Janet Test yes/no · Regression Test yes/no
+-->
+
+*(No sessions logged yet.)*
+
+---
 
 ## Observations
 
-<!-- TODO: Add field observations -->
+<!-- Dated bullets: behaviour seen in the storeroom, not feature requests -->
+
+*(None yet.)*
+
+---
 
 ## Quotes
 
-<!-- TODO: Add direct quotes from users -->
+<!-- Verbatim, attributed: “…” — Janet, YYYY-MM-DD -->
+
+*(None yet.)*
+
+---
 
 ## Key Insights
 
-<!-- TODO: Add synthesized key insights -->
+<!-- Synthesized after 1+ sessions; max 5 bullets until more data -->
+
+*(None yet.)*
