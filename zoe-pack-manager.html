@@ -3,6 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    Content-Security-Policy (defense-in-depth when hosted over HTTP/S).
+    Safe for offline file:// double-click: no external scripts/styles, no network calls.
+    Single-file inline app requires 'unsafe-inline' for script-src and style-src
+    (hash-based CSP is impractical for a monolithic file that changes often).
+    When serving from a web server, mirror this policy as a Content-Security-Policy
+    response header; add frame-ancestors 'none' there (not supported in meta CSP).
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
   <title>Zoe Pack Manager — The Zoe Project</title>
   <!--
     Zoe Pack Manager — The Zoe Project storeroom tool
@@ -259,6 +268,12 @@
     .footer p { margin-bottom: 10px; }
     .footer button { margin-right: 14px; }
     .footer-tools { display: flex; flex-wrap: wrap; gap: 14px; }
+    .analytics-note {
+      margin-top: 12px;
+      font-size: 0.86rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
 
     /* Form surfaces */
     .form-shell { max-width: 720px; margin: 0 auto; }
@@ -865,16 +880,16 @@
 
     if (!compact && !subs.length) {
       const perPack = [];
-      recipe.core.forEach(c => perPack.push(`${c.qty} ${itemName(c.itemId)}`));
+      recipe.core.forEach(c => perPack.push(`${c.qty} ${esc(itemName(c.itemId))}`));
       recipe.optional.forEach(opt => {
         const key = opt.itemId || opt.id;
         if (!included.includes(key)) return;
-        if (opt.decrement && opt.itemId) perPack.push(`1 ${itemName(opt.itemId)}`);
-        else if (!opt.decrement) perPack.push(`${opt.label || itemName(opt.itemId)} (not tracked)`);
+        if (opt.decrement && opt.itemId) perPack.push(`1 ${esc(itemName(opt.itemId))}`);
+        else if (!opt.decrement) perPack.push(`${esc(opt.label || itemName(opt.itemId))} (not tracked)`);
       });
       (customExtras || []).forEach(e => {
         const n = parseInt(e.qtyPerPack, 10) || 1;
-        perPack.push(`${n} ${itemName(e.itemId)}`);
+        perPack.push(`${n} ${esc(itemName(e.itemId))}`);
       });
       html += `<p style="margin:0 0 6px;color:#555;font-size:0.9rem;"><strong>Each pack:</strong> ${perPack.join(" · ")}</p>`;
     }
@@ -908,7 +923,7 @@
     subs.forEach(s => addShelf(s.substitute));
     Object.keys(usage).forEach(id => addShelf(id));
 
-    html += shelfLines.join("<br>") || "—";
+    html += shelfLines.map(line => esc(line)).join("<br>") || "—";
     return html;
   }
 
@@ -920,6 +935,11 @@
 
   // How many recent actions can be undone, one at a time (bounds storage).
   const UNDO_STACK_LIMIT = 25;
+
+  // Backup import / localStorage reload caps — keep persisted state bounded.
+  const BACKUP_IMPORT_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+  const BACKUP_IMPORT_MAX_TRANSACTIONS = 50000; // ~years of storeroom activity; matches analytics scale
+  const BACKUP_IMPORT_MAX_DONORS = 5000;
 
   // Recount calibration (feedback loop): every recount is ground truth, so we
   // capture what the model believed an item held just before the count and
@@ -1347,6 +1367,7 @@
   function loadSampleData() {
     if (!confirm("Replace all current data with sample donation history? You can Export first to keep a backup.")) return;
     state = analyticsUpgradeState(buildSyntheticState());
+    invalidateSessionTxDerivedCache();
     analyticsTrack("sample_data_loaded", { transactionCount: state.transactions.length });
     saveState();
     view = "home";
@@ -1359,22 +1380,7 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        ITEMS.forEach(i => {
-          if (parsed.balances[i.id] === undefined) parsed.balances[i.id] = 0;
-        });
-        if (!parsed.readyPacks) parsed.readyPacks = { momPack: 0, babyPack: 0 };
-        if (!parsed.transactions) parsed.transactions = [];
-        if (!parsed.packContext) parsed.packContext = "momPack";
-        if (parsed.lastSelectedPacker === undefined) parsed.lastSelectedPacker = "";
-        // Migrate single-slot undo (undoSnapshot) to the multi-level undo stack.
-        if (!Array.isArray(parsed.undoStack)) {
-          parsed.undoStack = parsed.undoSnapshot ? [parsed.undoSnapshot] : [];
-        }
-        delete parsed.undoSnapshot;
-        if (!parsed.donors || !parsed.donors.length) {
-          parsed.donors = extractDonorsFromTransactions(parsed.transactions);
-        }
-        return parsed;
+        return normalizeImportedState(parsed).state;
       }
     } catch (e) { /* no-op */ }
     const seeded = buildSyntheticState();
@@ -1482,6 +1488,58 @@
     if (typeof st.analytics.recordingEnabled !== "boolean") st.analytics.recordingEnabled = true;
     st.analytics.lastSeenAt = new Date().toISOString();
     return st;
+  }
+
+  // Shared path for localStorage reload and backup import — migrate, default, and bound arrays.
+  function normalizeImportedState(parsed) {
+    if (!parsed || typeof parsed !== "object" || !parsed.balances || typeof parsed.balances !== "object") {
+      throw new Error("Invalid backup file");
+    }
+    const trim = {
+      transactionsTrimmed: 0,
+      analyticsEventsTrimmed: 0,
+      undoStackTrimmed: 0,
+      donorsTrimmed: 0,
+    };
+
+    ITEMS.forEach(i => {
+      if (parsed.balances[i.id] === undefined) parsed.balances[i.id] = 0;
+    });
+    if (!parsed.readyPacks) parsed.readyPacks = { momPack: 0, babyPack: 0 };
+    if (!parsed.transactions) parsed.transactions = [];
+    if (!parsed.packContext) parsed.packContext = "momPack";
+    if (parsed.lastSelectedPacker === undefined) parsed.lastSelectedPacker = "";
+
+    if (!Array.isArray(parsed.undoStack)) {
+      parsed.undoStack = parsed.undoSnapshot ? [parsed.undoSnapshot] : [];
+    }
+    delete parsed.undoSnapshot;
+    if (parsed.undoStack.length > UNDO_STACK_LIMIT) {
+      trim.undoStackTrimmed = parsed.undoStack.length - UNDO_STACK_LIMIT;
+      parsed.undoStack = parsed.undoStack.slice(-UNDO_STACK_LIMIT);
+    }
+
+    if (!parsed.analytics) parsed.analytics = {};
+    if (!Array.isArray(parsed.analytics.events)) parsed.analytics.events = [];
+    if (parsed.analytics.events.length > ANALYTICS_MAX_EVENTS) {
+      trim.analyticsEventsTrimmed = parsed.analytics.events.length - ANALYTICS_MAX_EVENTS;
+      parsed.analytics.events = parsed.analytics.events.slice(-ANALYTICS_MAX_EVENTS);
+    }
+
+    if (parsed.transactions.length > BACKUP_IMPORT_MAX_TRANSACTIONS) {
+      trim.transactionsTrimmed = parsed.transactions.length - BACKUP_IMPORT_MAX_TRANSACTIONS;
+      parsed.transactions = parsed.transactions.slice(-BACKUP_IMPORT_MAX_TRANSACTIONS);
+    }
+
+    if (!parsed.donors || !parsed.donors.length) {
+      parsed.donors = extractDonorsFromTransactions(parsed.transactions);
+    }
+    if (Array.isArray(parsed.donors) && parsed.donors.length > BACKUP_IMPORT_MAX_DONORS) {
+      trim.donorsTrimmed = parsed.donors.length - BACKUP_IMPORT_MAX_DONORS;
+      parsed.donors = parsed.donors.slice(0, BACKUP_IMPORT_MAX_DONORS);
+    }
+
+    return { state: analyticsUpgradeState(parsed), trim };
   }
 
   function analyticsSafeText(text, max = 80) {
@@ -2317,7 +2375,7 @@
     const operationalIntelligenceSummary = operationalIntelligenceSummaryConcise(operationalIntelligence);
     const recountCalibration = opts.recountCalibration || buildRecountCalibration(tx);
     const recountCalibrationSummary = recountCalibrationSummaryConcise(recountCalibration);
-    const stockBeliefState = opts.stockBeliefState || computeStockBeliefState(tx);
+    const stockBeliefState = opts.stockBeliefState || sessionStockBeliefState();
     const stockBeliefSummary = buildStockBeliefSummary(stockBeliefState);
     const evidenceFusion = opts.evidenceFusion || computeEvidenceFusion({
       itemConfidence,
@@ -2445,7 +2503,7 @@
     const packingHabits = packingHabitSummary();
     const operationalIntelligence = computeOperationalIntelligence({ itemConfidence, packingHabits });
     const recountCalibration = buildRecountCalibration(state.transactions);
-    const stockBeliefState = computeStockBeliefState(state.transactions);
+    const stockBeliefState = sessionStockBeliefState();
     const evidenceFusion = computeEvidenceFusion({
       itemConfidence, packingHabits, operationalIntelligence, stockBeliefState, recountCalibration,
       analyticsEvents: state.analytics?.events || [],
@@ -2544,6 +2602,7 @@
 
   function finishTransaction(tx) {
     state.transactions.push(tx);
+    invalidateSessionTxDerivedCache();
     analyticsTrack("transaction_commit", { transaction: analyticsTransactionSummary(tx), snapshot: analyticsOperationalSnapshot() });
     if (["donation", "build", "deliver", "recount"].includes(tx.type)) {
       analyticsCompleteFlow({ transactionType: tx.type, transactionId: tx.id });
@@ -2564,6 +2623,7 @@
     state.readyPacks = snap.readyPacks;
     state.transactions = state.transactions.slice(0, snap.txCount);
     state.transactions.push({ id: uid(), type: "undo", date: todayISO() });
+    invalidateSessionTxDerivedCache();
     saveState();
     render();
   }
@@ -2754,6 +2814,50 @@
   function confidenceTxAfterAnchor(txDate, anchorDate) {
     if (!anchorDate) return true;
     return txDate > anchorDate;
+  }
+
+  // Session cache for transaction-log replays (belief state, activity stats).
+  // Keyed by transaction count + sampleData flag; invalidated when the log changes.
+  let sessionTxDerivedCache = null;
+
+  function invalidateSessionTxDerivedCache() {
+    sessionTxDerivedCache = null;
+  }
+
+  function sessionTxCacheKey() {
+    return {
+      txCount: (state.transactions || []).length,
+      sampleData: !!state.sampleData,
+    };
+  }
+
+  function ensureSessionTxDerivedCache() {
+    const key = sessionTxCacheKey();
+    if (sessionTxDerivedCache
+      && sessionTxDerivedCache.txCount === key.txCount
+      && sessionTxDerivedCache.sampleData === key.sampleData) {
+      return;
+    }
+    const txs = state.transactions || [];
+    sessionTxDerivedCache = {
+      txCount: key.txCount,
+      sampleData: key.sampleData,
+      beliefState: computeStockBeliefState(txs),
+      activityStatsVolunteer: buildItemActivityStatsIndex(txs, { excludeTesterBuilds: true }),
+      activityStatsAll: buildItemActivityStatsIndex(txs, { excludeTesterBuilds: false }),
+    };
+  }
+
+  function sessionStockBeliefState() {
+    ensureSessionTxDerivedCache();
+    return sessionTxDerivedCache.beliefState;
+  }
+
+  function sessionActivityStatsIndex({ excludeTesterBuilds = false } = {}) {
+    ensureSessionTxDerivedCache();
+    return excludeTesterBuilds
+      ? sessionTxDerivedCache.activityStatsVolunteer
+      : sessionTxDerivedCache.activityStatsAll;
   }
 
   function buildItemActivityStatsIndex(transactions, { excludeTesterBuilds = false } = {}) {
@@ -2976,9 +3080,8 @@
   }
 
   function computeAllItemConfidence() {
-    const txs = state.transactions || [];
-    const volunteerIndex = buildItemActivityStatsIndex(txs, { excludeTesterBuilds: true });
-    const allIndex = buildItemActivityStatsIndex(txs, { excludeTesterBuilds: false });
+    const volunteerIndex = sessionActivityStatsIndex({ excludeTesterBuilds: true });
+    const allIndex = sessionActivityStatsIndex({ excludeTesterBuilds: false });
     const sampleData = !!state.sampleData;
     return ITEMS.map(item => {
       const balance = getBalance(item.id);
@@ -3037,8 +3140,7 @@
     try {
       const item = itemMap[itemId];
       if (!item) return null;
-      const txs = state.transactions || [];
-      const allIndex = buildItemActivityStatsIndex(txs, { excludeTesterBuilds: false });
+      const allIndex = sessionActivityStatsIndex({ excludeTesterBuilds: false });
       const stats = deriveItemActivityStats(itemId, allIndex);
       const balance = getBalance(itemId);
       const conf = computeItemConfidence(item, balance, stats, stats, { volunteerView: false, sampleData: false });
@@ -3048,7 +3150,7 @@
       // whether the variance itself is calibrated, not just the point estimate.
       let belief = null;
       try {
-        const row = computeStockBeliefState(txs).items.find(r => r.itemId === itemId);
+        const row = sessionStockBeliefState().items.find(r => r.itemId === itemId);
         if (row && row.standardDeviation > 0) {
           const sd = row.standardDeviation;
           belief = {
@@ -4921,7 +5023,9 @@
   }
 
   function computeStockRisk(transactions, itemConfidence) {
-    const statsIndex = buildItemActivityStatsIndex(transactions, { excludeTesterBuilds: true });
+    const statsIndex = transactions === (state.transactions || [])
+      ? sessionActivityStatsIndex({ excludeTesterBuilds: true })
+      : buildItemActivityStatsIndex(transactions, { excludeTesterBuilds: true });
     const confMap = {};
     (itemConfidence || []).forEach(row => { confMap[row.itemId] = row.volunteerConfidence; });
 
@@ -7932,6 +8036,56 @@
     return d.innerHTML;
   }
 
+  // Allowlisted HTML for confirm modals — only safe tags; all text is escaped.
+  const CONFIRM_ALLOWED_STYLES = new Set([
+    "font-size:0.95rem;",
+    "margin:8px 0 0;font-size:0.95rem;",
+  ]);
+
+  function confirmText(value) {
+    return esc(String(value ?? ""));
+  }
+
+  function confirmStyleAttr(style) {
+    if (!style || !CONFIRM_ALLOWED_STYLES.has(style)) return "";
+    return ` style="${style}"`;
+  }
+
+  function confirmInline(parts) {
+    const list = Array.isArray(parts) ? parts : [parts];
+    return list.map(part => {
+      if (part == null || part === "") return "";
+      if (typeof part === "string" || typeof part === "number") return confirmText(part);
+      if (part.br) return "<br>";
+      if (Object.prototype.hasOwnProperty.call(part, "strong")) return `<strong>${confirmText(part.strong)}</strong>`;
+      if (Object.prototype.hasOwnProperty.call(part, "html")) return part.html;
+      return confirmText(part);
+    }).join("");
+  }
+
+  function confirmHtml(spec) {
+    let html = "";
+    (spec.paragraphs || []).forEach(p => {
+      const style = confirmStyleAttr(p.style);
+      const content = p.parts != null ? confirmInline(p.parts) : confirmInline(p);
+      html += `<p${style}>${content}</p>`;
+    });
+    (spec.lists || []).forEach(list => {
+      html += "<ul>";
+      (list.items || []).forEach(item => {
+        html += `<li>${confirmInline(item)}</li>`;
+      });
+      html += "</ul>";
+    });
+    (spec.divs || []).forEach(d => {
+      const style = confirmStyleAttr(d.style);
+      const content = d.html != null ? d.html : confirmInline(d.parts || d);
+      html += `<div${style}>${content}</div>`;
+    });
+    return html;
+  }
+
+
   const ZOE_LOGO_B64 = "data:image/png;base64," + "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";
 
   const VIEW_TITLES = {
@@ -8027,6 +8181,7 @@
         <button type="button" id="btn-export-analytics-json">Export Analytics JSON</button>
         <button type="button" id="btn-export-ai-pack"${exp("admin_export_ai_pack", "Export AI Data Pack")}>Export AI Data Pack</button>
       </div>
+      <div class="analytics-note"><strong>Before you share:</strong> Backup and AI Data Pack files can include sensitive local data — donor and packer names, clinics, transaction history, and analytics. Only save or send them somewhere you trust.</div>
       <div class="analytics-controls">
         <div class="analytics-status">
           <div><strong>Analytics recording</strong><br><span class="muted">Pause this while you test. Resume before your mom uses it.</span></div>
@@ -8460,7 +8615,7 @@
     overlay.className = "modal-overlay";
     overlay.innerHTML = `<div class="modal">
       <h2>Please confirm</h2>
-      <div id="confirm-body">${confirmAction.summary}</div>
+      <div id="confirm-body">${confirmAction.summarySpec ? confirmHtml(confirmAction.summarySpec) : ""}</div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="confirm-cancel">Go back</button>
         <button class="btn btn-primary" id="confirm-ok">Yes, save</button>
@@ -8573,38 +8728,52 @@
   document.getElementById("import-file").onchange = function(e) {
     const file = e.target.files[0];
     if (!file) return;
+    if (file.size > BACKUP_IMPORT_MAX_BYTES) {
+      analyticsTrack("backup_import_failed", {
+        message: "file_too_large",
+        bytes: file.size,
+        maxBytes: BACKUP_IMPORT_MAX_BYTES,
+      });
+      alert(
+        `Backup file is too large (${Math.round(file.size / 1024 / 1024)} MB). `
+        + `Maximum is ${Math.round(BACKUP_IMPORT_MAX_BYTES / 1024 / 1024)} MB.`
+      );
+      e.target.value = "";
+      return;
+    }
     const reader = new FileReader();
     reader.onload = function(ev) {
       try {
         const parsed = JSON.parse(ev.target.result);
-        if (!parsed.balances) throw new Error("Invalid backup file");
-        if (!confirm("This will replace all current data. Are you sure?")) return;
-        analyticsTrack("backup_import_started", {});
-        state = analyticsUpgradeState(parsed);
-        ITEMS.forEach(i => {
-          if (state.balances[i.id] === undefined) state.balances[i.id] = 0;
-        });
-        if (!state.readyPacks) state.readyPacks = { momPack: 0, babyPack: 0 };
-        if (!state.transactions) state.transactions = [];
-        if (!state.packContext) state.packContext = "momPack";
-        if (!state.donors || !state.donors.length) {
-          rebuildDonorsFromTransactions();
+        const { state: normalized, trim } = normalizeImportedState(parsed);
+        const trimmed = trim.transactionsTrimmed || trim.analyticsEventsTrimmed
+          || trim.undoStackTrimmed || trim.donorsTrimmed;
+        let confirmMsg = "This will replace all current data. Are you sure?";
+        if (trimmed) {
+          confirmMsg += "\n\nSome older records were trimmed to keep this backup within safe limits.";
         }
+        if (!confirm(confirmMsg)) return;
+        analyticsTrack("backup_import_started", { trim });
+        state = normalized;
+        invalidateSessionTxDerivedCache();
         saveState();
         view = "home";
         form = {};
-        analyticsTrack("backup_import_success", { transactionCount: state.transactions.length });
+        analyticsTrack("backup_import_success", { transactionCount: state.transactions.length, trim });
         render();
       } catch (err) {
         analyticsTrack("backup_import_failed", { message: err.message || String(err) });
-        alert("Could not read backup file. Please check the file and try again.");
+        const msg = err.message === "Invalid backup file"
+          ? "This file does not look like a Zoe backup (missing stock balances)."
+          : "Could not read backup file. Please check the file and try again.";
+        alert(msg);
       }
     };
     reader.readAsText(file);
     e.target.value = "";
   };
 
-  function bindDonation() {
+  function bindDonation()  function bindDonation() {
     bindPackContextSelector("donation-pack-context", () => readDonationForm());
     const donorEl = document.getElementById("donor");
     if (donorEl) {
@@ -8669,19 +8838,24 @@
         const qty = parseInt(line.qty, 10);
         lines.push({ itemId: line.itemId, qty, packSize: line.packSize ? parseInt(line.packSize, 10) : undefined, note: line.note });
       }
-      let summary = `<p><strong>Donation</strong> — ${esc(formatDate(form.donationDate))}</p>`;
-      if (form.donor) summary += `<p>From: ${esc(form.donor)}</p><ul>`;
-      else summary += `<ul>`;
-      lines.forEach(l => {
+      const listItems = lines.map(l => {
         const it = itemMap[l.itemId];
-        let desc = `${esc(it.name)}: `;
-        if (it.unit === "packet" && l.packSize) desc += `${l.qty} packets × ${l.packSize} = ${l.qty * l.packSize} units`;
-        else desc += `${l.qty}`;
-        summary += `<li>${desc}</li>`;
+        const parts = [`${it.name}: `];
+        if (it.unit === "packet" && l.packSize) {
+          parts.push(`${l.qty} packets × ${l.packSize} = ${l.qty * l.packSize} units`);
+        } else {
+          parts.push(String(l.qty));
+        }
+        return parts;
       });
-      summary += `</ul>`;
       confirmAction = {
-        summary,
+        summarySpec: {
+          paragraphs: [
+            { parts: [{ strong: "Donation" }, " — ", formatDate(form.donationDate)] },
+            ...(form.donor ? [{ parts: ["From: ", form.donor] }] : []),
+          ],
+          lists: [{ items: listItems }],
+        },
         run: () => commitDonation(form.donor, lines, form.donationDate),
       };
       showConfirmModal();
@@ -8880,17 +9054,35 @@
         return;
       }
       const recipe = RECIPES[form.packKey];
-      let summary = `<p><strong>${qty} ${esc(recipe.label)}</strong> — ${esc(formatDate(form.buildDate))}<br>
-        Packed by ${esc(form.packer)} for ${esc(form.destination)}</p>`;
-      summary += `<div style="font-size:0.95rem;">${formatBuildPreview(form.packKey, qty, included, customExtras, form.substitutions, true, form.omissions)}</div>`;
+      const optionalParagraphs = [];
       for (const opt of recipe.optional) {
         const key = opt.itemId || opt.id;
         if (!included.includes(key)) continue;
         if (opt.decrement && opt.itemId) continue;
-        summary += `<p style="margin:8px 0 0;font-size:0.95rem;">${esc(opt.label || itemName(opt.itemId))} included</p>`;
+        optionalParagraphs.push({
+          style: "margin:8px 0 0;font-size:0.95rem;",
+          parts: [`${opt.label || itemName(opt.itemId)} included`],
+        });
       }
       confirmAction = {
-        summary,
+        summarySpec: {
+          paragraphs: [
+            {
+              parts: [
+                { strong: `${qty} ${recipe.label}` },
+                " — ",
+                formatDate(form.buildDate),
+                { br: true },
+                `Packed by ${form.packer} for ${form.destination}`,
+              ],
+            },
+            ...optionalParagraphs,
+          ],
+          divs: [{
+            style: "font-size:0.95rem;",
+            html: formatBuildPreview(form.packKey, qty, included, customExtras, form.substitutions, true, form.omissions),
+          }],
+        },
         run: () => commitBuild(form.packKey, qty, form.packer, form.destination, included, customExtras, form.substitutions, form.buildDate, form.omissions),
       };
       showConfirmModal();
@@ -8939,9 +9131,19 @@
         const qty = parseInt(form.deliverQty, 10);
         if (!qty || qty < 1) { errorMsg = "Please enter how many packs to deliver."; render(); return; }
         const recipe = RECIPES[form.deliverPack];
-        const summary = `<p>Deliver <strong>${qty} ${esc(recipe.label)}</strong> to <strong>${esc(form.deliverDest)}</strong><br>${esc(formatDate(form.deliverDate))}</p>`;
         confirmAction = {
-          summary,
+          summarySpec: {
+            paragraphs: [{
+              parts: [
+                "Deliver ",
+                { strong: `${qty} ${recipe.label}` },
+                " to ",
+                { strong: form.deliverDest },
+                { br: true },
+                formatDate(form.deliverDate),
+              ],
+            }],
+          },
           run: () => {
             const err = commitDeliverAssembled(form.deliverPack, qty, form.deliverDest, form.deliverDate);
             if (err) { errorMsg = err; return false; }
@@ -8951,9 +9153,19 @@
       } else {
         const qty = parseInt(form.deliverUnitQty, 10);
         if (!qty || qty < 1) { errorMsg = "Please enter how many to deliver."; render(); return; }
-        const summary = `<p>Deliver <strong>${qty} ${esc(itemName(form.deliverUnit))}</strong> to <strong>${esc(form.deliverDest)}</strong><br>${esc(formatDate(form.deliverDate))}</p>`;
         confirmAction = {
-          summary,
+          summarySpec: {
+            paragraphs: [{
+              parts: [
+                "Deliver ",
+                { strong: `${qty} ${itemName(form.deliverUnit)}` },
+                " to ",
+                { strong: form.deliverDest },
+                { br: true },
+                formatDate(form.deliverDate),
+              ],
+            }],
+          },
           run: () => {
             const err = commitDeliverUnits(form.deliverUnit, qty, form.deliverDest, form.deliverDate);
             if (err) { errorMsg = err; return false; }
@@ -8996,10 +9208,21 @@
       if (isNaN(count) || count < 0) { errorMsg = "Please enter the count you found on the shelf."; render(); return; }
       const it = itemMap[form.stockItem];
       const old = getBalance(form.stockItem);
-      const summary = `<p><strong>Recount</strong> — ${esc(formatDate(form.stockDate))}</p>
-        <p>Set <strong>${esc(it.name)}</strong> from ${old} to <strong>${count}</strong>${form.stockReason ? `<br>Reason: ${esc(form.stockReason)}` : ""}</p>`;
       confirmAction = {
-        summary,
+        summarySpec: {
+          paragraphs: [
+            { parts: [{ strong: "Recount" }, " — ", formatDate(form.stockDate)] },
+            {
+              parts: [
+                "Set ",
+                { strong: it.name },
+                ` from ${old} to `,
+                { strong: count },
+                ...(form.stockReason ? [{ br: true }, `Reason: ${form.stockReason}`] : []),
+              ],
+            },
+          ],
+        },
         run: () => commitRecount(form.stockItem, count, form.stockReason, form.stockDate),
       };
       showConfirmModal();
