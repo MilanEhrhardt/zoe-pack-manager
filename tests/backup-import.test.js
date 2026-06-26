@@ -139,6 +139,33 @@ test("clamps undoStack to UNDO_STACK_LIMIT keeping most recent", () => {
   assert.equal(trim.undoStackTrimmed, 10);
 });
 
+test("clamps redoStack to UNDO_STACK_LIMIT keeping most recent", () => {
+  const stacks = Array.from({ length: UNDO_STACK_LIMIT + 5 }, (_, i) => ({
+    balances: { pads: i },
+    readyPacks: { momPack: 0, babyPack: 0 },
+    transactions: [{ id: `tx-${i}` }],
+  }));
+  const { state, trim } = normalizeImportedState(minimalBackup({ redoStack: stacks }));
+  assert.equal(state.redoStack.length, UNDO_STACK_LIMIT);
+  assert.equal(state.redoStack[0].balances.pads, 5);
+  assert.equal(state.redoStack[state.redoStack.length - 1].balances.pads, UNDO_STACK_LIMIT + 4);
+  assert.equal(trim.redoStackTrimmed, 5);
+});
+
+test("clears redoStack when transactions are trimmed", () => {
+  const transactions = Array.from({ length: BACKUP_IMPORT_MAX_TRANSACTIONS + 10 }, (_, i) => ({
+    id: `tx-${i}`,
+    type: "donation",
+    date: "2026-01-01",
+    lines: [],
+  }));
+  const redoStack = [{ balances: { pads: 1 }, readyPacks: { momPack: 0, babyPack: 0 }, transactions: [{ id: "old" }] }];
+  const { state, trim } = normalizeImportedState(minimalBackup({ transactions, redoStack }));
+  assert.equal(state.redoStack.length, 0);
+  assert.equal(trim.redoStackCleared, 1);
+  assert.equal(trim.transactionsTrimmed, 10);
+});
+
 test("trims analytics events to ANALYTICS_MAX_EVENTS keeping most recent", () => {
   const events = Array.from({ length: ANALYTICS_MAX_EVENTS + 100 }, (_, i) => ({ event: "x", i }));
   const { state, trim } = normalizeImportedState(minimalBackup({

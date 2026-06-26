@@ -84,6 +84,20 @@
       padding: 0 6px;
     }
     .header-row { display: contents; }
+    .header-leading {
+      grid-column: 1;
+      grid-row: 1;
+      justify-self: start;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-trailing {
+      grid-column: 3;
+      grid-row: 1;
+      justify-self: end;
+      min-width: 44px;
+    }
     .header-spacer { width: auto; min-width: 44px; }
     .header-brand { display: flex; justify-content: center; align-items: center; }
     .header-logo { height: 54px; width: auto; display: block; }
@@ -103,16 +117,55 @@
       justify-content: center;
     }
     .header-back:hover { border-color: var(--zoe-purple); }
-    .header-tagline { display: none; }
-    .header-title { display: none; }
-    .header-date {
-      grid-column: 3;
-      grid-row: 1;
-      justify-self: end;
-      font-size: 0.95rem;
-      color: var(--text-muted);
+    .header-undo {
+      height: 48px;
+      padding: 0 18px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.72);
+      border-radius: 999px;
+      box-shadow: var(--shadow-soft);
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--zoe-purple);
+      cursor: pointer;
+      font-family: inherit;
       white-space: nowrap;
     }
+    .header-undo:not(:disabled):hover { border-color: var(--zoe-purple); }
+    .header-undo:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+      color: var(--text-muted);
+      box-shadow: none;
+    }
+    .header-history {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header-redo {
+      height: 48px;
+      padding: 0 18px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.72);
+      border-radius: 999px;
+      box-shadow: var(--shadow-soft);
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--zoe-purple);
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .header-redo:not(:disabled):hover { border-color: var(--zoe-purple); }
+    .header-redo:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+      color: var(--text-muted);
+      box-shadow: none;
+    }
+    .header-tagline { display: none; }
+    .header-title { display: none; }
 
     /* Home */
     .view-content--home {
@@ -237,7 +290,7 @@
       font-weight: 650;
     }
     .home-secondary { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 8px 0 0; }
-    .home-link, .home-undo, .footer button, .link-button {
+    .home-link, .footer button, .link-button {
       background: none;
       border: none;
       color: var(--zoe-purple);
@@ -247,7 +300,7 @@
       text-decoration: none;
       padding: 0;
     }
-    .home-link:hover, .home-undo:hover, .footer button:hover { text-decoration: underline; }
+    .home-link:hover, .footer button:hover { text-decoration: underline; }
     .panel, .hero {
       background: var(--surface-solid);
       border: 1px solid var(--border);
@@ -277,6 +330,232 @@
 
     /* Form surfaces */
     .form-shell { max-width: 720px; margin: 0 auto; }
+    .view-content--build {
+      padding: 40px 42px 40px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,252,247,0.88) 100%);
+    }
+    .form-shell--build { max-width: 760px; margin: 0 auto; }
+    .build-screen-header { margin-bottom: 18px; text-align: center; }
+    .build-screen-header h2 {
+      font-size: clamp(1.45rem, 3vw, 1.85rem);
+      margin-bottom: 8px;
+    }
+    .build-screen-lead {
+      font-size: 0.95rem;
+      margin: 0 auto;
+      line-height: 1.45;
+      max-width: 32rem;
+      color: var(--text-muted);
+    }
+    .build-batch-card {
+      margin-bottom: 20px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.72);
+      box-shadow: var(--shadow-soft);
+    }
+    .build-batch-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .build-pack-picker {
+      display: flex;
+      flex: 1;
+      gap: 8px;
+      min-width: 0;
+    }
+    .build-pack-card {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      flex: 1;
+      height: 50px;
+      min-height: 50px;
+      min-width: 0;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: linear-gradient(135deg, #FFFFFF 0%, #F7FFF9 100%);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.98rem;
+      font-weight: 650;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+    .build-pack-card--baby { background: linear-gradient(135deg, #FFFFFF 0%, #FFF7FB 100%); }
+    .build-pack-card:hover { border-color: #CFC6BA; box-shadow: var(--shadow-soft); }
+    .build-pack-card--selected {
+      border-color: var(--zoe-purple);
+      box-shadow: 0 0 0 2px rgba(95,67,178,0.14);
+    }
+    .build-pack-card-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      color: var(--zoe-green);
+      background: rgba(47,143,91,0.10);
+    }
+    .build-pack-card--baby .build-pack-card-icon { color: var(--zoe-pink); background: rgba(198,74,139,0.10); }
+    .build-pack-card-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; }
+    .build-pack-card-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .build-qty-inline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      margin: 0;
+    }
+    .build-qty-inline .build-qty-label {
+      display: block;
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 650;
+      color: var(--text);
+      text-transform: none;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+    .build-qty-inline input.build-qty-input {
+      width: 80px;
+      min-width: 80px;
+      height: 50px;
+      box-sizing: border-box;
+      font-size: 1.35rem;
+      font-weight: 650;
+      padding: 0 10px;
+      text-align: center;
+      letter-spacing: -0.02em;
+      margin: 0;
+      color: var(--text);
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+    .build-qty-inline input.build-qty-input::-webkit-outer-spin-button,
+    .build-qty-inline input.build-qty-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .build-meta-strip {
+      margin-bottom: 26px;
+      padding: 20px 20px 22px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.72);
+      box-shadow: var(--shadow-soft);
+    }
+    .build-meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 16px;
+    }
+    .build-meta-date { grid-column: 1 / -1; }
+    .build-screen .toggle-btn {
+      min-width: 92px;
+      padding: 12px 24px;
+      font-size: 1.06rem;
+      font-weight: 650;
+    }
+    .build-screen .toggle-row label { font-size: 1.06rem; }
+    .build-screen .common-extras {
+      margin-top: 0;
+      padding: 22px 20px 18px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.72);
+      box-shadow: var(--shadow-soft);
+    }
+    .build-exceptions-wrap { margin-top: 28px; text-align: center; }
+    .build-exceptions {
+      display: inline-block;
+      text-align: left;
+      max-width: 100%;
+      width: 100%;
+    }
+    .build-exceptions > summary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 18px;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-weight: 550;
+      font-size: 0.92rem;
+      list-style: none;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: transparent;
+      transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+    }
+    .build-exceptions > summary:hover {
+      color: var(--zoe-purple);
+      border-color: var(--border);
+      background: rgba(255,255,255,0.55);
+    }
+    .build-exceptions[open] > summary {
+      color: var(--zoe-purple);
+      margin-bottom: 12px;
+    }
+    .build-exceptions > summary::-webkit-details-marker { display: none; }
+    .build-exceptions-body {
+      padding: 18px 20px 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.62);
+    }
+    .build-exceptions .custom-extra-line {
+      box-shadow: none;
+      background: rgba(255,255,255,0.55);
+      margin-bottom: 12px;
+    }
+    .build-exceptions .custom-extra-line:last-child { margin-bottom: 0; }
+    .build-save-zone { margin-top: 28px; }
+    .build-actions { margin-top: 18px; }
+    .build-actions .btn-primary {
+      width: 100%;
+      padding: 18px 24px;
+      font-size: 1.14rem;
+      border-radius: 16px;
+    }
+    .optional-stock-ok {
+      color: #356B4A;
+      font-size: 0.88rem;
+      margin-top: 4px;
+      font-weight: 600;
+    }
+    .optional-stock-low {
+      color: #9A7350;
+      font-size: 0.88rem;
+      margin-top: 4px;
+      font-weight: 600;
+    }
+    @media (max-width: 559px) {
+      .build-batch-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .build-qty-inline {
+        justify-content: space-between;
+      }
+      .build-qty-inline input.build-qty-input {
+        width: 96px;
+        min-width: 96px;
+      }
+    }
+    @media (max-width: 600px) {
+      .build-meta-grid { grid-template-columns: 1fr; }
+      .view-content--build { padding: 36px 24px 32px; }
+    }
     .screen-kicker { color: var(--zoe-purple); font-weight: 650; margin-bottom: 8px; letter-spacing: -0.02em; }
     .screen-subtitle { color: var(--text-muted); font-size: 1.05rem; margin-bottom: 28px; }
     .form-grid { display: grid; gap: 16px; }
@@ -348,6 +627,169 @@
       background: #fff;
       font-size: 1.05rem;
     }
+
+    /* Custom select — replaces the unstyleable native <select> open menu (Safari/macOS) */
+    .zoe-select-wrap { position: relative; width: 100%; }
+    .zoe-select-native {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+      opacity: 0 !important;
+    }
+    .zoe-select-trigger {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding: 15px 44px 15px 16px;
+      font-size: 1.05rem;
+      font-family: inherit;
+      border: 1px solid var(--border-strong);
+      border-radius: 13px;
+      background: #fff;
+      color: var(--text);
+      box-shadow: inset 0 1px 0 rgba(20,20,20,0.02);
+      cursor: pointer;
+      text-align: left;
+      position: relative;
+      line-height: 1.3;
+    }
+    .zoe-select-label {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .zoe-select-trigger::after {
+      content: "";
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 12px;
+      height: 12px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath stroke='%235F43B2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: contain;
+      pointer-events: none;
+      transition: transform 0.15s ease;
+    }
+    .zoe-select-trigger.is-open::after { transform: translateY(-50%) rotate(180deg); }
+    .zoe-select-trigger:hover:not(:disabled) { border-color: rgba(95,67,178,0.45); }
+    .zoe-select-trigger:focus,
+    .zoe-select-trigger.is-open {
+      outline: 3px solid rgba(95,67,178,0.18);
+      border-color: var(--zoe-purple);
+    }
+    .zoe-select-trigger:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      background: #f8f8f8;
+    }
+    .zoe-select-trigger.field-error-input { border-color: #A13A34; }
+    .zoe-select-menu {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 6px);
+      z-index: 60;
+      margin: 0;
+      padding: 6px;
+      background: var(--surface-solid);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow);
+      max-height: 320px;
+      overflow: hidden;
+    }
+    .zoe-select-options {
+      max-height: 268px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+    .zoe-select-menu--searchable {
+      display: flex;
+      flex-direction: column;
+    }
+    .zoe-select-menu--searchable .zoe-select-options {
+      max-height: 252px;
+    }
+    .zoe-select-search-wrap {
+      flex-shrink: 0;
+      padding: 0 0 6px;
+      margin: 0 0 4px;
+      border-bottom: 1px solid var(--border);
+    }
+    .zoe-select-search {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--text);
+    }
+    .zoe-select-search:focus {
+      outline: 3px solid rgba(95,67,178,0.18);
+      border-color: var(--zoe-purple);
+    }
+    .zoe-select-option.hidden,
+    .zoe-select-group-label.hidden { display: none; }
+    .zoe-select-empty {
+      padding: 12px 13px;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+    .zoe-select-group-label {
+      padding: 8px 13px 4px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-weight: 650;
+      font-style: normal;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .zoe-select-option {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      padding: 11px 13px;
+      border: none;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--text);
+      font-size: 1rem;
+      font-family: inherit;
+      line-height: 1.3;
+      text-align: left;
+      cursor: pointer;
+    }
+    .zoe-select-option + .zoe-select-option,
+    .zoe-select-group-label + .zoe-select-option { margin-top: 2px; }
+    .zoe-select-option:hover,
+    .zoe-select-option.is-active {
+      background: #F1ECFF;
+      color: var(--zoe-purple-dark);
+    }
+    .zoe-select-option.is-selected { font-weight: 650; }
+    .zoe-select-check {
+      flex-shrink: 0;
+      color: var(--zoe-purple);
+      font-size: 0.9rem;
+      opacity: 0;
+    }
+    .zoe-select-option.is-selected .zoe-select-check { opacity: 1; }
     input[type="number"] { font-variant-numeric: tabular-nums; }
     input:focus, select:focus {
       outline: 3px solid rgba(95,67,178,0.18);
@@ -395,7 +837,6 @@
       margin-right: 8px;
       font-family: inherit;
     }
-    .btn-undo { background: #8B7355; color: #fff; margin-top: 12px; }
     .advanced-section {
       margin-top: 16px;
       border: none;
@@ -480,7 +921,7 @@
     .optional-stock-warn { color: #A13A34; font-size: 0.88rem; margin-top: 4px; font-weight: 600; }
     .optional-stock-hint { color: var(--text-muted); font-size: 0.86rem; margin-top: 4px; }
     select optgroup { font-weight: 650; color: var(--text-muted); font-style: normal; }
-    .banner, .error {
+    .banner, .error, .notice-error {
       border-radius: var(--radius-sm);
       padding: 14px 16px;
       margin-bottom: 16px;
@@ -488,7 +929,95 @@
     }
     .banner { background: #FFF8E7; border: 1px solid #E8D5A0; }
     .banner-draft { background: #FFF0F0; border-color: #E8A0A0; }
-    .error { color: #8B1E16; background: #FFF0F0; border: 1px solid #E9B2AE; }
+    .error, .notice-error { color: #8B1E16; background: #FFF0F0; border: 1px solid #E9B2AE; }
+    .stock-shortage-panel {
+      border-radius: var(--radius-sm);
+      padding: 16px 18px;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, #FFF9F8 0%, #FBF4F2 100%);
+      border: 1px solid #E8D4CF;
+      border-left: 4px solid #B85A50;
+      box-shadow: var(--shadow-soft);
+    }
+    .stock-shortage-panel h4 {
+      margin: 0 0 6px;
+      font-size: 1.05rem;
+      font-weight: 650;
+      color: var(--zoe-purple-dark);
+      letter-spacing: -0.02em;
+    }
+    .stock-shortage-panel > p {
+      margin: 0 0 14px;
+      font-size: 0.92rem;
+      line-height: 1.45;
+      color: var(--text-muted);
+    }
+    .stock-shortage-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .stock-shortage-list li {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.82);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .stock-shortage-item {
+      font-size: 1rem;
+      font-weight: 650;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .stock-shortage-detail {
+      font-size: 0.94rem;
+      line-height: 1.4;
+      color: #7A4038;
+    }
+    .stock-shortage-detail strong {
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+      color: #9E3D32;
+    }
+    .core-preview-title {
+      margin: 0 0 4px;
+      font-size: 1.05rem;
+      font-weight: 650;
+      color: var(--zoe-purple-dark);
+      letter-spacing: -0.02em;
+    }
+    .core-preview-sub {
+      margin: 0 0 12px;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+    .shelf-preview-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .shelf-preview-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.98rem;
+    }
+    .shelf-preview-list li:last-child { border-bottom: none; }
+    .shelf-preview-qty {
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+      color: var(--zoe-purple-dark);
+    }
+    .shelf-preview-name { color: var(--text); }
     .field-error { color: #A13A34; font-size: 0.92rem; margin: 6px 0 10px; }
     input.field-error-input, select.field-error-input { border-color: #A13A34; }
     .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
@@ -504,10 +1033,213 @@
     .tab.active { border-color: var(--zoe-purple); background: rgba(95,67,178,0.08); font-weight: 650; color: var(--zoe-purple-dark); }
     .shortcut-btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
     .shortcut-btns button { padding: 10px 14px; font-size: 0.92rem; background: rgba(95,67,178,0.06); border: 1px solid rgba(95,67,178,0.24); border-radius: 999px; cursor: pointer; font-family: inherit; }
+    .stock-count-next {
+      margin: 0 0 22px;
+      padding: 16px 18px;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(135deg, rgba(95,67,178,0.06), rgba(47,143,91,0.05));
+      border: 1px solid rgba(95,67,178,0.14);
+    }
+    .stock-count-next-label {
+      margin: 0 0 10px;
+      font-size: 0.92rem;
+      font-weight: 650;
+      color: var(--zoe-purple-dark);
+    }
+    .stock-count-next-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      width: 100%;
+      text-align: left;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-solid);
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .stock-count-next-btn:hover { border-color: var(--zoe-purple); }
+    .stock-count-next-btn--active {
+      border-color: var(--zoe-purple);
+      box-shadow: 0 0 0 2px rgba(95,67,178,0.12);
+    }
+    .stock-count-next-name {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .stock-count-next-status {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .stock-count-next-detail {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+    }
     .stock-fold summary { cursor: pointer; color: var(--text-muted); margin-top: 12px; }
     .stock-list { font-size: 0.9rem; color: var(--text-muted); max-height: 360px; overflow-y: auto; margin-top: 8px; }
     .hidden { display: none !important; }
     .donor-hint { color: var(--text-muted); font-size: 0.9rem; margin: 6px 0 12px; }
+
+    /* Custom date picker — replaces the unstyleable native <input type="date"> calendar (Safari/macOS) */
+    .zoe-date-wrap { position: relative; width: 100%; }
+    .zoe-date-native {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+      opacity: 0 !important;
+    }
+    .zoe-date-trigger {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding: 15px 44px 15px 16px;
+      font-size: 1.05rem;
+      font-family: inherit;
+      border: 1px solid var(--border-strong);
+      border-radius: 13px;
+      background: #fff;
+      color: var(--text);
+      box-shadow: inset 0 1px 0 rgba(20,20,20,0.02);
+      cursor: pointer;
+      text-align: left;
+      position: relative;
+      line-height: 1.3;
+    }
+    .zoe-date-label {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .zoe-date-trigger::after {
+      content: "";
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Crect x='3' y='5' width='18' height='16' rx='3' stroke='%235F43B2' stroke-width='1.75'/%3E%3Cpath stroke='%235F43B2' stroke-width='1.75' stroke-linecap='round' d='M3 9h18M8 3v4M16 3v4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: contain;
+      pointer-events: none;
+    }
+    .zoe-date-trigger:hover { border-color: rgba(95,67,178,0.45); }
+    .zoe-date-trigger:focus,
+    .zoe-date-trigger.is-open {
+      outline: 3px solid rgba(95,67,178,0.18);
+      border-color: var(--zoe-purple);
+    }
+    .zoe-date-popover {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 6px);
+      z-index: 70;
+      padding: 14px;
+      background: var(--surface-solid);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow);
+      color-scheme: light;
+    }
+    .zoe-date-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .zoe-date-month {
+      flex: 1;
+      text-align: center;
+      font-weight: 650;
+      font-size: 1rem;
+      color: var(--zoe-purple-dark);
+    }
+    .zoe-date-nav {
+      width: 36px;
+      height: 36px;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--zoe-purple);
+      font-size: 1.2rem;
+      line-height: 1;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .zoe-date-nav:hover { background: #F1ECFF; border-color: rgba(95,67,178,0.35); }
+    .zoe-date-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+      margin-bottom: 6px;
+      font-size: 0.72rem;
+      font-weight: 650;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      text-align: center;
+    }
+    .zoe-date-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+    }
+    .zoe-date-day {
+      border: none;
+      border-radius: 10px;
+      padding: 9px 0;
+      font-size: 0.95rem;
+      font-family: inherit;
+      font-variant-numeric: tabular-nums;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+    }
+    .zoe-date-day:hover { background: #F1ECFF; color: var(--zoe-purple-dark); }
+    .zoe-date-day.is-outside { color: var(--text-muted); opacity: 0.5; }
+    .zoe-date-day.is-today { box-shadow: inset 0 0 0 2px var(--zoe-purple); }
+    .zoe-date-day.is-selected {
+      background: var(--zoe-purple);
+      color: #fff;
+      font-weight: 650;
+    }
+    .zoe-date-day.is-selected.is-today { box-shadow: none; }
+    .zoe-date-foot {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: center;
+    }
+    .zoe-date-today {
+      border: none;
+      background: rgba(95,67,178,0.08);
+      color: var(--zoe-purple-dark);
+      font-family: inherit;
+      font-size: 0.92rem;
+      font-weight: 650;
+      padding: 8px 16px;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .zoe-date-today:hover { background: rgba(95,67,178,0.14); }
 
     /* Custom donor autocomplete — replaces the unstyleable native <datalist> */
     .suggest-wrap { position: relative; }
@@ -541,7 +1273,6 @@
       .app-header { grid-template-columns: auto 1fr auto; }
       .header-logo { height: 44px; }
       .app-header--home .header-logo { height: 56px; }
-      .header-date { font-size: 0.8rem; }
       .view-content--home { padding: 28px 18px 24px; }
       .home-screen { min-height: auto; }
       .home-question { margin-bottom: 32px; }
@@ -763,7 +1494,7 @@
         { itemId: "panties", decrement: true },
         { itemId: "breast-pads", decrement: true },
         { itemId: "wet-wipes", decrement: true },
-        { itemId: "tissues", decrement: true, surplusDriven: true },
+        { itemId: "tissues", decrement: true, surplusDriven: true, defaultOff: true },
         { itemId: "hand-cream", decrement: true, surplusDriven: true, defaultOff: true },
       ],
     },
@@ -1036,13 +1767,36 @@
     }
 
     if (subs.length || omits.length) {
-      html += `<p style="margin:${compact ? "0" : "10px"} 0 6px;color:#555;font-size:0.9rem;"><strong>Changes:</strong></p>`;
+      html += `<p class="core-preview-sub" style="margin-top:${compact ? "0" : "10px"}"><strong>Changes</strong></p>`;
       subs.forEach(s => {
-        html += `${s.packCount} pack${s.packCount !== 1 ? "s" : ""} used ${s.qtyPerPack} ${esc(itemName(s.substitute))} instead of ${esc(itemName(s.insteadOf))}<br>`;
+        html += `<p class="core-preview-sub">${s.packCount} pack${s.packCount !== 1 ? "s" : ""} used ${s.qtyPerPack} ${esc(itemName(s.substitute))} instead of ${esc(itemName(s.insteadOf))}</p>`;
       });
       omits.forEach(o => {
-        html += `${o.packCount} pack${o.packCount !== 1 ? "s" : ""} left out ${esc(itemName(o.itemId))}<br>`;
+        html += `<p class="core-preview-sub">${o.packCount} pack${o.packCount !== 1 ? "s" : ""} left out ${esc(itemName(o.itemId))}</p>`;
       });
+    }
+
+    if (compact) {
+      html += `<p class="core-preview-sub">${qty} pack${qty !== 1 ? "s" : ""} will take from the shelf:</p>`;
+      html += `<ul class="shelf-preview-list">`;
+      const seen = new Set();
+      const addShelf = (id) => {
+        const n = usage[id] || 0;
+        if (n > 0 && !seen.has(id)) {
+          seen.add(id);
+          html += `<li><span class="shelf-preview-name">${esc(itemName(id))}</span><span class="shelf-preview-qty">${n}</span></li>`;
+        }
+      };
+      recipe.core.forEach(c => addShelf(c.itemId));
+      recipe.optional.forEach(opt => {
+        if (opt.itemId && opt.decrement) addShelf(opt.itemId);
+      });
+      (customExtras || []).forEach(e => addShelf(e.itemId));
+      subs.forEach(s => addShelf(s.substitute));
+      Object.keys(usage).forEach(id => addShelf(id));
+      if (!seen.size) html += `<li><span class="shelf-preview-name">—</span></li>`;
+      html += `</ul>`;
+      return html;
     }
 
     html += `<p style="margin:${compact || subs.length ? "10px" : "12px"} 0 6px;"><strong>From the shelf (${qty} pack${qty !== 1 ? "s" : ""}):</strong></p>`;
@@ -1221,6 +1975,7 @@
       readyPacks: { momPack: 0, babyPack: 0 },
       transactions: [],
       undoStack: [],
+      redoStack: [],
       packContext: "momPack",
       donors: [],
       lastSelectedPacker: "",
@@ -1320,12 +2075,54 @@
 
   const DONOR_SUGGEST_LIMIT = 8;
 
-  // Case-insensitive substring match over known donors, capped.
-  function donorSuggestMatches(query) {
+  function donorDonationCounts(transactions) {
+    const counts = new Map();
+    const lastDate = new Map();
+    (transactions || []).forEach(tx => {
+      if (tx.type !== "donation") return;
+      const n = normalizeDonorName(tx.donor);
+      if (!n) return;
+      counts.set(n, (counts.get(n) || 0) + 1);
+      const d = tx.date || "";
+      const prev = lastDate.get(n);
+      if (!prev || d > prev) lastDate.set(n, d);
+    });
+    return { counts, lastDate };
+  }
+
+  function donorsRankedByPopularity(donors, transactions) {
+    const { counts, lastDate } = donorDonationCounts(transactions);
+    const names = new Set((donors || []).map(normalizeDonorName).filter(Boolean));
+    counts.forEach((_, n) => names.add(n));
+    return [...names].sort((a, b) => {
+      const ca = counts.get(a) || 0;
+      const cb = counts.get(b) || 0;
+      if (cb !== ca) return cb - ca;
+      const da = lastDate.get(a) || "";
+      const db = lastDate.get(b) || "";
+      if (db !== da) return db.localeCompare(da);
+      return a.localeCompare(b);
+    });
+  }
+
+  // Substring match over known donors, ranked by donation frequency (then prefix, then A–Z).
+  function donorSuggestMatches(query, donors = getDonors(), transactions = state.transactions) {
     const q = normalizeDonorName(query).toLowerCase();
-    const all = getDonors();
-    if (!q) return all.slice(0, DONOR_SUGGEST_LIMIT);
-    return all.filter(d => d.toLowerCase().includes(q)).slice(0, DONOR_SUGGEST_LIMIT);
+    const ranked = donorsRankedByPopularity(donors, transactions);
+    let matched = q ? ranked.filter(d => d.toLowerCase().includes(q)) : ranked;
+    if (q) {
+      const { counts } = donorDonationCounts(transactions);
+      matched.sort((a, b) => {
+        const aStarts = a.toLowerCase().startsWith(q);
+        const bStarts = b.toLowerCase().startsWith(q);
+        if (aStarts !== bStarts) return (bStarts ? 1 : 0) - (aStarts ? 1 : 0);
+        const ca = counts.get(a) || 0;
+        const cb = counts.get(b) || 0;
+        if (cb !== ca) return cb - ca;
+        return a.localeCompare(b);
+      });
+    }
+    return matched.slice(0, DONOR_SUGGEST_LIMIT);
   }
 
   // Escape a donor name and bold the matched span (no raw HTML from data).
@@ -1391,6 +2188,534 @@
         if (open_) { e.preventDefault(); close(); }
       }
     };
+  }
+
+  let openZoeSelect = null;
+  let zoeSelectGlobalsBound = false;
+  const ZOE_SELECT_SEARCH_MIN = 8;
+
+  function zoeSelectOptionCount(sel) {
+    let n = 0;
+    for (const child of sel.children) {
+      if (child.tagName === "OPTGROUP") n += child.children.length;
+      else if (child.tagName === "OPTION") n++;
+    }
+    return n;
+  }
+
+  function zoeSelectScrollableEl(menu) {
+    return menu.querySelector(".zoe-select-options") || menu;
+  }
+
+  function zoeSelectVisibleOptions(menu) {
+    return [...menu.querySelectorAll(".zoe-select-option:not(.hidden)")];
+  }
+
+  function closeZoeSelect() {
+    if (!openZoeSelect) return;
+    openZoeSelect.menu.classList.add("hidden");
+    openZoeSelect.trigger.classList.remove("is-open");
+    openZoeSelect.trigger.setAttribute("aria-expanded", "false");
+    openZoeSelect = null;
+  }
+
+  function zoeSelectOptionHtml(opt, selectedValue) {
+    const selected = opt.value === selectedValue;
+    return `<button type="button" class="zoe-select-option${selected ? " is-selected" : ""}" role="option" data-value="${esc(opt.value)}" aria-selected="${selected}">
+      <span class="zoe-select-option-text">${esc(opt.textContent)}</span>
+      <span class="zoe-select-check" aria-hidden="true">✓</span>
+    </button>`;
+  }
+
+  function filterZoeSelectMenu(menu, query) {
+    const q = (query || "").trim().toLowerCase();
+    const options = menu.querySelectorAll(".zoe-select-option");
+    const groups = menu.querySelectorAll(".zoe-select-group-label");
+    let visible = 0;
+    options.forEach(btn => {
+      const text = btn.querySelector(".zoe-select-option-text")?.textContent || "";
+      const match = !q || text.toLowerCase().includes(q);
+      btn.classList.toggle("hidden", !match);
+      if (match) visible++;
+    });
+    groups.forEach(label => {
+      let el = label.nextElementSibling;
+      let hasVisible = false;
+      while (el && !el.classList.contains("zoe-select-group-label")) {
+        if (el.classList.contains("zoe-select-option") && !el.classList.contains("hidden")) hasVisible = true;
+        el = el.nextElementSibling;
+      }
+      label.classList.toggle("hidden", !hasVisible);
+    });
+    const optionsEl = menu.querySelector(".zoe-select-options");
+    let empty = optionsEl?.querySelector(".zoe-select-empty");
+    if (!visible) {
+      if (!empty && optionsEl) {
+        empty = document.createElement("div");
+        empty.className = "zoe-select-empty";
+        empty.textContent = "No matches";
+        optionsEl.appendChild(empty);
+      }
+    } else {
+      empty?.remove();
+    }
+    if (openZoeSelect?.menu === menu) openZoeSelect.active = -1;
+  }
+
+  function bindZoeSelectSearch(wrap, menu) {
+    const search = menu.querySelector(".zoe-select-search");
+    if (!search || search.dataset.zoeSearchBound) return;
+    search.dataset.zoeSearchBound = "1";
+    search.addEventListener("input", () => filterZoeSelectMenu(menu, search.value));
+    // Wheel over the search field should scroll the options list beneath it.
+    search.addEventListener("wheel", (ev) => {
+      const scrollEl = menu.querySelector(".zoe-select-options");
+      if (!scrollEl) return;
+      zoeSelectApplyWheel(scrollEl, ev, { manual: true });
+    }, { passive: false });
+    search.addEventListener("keydown", (ev) => {
+      if (ev.key === "ArrowDown") {
+        ev.preventDefault();
+        const items = zoeSelectVisibleOptions(menu);
+        if (items.length && openZoeSelect) openZoeSelect.active = setZoeSelectActive(menu, 0);
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const trigger = openZoeSelect?.trigger;
+        closeZoeSelect();
+        trigger?.focus();
+      } else if (ev.key === "Enter") {
+        ev.preventDefault();
+        const first = zoeSelectVisibleOptions(menu)[0];
+        if (first) chooseZoeSelectOption(wrap, first.dataset.value);
+      }
+    });
+  }
+
+  function buildZoeSelectMenu(wrap) {
+    const sel = wrap.querySelector("select");
+    const menu = wrap.querySelector(".zoe-select-menu");
+    if (!sel || !menu) return;
+    const searchable = wrap.dataset.zoeSelectSearchable === "1";
+    menu.classList.toggle("zoe-select-menu--searchable", searchable);
+    let html = "";
+    if (searchable) {
+      html += `<div class="zoe-select-search-wrap">
+        <input type="text" class="zoe-select-search" placeholder="Type to search…" aria-label="Search options" autocomplete="off" spellcheck="false">
+      </div>`;
+    }
+    html += `<div class="zoe-select-options">`;
+    for (const child of sel.children) {
+      if (child.tagName === "OPTGROUP") {
+        html += `<div class="zoe-select-group-label" role="presentation">${esc(child.label)}</div>`;
+        for (const opt of child.children) html += zoeSelectOptionHtml(opt, sel.value);
+      } else if (child.tagName === "OPTION") {
+        html += zoeSelectOptionHtml(child, sel.value);
+      }
+    }
+    html += `</div>`;
+    menu.innerHTML = html;
+    menu.querySelectorAll(".zoe-select-option").forEach(btn => {
+      btn.onmousedown = (ev) => { ev.preventDefault(); chooseZoeSelectOption(wrap, btn.dataset.value); };
+    });
+    if (searchable) bindZoeSelectSearch(wrap, menu);
+    bindZoeSelectMenuScroll(menu);
+  }
+
+  function syncZoeSelectTrigger(wrap) {
+    const sel = wrap.querySelector("select");
+    const trigger = wrap.querySelector(".zoe-select-trigger");
+    const label = wrap.querySelector(".zoe-select-label");
+    if (!sel || !trigger || !label) return;
+    const opt = sel.options[sel.selectedIndex];
+    label.textContent = opt ? opt.textContent : "—";
+    trigger.disabled = sel.disabled;
+    trigger.classList.toggle("field-error-input", sel.classList.contains("field-error-input"));
+  }
+
+  function chooseZoeSelectOption(wrap, value) {
+    const sel = wrap.querySelector("select");
+    if (!sel) return;
+    const changed = sel.value !== value;
+    sel.value = value;
+    syncZoeSelectTrigger(wrap);
+    closeZoeSelect();
+    if (changed) sel.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function setZoeSelectActive(menu, next) {
+    const items = zoeSelectVisibleOptions(menu);
+    if (!items.length) return -1;
+    const active = (next + items.length) % items.length;
+    items.forEach((btn, idx) => btn.classList.toggle("is-active", idx === active));
+    items[active].scrollIntoView({ block: "nearest" });
+    return active;
+  }
+
+  function openZoeSelectMenu(wrap) {
+    const sel = wrap.querySelector("select");
+    const trigger = wrap.querySelector(".zoe-select-trigger");
+    const menu = wrap.querySelector(".zoe-select-menu");
+    if (!sel || sel.disabled || !trigger || !menu) return;
+    if (openZoeSelect?.wrap === wrap) { closeZoeSelect(); return; }
+    closeZoeSelect();
+    buildZoeSelectMenu(wrap);
+    syncZoeSelectTrigger(wrap);
+    menu.classList.remove("hidden");
+    trigger.classList.add("is-open");
+    trigger.setAttribute("aria-expanded", "true");
+    openZoeSelect = { wrap, menu, trigger, active: -1 };
+    if (wrap.dataset.zoeSelectSearchable === "1") {
+      const search = menu.querySelector(".zoe-select-search");
+      if (search) {
+        search.value = "";
+        filterZoeSelectMenu(menu, "");
+        requestAnimationFrame(() => search.focus());
+      }
+    }
+  }
+
+  function zoeSelectScrollShouldClose(ev) {
+    if (!openZoeSelect) return false;
+    const t = ev.target;
+    const { menu } = openZoeSelect;
+    return !(t === menu || menu.contains(t));
+  }
+
+  function zoeSelectApplyWheel(scrollEl, ev, { manual = false } = {}) {
+    const canScroll = scrollEl.scrollHeight > scrollEl.clientHeight;
+    if (!canScroll) return;
+    const atTop = scrollEl.scrollTop <= 0;
+    const atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1;
+    if (manual) {
+      scrollEl.scrollTop += ev.deltaY;
+      ev.preventDefault();
+    } else if ((ev.deltaY < 0 && atTop) || (ev.deltaY > 0 && atBottom)) {
+      ev.preventDefault();
+    }
+    ev.stopPropagation();
+  }
+
+  function bindZoeSelectMenuScroll(menu) {
+    if (menu.dataset.zoeMenuScrollBound) return;
+    menu.dataset.zoeMenuScrollBound = "1";
+    menu.addEventListener("wheel", (ev) => {
+      if (ev.target.classList?.contains("zoe-select-search")) return;
+      const scrollEl = zoeSelectScrollableEl(menu);
+      if (!scrollEl.contains(ev.target) && ev.target !== scrollEl) return;
+      zoeSelectApplyWheel(scrollEl, ev);
+    }, { passive: false });
+  }
+
+  function bindZoeSelectGlobals() {
+    if (zoeSelectGlobalsBound) return;
+    zoeSelectGlobalsBound = true;
+    document.addEventListener("mousedown", (ev) => {
+      if (!openZoeSelect) return;
+      if (!openZoeSelect.wrap.contains(ev.target)) closeZoeSelect();
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (!openZoeSelect) return;
+      if (ev.target.classList?.contains("zoe-select-search")) return;
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        const trigger = openZoeSelect.trigger;
+        closeZoeSelect();
+        trigger?.focus();
+        return;
+      }
+      const { menu } = openZoeSelect;
+      const items = zoeSelectVisibleOptions(menu);
+      if (!items.length) return;
+      if (ev.key === "ArrowDown") {
+        ev.preventDefault();
+        openZoeSelect.active = setZoeSelectActive(menu, openZoeSelect.active + 1);
+      } else if (ev.key === "ArrowUp") {
+        ev.preventDefault();
+        openZoeSelect.active = setZoeSelectActive(menu, openZoeSelect.active - 1);
+      } else if (ev.key === "Enter") {
+        if (openZoeSelect.active >= 0 && items[openZoeSelect.active]) {
+          ev.preventDefault();
+          chooseZoeSelectOption(openZoeSelect.wrap, items[openZoeSelect.active].dataset.value);
+        }
+      }
+    });
+    window.addEventListener("scroll", (ev) => {
+      if (zoeSelectScrollShouldClose(ev)) closeZoeSelect();
+    }, true);
+    window.addEventListener("resize", closeZoeSelect);
+  }
+
+  // Fully-styled dropdown in place of native <select> open menus (unstyleable in Safari).
+  function enhanceCustomSelects(root = document) {
+    bindZoeSelectGlobals();
+    root.querySelectorAll("select:not([data-zoe-select-skip])").forEach(sel => {
+      if (sel.dataset.zoeSelectBound) return;
+      sel.dataset.zoeSelectBound = "1";
+      sel.classList.add("zoe-select-native");
+      sel.setAttribute("aria-hidden", "true");
+      sel.tabIndex = -1;
+
+      const wrap = document.createElement("div");
+      wrap.className = "zoe-select-wrap";
+      sel.parentNode.insertBefore(wrap, sel);
+      wrap.appendChild(sel);
+      if (zoeSelectOptionCount(sel) >= ZOE_SELECT_SEARCH_MIN) {
+        wrap.dataset.zoeSelectSearchable = "1";
+      }
+
+      const trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.className = "zoe-select-trigger";
+      trigger.setAttribute("aria-haspopup", "listbox");
+      trigger.setAttribute("aria-expanded", "false");
+      if (sel.id) {
+        const label = root.querySelector(`label[for="${CSS.escape(sel.id)}"]`);
+        if (label) {
+          if (!label.id) label.id = `${sel.id}-label`;
+          trigger.setAttribute("aria-labelledby", label.id);
+          label.removeAttribute("for");
+        }
+      }
+      trigger.innerHTML = `<span class="zoe-select-label"></span>`;
+
+      const menu = document.createElement("div");
+      menu.className = "zoe-select-menu hidden";
+      menu.setAttribute("role", "listbox");
+
+      wrap.appendChild(trigger);
+      wrap.appendChild(menu);
+      bindZoeSelectMenuScroll(menu);
+      syncZoeSelectTrigger(wrap);
+
+      trigger.onclick = () => openZoeSelectMenu(wrap);
+      trigger.onkeydown = (ev) => {
+        if (ev.key === " " || ev.key === "Enter" || ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+          ev.preventDefault();
+          openZoeSelectMenu(wrap);
+          if (openZoeSelect && (ev.key === "ArrowDown" || ev.key === "ArrowUp")) {
+            const items = zoeSelectVisibleOptions(menu);
+            openZoeSelect.active = setZoeSelectActive(menu, ev.key === "ArrowDown" ? 0 : items.length - 1);
+          }
+        }
+      };
+    });
+  }
+
+  const ZOE_DATE_WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  let openZoeDate = null;
+  let zoeDateGlobalsBound = false;
+
+  function parseISODate(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+    if (!m) return null;
+    const y = +m[1];
+    const mo = +m[2];
+    const d = +m[3];
+    const dt = new Date(y, mo - 1, d);
+    if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+    return { y, m: mo, d };
+  }
+
+  function toISODate(y, m, d) {
+    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  }
+
+  function zoeCalendarMonthLabel(year, month) {
+    return new Date(year, month - 1, 1).toLocaleDateString("en-ZA", { month: "long", year: "numeric" });
+  }
+
+  function zoeCalendarGrid(year, month) {
+    const firstDow = (new Date(year, month - 1, 1).getDay() + 6) % 7;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const daysInPrev = new Date(year, month - 1, 0).getDate();
+    const cells = [];
+    const prevM = month === 1 ? 12 : month - 1;
+    const prevY = month === 1 ? year - 1 : year;
+    for (let i = 0; i < firstDow; i++) {
+      cells.push({ y: prevY, m: prevM, d: daysInPrev - firstDow + i + 1, outside: true });
+    }
+    for (let d = 1; d <= daysInMonth; d++) cells.push({ y: year, m: month, d, outside: false });
+    const nextM = month === 12 ? 1 : month + 1;
+    const nextY = month === 12 ? year + 1 : year;
+    let nextD = 1;
+    while (cells.length % 7 !== 0) cells.push({ y: nextY, m: nextM, d: nextD++, outside: true });
+    return cells;
+  }
+
+  function closeZoeDate() {
+    if (!openZoeDate) return;
+    openZoeDate.popover.classList.add("hidden");
+    openZoeDate.trigger.classList.remove("is-open");
+    openZoeDate.trigger.setAttribute("aria-expanded", "false");
+    openZoeDate = null;
+  }
+
+  function syncZoeDateTrigger(wrap) {
+    const input = wrap.querySelector("input[type='date']");
+    const label = wrap.querySelector(".zoe-date-label");
+    if (!input || !label) return;
+    const parsed = parseISODate(input.value);
+    label.textContent = parsed ? formatDate(input.value) : "Pick a date";
+  }
+
+  function setZoeDateValue(wrap, iso) {
+    const input = wrap.querySelector("input[type='date']");
+    if (!input) return;
+    const prev = input.value;
+    input.value = iso;
+    syncZoeDateTrigger(wrap);
+    if (prev !== iso) {
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
+  function renderZoeDatePopover(wrap, viewYear, viewMonth) {
+    const input = wrap.querySelector("input[type='date']");
+    const popover = wrap.querySelector(".zoe-date-popover");
+    if (!input || !popover) return;
+    const selected = parseISODate(input.value);
+    const today = parseISODate(todayISO());
+    const cells = zoeCalendarGrid(viewYear, viewMonth);
+    let html = `<div class="zoe-date-head">
+      <button type="button" class="zoe-date-nav" data-dir="-1" aria-label="Previous month">‹</button>
+      <span class="zoe-date-month">${esc(zoeCalendarMonthLabel(viewYear, viewMonth))}</span>
+      <button type="button" class="zoe-date-nav" data-dir="1" aria-label="Next month">›</button>
+    </div>
+    <div class="zoe-date-weekdays">${ZOE_DATE_WEEKDAYS.map(d => `<span>${d}</span>`).join("")}</div>
+    <div class="zoe-date-grid">`;
+    for (const cell of cells) {
+      const iso = toISODate(cell.y, cell.m, cell.d);
+      const isSelected = selected && selected.y === cell.y && selected.m === cell.m && selected.d === cell.d;
+      const isToday = today && today.y === cell.y && today.m === cell.m && today.d === cell.d;
+      const cls = [
+        "zoe-date-day",
+        cell.outside ? "is-outside" : "",
+        isToday ? "is-today" : "",
+        isSelected ? "is-selected" : "",
+      ].filter(Boolean).join(" ");
+      html += `<button type="button" class="${cls}" data-iso="${esc(iso)}">${cell.d}</button>`;
+    }
+    html += `</div><div class="zoe-date-foot"><button type="button" class="zoe-date-today">Today</button></div>`;
+    popover.innerHTML = html;
+    popover.querySelectorAll(".zoe-date-nav").forEach(btn => {
+      btn.onmousedown = (ev) => ev.preventDefault();
+      btn.onclick = () => {
+        let y = viewYear;
+        let m = viewMonth + parseInt(btn.dataset.dir, 10);
+        if (m < 1) { m = 12; y--; }
+        else if (m > 12) { m = 1; y++; }
+        if (openZoeDate) { openZoeDate.viewYear = y; openZoeDate.viewMonth = m; }
+        renderZoeDatePopover(wrap, y, m);
+      };
+    });
+    popover.querySelectorAll(".zoe-date-day").forEach(btn => {
+      btn.onmousedown = (ev) => ev.preventDefault();
+      btn.onclick = () => {
+        setZoeDateValue(wrap, btn.dataset.iso);
+        closeZoeDate();
+      };
+    });
+    const todayBtn = popover.querySelector(".zoe-date-today");
+    if (todayBtn) {
+      todayBtn.onmousedown = (ev) => ev.preventDefault();
+      todayBtn.onclick = () => {
+        const t = todayISO();
+        const p = parseISODate(t);
+        if (openZoeDate && p) { openZoeDate.viewYear = p.y; openZoeDate.viewMonth = p.m; }
+        setZoeDateValue(wrap, t);
+        closeZoeDate();
+      };
+    }
+  }
+
+  function openZoeDatePopover(wrap) {
+    const input = wrap.querySelector("input[type='date']");
+    const trigger = wrap.querySelector(".zoe-date-trigger");
+    const popover = wrap.querySelector(".zoe-date-popover");
+    if (!input || input.disabled || !trigger || !popover) return;
+    if (openZoeDate?.wrap === wrap) { closeZoeDate(); return; }
+    closeZoeDate();
+    const seed = parseISODate(input.value) || parseISODate(todayISO());
+    const viewYear = seed.y;
+    const viewMonth = seed.m;
+    renderZoeDatePopover(wrap, viewYear, viewMonth);
+    popover.classList.remove("hidden");
+    trigger.classList.add("is-open");
+    trigger.setAttribute("aria-expanded", "true");
+    openZoeDate = { wrap, popover, trigger, viewYear, viewMonth };
+  }
+
+  function bindZoeDateGlobals() {
+    if (zoeDateGlobalsBound) return;
+    zoeDateGlobalsBound = true;
+    document.addEventListener("mousedown", (ev) => {
+      if (!openZoeDate) return;
+      if (!openZoeDate.wrap.contains(ev.target)) closeZoeDate();
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (!openZoeDate || ev.key !== "Escape") return;
+      ev.preventDefault();
+      const trigger = openZoeDate.trigger;
+      closeZoeDate();
+      trigger?.focus();
+    });
+    window.addEventListener("scroll", (ev) => {
+      if (!openZoeDate) return;
+      const t = ev.target;
+      if (t === openZoeDate.popover || openZoeDate.popover.contains(t)) return;
+      closeZoeDate();
+    }, true);
+    window.addEventListener("resize", closeZoeDate);
+  }
+
+  function enhanceDateInputs(root = document) {
+    bindZoeDateGlobals();
+    root.querySelectorAll("input[type='date']:not([data-zoe-date-skip])").forEach(input => {
+      if (input.dataset.zoeDateBound) return;
+      input.dataset.zoeDateBound = "1";
+      input.classList.add("zoe-date-native");
+      input.setAttribute("aria-hidden", "true");
+      input.tabIndex = -1;
+
+      const wrap = document.createElement("div");
+      wrap.className = "zoe-date-wrap";
+      input.parentNode.insertBefore(wrap, input);
+      wrap.appendChild(input);
+
+      const trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.className = "zoe-date-trigger";
+      trigger.setAttribute("aria-haspopup", "dialog");
+      trigger.setAttribute("aria-expanded", "false");
+      if (input.id) {
+        const label = root.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+        if (label) {
+          if (!label.id) label.id = `${input.id}-label`;
+          trigger.setAttribute("aria-labelledby", label.id);
+          label.removeAttribute("for");
+        }
+      }
+      trigger.innerHTML = `<span class="zoe-date-label"></span>`;
+
+      const popover = document.createElement("div");
+      popover.className = "zoe-date-popover hidden";
+      popover.setAttribute("role", "dialog");
+      popover.setAttribute("aria-label", "Choose date");
+
+      wrap.appendChild(trigger);
+      wrap.appendChild(popover);
+      syncZoeDateTrigger(wrap);
+
+      trigger.onclick = () => openZoeDatePopover(wrap);
+      trigger.onkeydown = (ev) => {
+        if (ev.key === " " || ev.key === "Enter" || ev.key === "ArrowDown") {
+          ev.preventDefault();
+          openZoeDatePopover(wrap);
+        }
+      };
+    });
   }
 
   function buildSyntheticState() {
@@ -1574,6 +2899,7 @@
       readyPacks: { momPack: 0, babyPack: 0 },
       transactions,
       undoStack: [],
+      redoStack: [],
       sampleData: true,
       packContext: "momPack",
       donors,
@@ -1674,10 +3000,6 @@
     return d.toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   }
 
-  function formatToday() {
-    return formatDate(todayISO());
-  }
-
   function uid() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   }
@@ -1715,6 +3037,8 @@
       transactionsTrimmed: 0,
       analyticsEventsTrimmed: 0,
       undoStackTrimmed: 0,
+      redoStackTrimmed: 0,
+      redoStackCleared: 0,
       donorsTrimmed: 0,
     };
 
@@ -1734,6 +3058,11 @@
       trim.undoStackTrimmed = parsed.undoStack.length - UNDO_STACK_LIMIT;
       parsed.undoStack = parsed.undoStack.slice(-UNDO_STACK_LIMIT);
     }
+    if (!Array.isArray(parsed.redoStack)) parsed.redoStack = [];
+    if (parsed.redoStack.length > UNDO_STACK_LIMIT) {
+      trim.redoStackTrimmed = parsed.redoStack.length - UNDO_STACK_LIMIT;
+      parsed.redoStack = parsed.redoStack.slice(-UNDO_STACK_LIMIT);
+    }
 
     if (!parsed.analytics) parsed.analytics = {};
     if (!Array.isArray(parsed.analytics.events)) parsed.analytics.events = [];
@@ -1745,6 +3074,10 @@
     if (parsed.transactions.length > BACKUP_IMPORT_MAX_TRANSACTIONS) {
       trim.transactionsTrimmed = parsed.transactions.length - BACKUP_IMPORT_MAX_TRANSACTIONS;
       parsed.transactions = parsed.transactions.slice(-BACKUP_IMPORT_MAX_TRANSACTIONS);
+    }
+    if (trim.transactionsTrimmed > 0 && parsed.redoStack.length > 0) {
+      trim.redoStackCleared = parsed.redoStack.length;
+      parsed.redoStack = [];
     }
 
     if (!parsed.donors || !parsed.donors.length) {
@@ -2812,13 +4145,35 @@
     }));
   }
 
+  function fullSnapshotForHistory() {
+    return JSON.parse(JSON.stringify({
+      balances: state.balances,
+      readyPacks: state.readyPacks,
+      transactions: state.transactions,
+    }));
+  }
+
+  function trimHistoryStack(stack) {
+    if (!Array.isArray(stack) || stack.length <= UNDO_STACK_LIMIT) return;
+    stack.splice(0, stack.length - UNDO_STACK_LIMIT);
+  }
+
+  function restoreHistorySnapshot(snap) {
+    state.balances = snap.balances;
+    state.readyPacks = snap.readyPacks;
+    if (Array.isArray(snap.transactions)) {
+      state.transactions = snap.transactions;
+    } else {
+      state.transactions = state.transactions.slice(0, snap.txCount);
+      state.transactions.push({ id: uid(), type: "undo", date: todayISO() });
+    }
+  }
+
   function beginTransaction() {
     if (!Array.isArray(state.undoStack)) state.undoStack = [];
     state.undoStack.push(snapshotForUndo());
-    // Keep only the most recent actions so saved state stays bounded.
-    if (state.undoStack.length > UNDO_STACK_LIMIT) {
-      state.undoStack.splice(0, state.undoStack.length - UNDO_STACK_LIMIT);
-    }
+    trimHistoryStack(state.undoStack);
+    state.redoStack = [];
   }
 
   function finishTransaction(tx) {
@@ -2835,15 +4190,33 @@
     return Array.isArray(state.undoStack) && state.undoStack.length > 0;
   }
 
+  function canRedo() {
+    return Array.isArray(state.redoStack) && state.redoStack.length > 0;
+  }
+
   function undoLast() {
     const remainingBefore = Array.isArray(state.undoStack) ? state.undoStack.length : 0;
     analyticsTrack("undo_clicked", { undosAvailable: remainingBefore, snapshot: analyticsOperationalSnapshot() });
     if (!canUndo()) return;
+    if (!Array.isArray(state.redoStack)) state.redoStack = [];
+    state.redoStack.push(fullSnapshotForHistory());
+    trimHistoryStack(state.redoStack);
     const snap = state.undoStack.pop();
-    state.balances = snap.balances;
-    state.readyPacks = snap.readyPacks;
-    state.transactions = state.transactions.slice(0, snap.txCount);
-    state.transactions.push({ id: uid(), type: "undo", date: todayISO() });
+    restoreHistorySnapshot(snap);
+    invalidateSessionTxDerivedCache();
+    saveState();
+    render();
+  }
+
+  function redoLast() {
+    const remainingBefore = Array.isArray(state.redoStack) ? state.redoStack.length : 0;
+    analyticsTrack("redo_clicked", { redosAvailable: remainingBefore, snapshot: analyticsOperationalSnapshot() });
+    if (!canRedo()) return;
+    if (!Array.isArray(state.undoStack)) state.undoStack = [];
+    state.undoStack.push(fullSnapshotForHistory());
+    trimHistoryStack(state.undoStack);
+    const snap = state.redoStack.pop();
+    restoreHistorySnapshot(snap);
     invalidateSessionTxDerivedCache();
     saveState();
     render();
@@ -2875,46 +4248,138 @@
     return shortages;
   }
 
-  function getOptionalItemStockWarning(itemId, packQty) {
+  function isItemRunningLow(itemId) {
+    const it = itemMap[itemId];
+    if (!it || isOutOfSeason(it)) return false;
     const have = getBalance(itemId);
-    const name = itemName(itemId);
-    const need = packQty > 0 ? packQty : 1;
-    if (have < need) {
-      return packQty > 0
-        ? `${name}: need ${need}, have ${have}`
-        : `${name}: only ${have} in stock (1 per pack)`;
+    return have > 0 && have < it.threshold;
+  }
+
+  function getOptionalStockHint(itemId, on, packQty) {
+    const have = getBalance(itemId);
+    if (on) {
+      const need = packQty > 0 ? packQty : 1;
+      if (have < need) {
+        return {
+          type: "warn",
+          text: packQty > 0
+            ? `Only ${have} on the shelf — you need ${need}`
+            : `Only ${have} on the shelf (1 per pack)`,
+        };
+      }
     }
+    if (have === 0) return { type: "hint", text: "None on the shelf" };
+    if (isItemRunningLow(itemId)) {
+      return { type: "low", text: `Running low — ${have} on the shelf` };
+    }
+    if (on && packQty > 0) return { type: "ok", text: `${have} on the shelf` };
+    return null;
+  }
+
+  function renderOptionalStockHintHTML(itemId, on, packQty) {
+    const hint = getOptionalStockHint(itemId, on, packQty);
+    if (!hint) return "";
+    if (hint.type === "warn") return `<div class="optional-stock-warn">${esc(hint.text)}</div>`;
+    if (hint.type === "hint") return `<div class="optional-stock-hint">${esc(hint.text)}</div>`;
+    if (hint.type === "low") return `<div class="optional-stock-low">${esc(hint.text)}</div>`;
+    if (hint.type === "ok") return `<div class="optional-stock-ok">${esc(hint.text)}</div>`;
     return "";
   }
 
-  function getBuildStockErrorMessage() {
+  function getOptionalItemStockWarning(itemId, packQty) {
+    const hint = getOptionalStockHint(itemId, true, packQty);
+    return hint?.type === "warn" ? hint.text : "";
+  }
+
+  function getBuildStockShortagesFromForm() {
     const qty = parseInt(form.qty, 10);
-    if (!qty || qty < 1) return "";
+    if (!qty || qty < 1) return [];
     const included = Object.keys(form.optional || {}).filter(k => form.optional[k]);
     const customExtras = (form.customExtras || []).filter(e => e.itemId);
-    const shortages = checkBuild(form.packKey, qty, included, customExtras, form.substitutions || [], form.omissions || []);
+    return checkBuild(form.packKey, qty, included, customExtras, form.substitutions || [], form.omissions || []);
+  }
+
+  function renderBuildStockShortagePanel(shortages) {
+    if (!shortages.length) return "";
+    const items = shortages.map(s =>
+      `<li><span class="stock-shortage-item">${esc(s.name)}</span>`
+      + `<span class="stock-shortage-detail">You need <strong>${esc(String(s.need))}</strong>, but only have <strong>${esc(String(s.have))}</strong> on the shelf</span></li>`
+    ).join("");
+    return `<div class="stock-shortage-panel" role="alert">
+      <h4>Not enough on the shelf</h4>
+      <p>Try fewer packs, or change what you're including in each one.</p>
+      <ul class="stock-shortage-list">${items}</ul>
+    </div>`;
+  }
+
+  function getBuildStockErrorMessage() {
+    const shortages = getBuildStockShortagesFromForm();
     return shortages.length
-      ? "Not enough stock: " + shortages.map(s => `${s.name} (need ${s.need}, have ${s.have})`).join("; ")
+      ? "Not enough stock: " + shortages.map(s => `${s.name} (you need ${s.need}, but only have ${s.have})`).join("; ")
       : "";
   }
 
   function syncBuildStockWarning() {
-    if (errorMsg && !errorMsg.startsWith("Not enough stock:")) return;
-    errorMsg = getBuildStockErrorMessage();
+    if (errorMsg && !errorMsg.startsWith("Not enough stock:")) {
+      const qty = parseInt(form.qty, 10) || 0;
+      if (errorMsg === "Please enter how many packs you built." && qty >= 1) {
+        errorMsg = "";
+      } else if (errorMsg === "Each extra item can only be added once. Remove the duplicate.") {
+        const customExtras = (form.customExtras || []).filter(e => e.itemId);
+        const ids = customExtras.map(e => e.itemId);
+        const hasDup = ids.some((id, i) => ids.indexOf(id) !== i);
+        if (!hasDup) errorMsg = "";
+      }
+    }
+    if (!errorMsg || errorMsg.startsWith("Not enough stock:")) {
+      errorMsg = getBuildStockErrorMessage();
+    }
   }
 
-  function updateBuildErrorBannerLive() {
+  function updateBuildOptionalHints() {
     if (view !== "build") return;
-    // Only live-update the stock-shortage banner. Other errors remain tied to Save.
-    if (errorMsg && !errorMsg.startsWith("Not enough stock:")) return;
+    const qty = parseInt(document.getElementById("build-qty")?.value, 10) || 0;
+    document.querySelectorAll(".toggle-row[data-opt-item]").forEach(row => {
+      const itemId = row.dataset.optItem;
+      const on = row.querySelector(".toggle-btn")?.classList.contains("on");
+      const wrap = row.querySelector(".optional-hint-wrap");
+      if (wrap && itemId) {
+        wrap.innerHTML = renderOptionalStockHintHTML(itemId, on, qty);
+      }
+    });
+  }
+
+  function updateBuildShortagePanel() {
+    const wrap = document.getElementById("build-stock-shortage");
+    if (!wrap) return;
+    const shortages = getBuildStockShortagesFromForm();
+    const showStockPanel = shortages.length && (
+      !errorMsg || errorMsg.startsWith("Not enough stock:")
+    );
+    if (showStockPanel) {
+      wrap.innerHTML = renderBuildStockShortagePanel(shortages);
+      wrap.classList.remove("hidden");
+    } else {
+      wrap.innerHTML = "";
+      wrap.classList.add("hidden");
+    }
+  }
+
+  function updateBuildLiveUI() {
+    if (view !== "build") return;
     readBuildForm();
     syncBuildStockWarning();
-    const next = errorMsg;
+    updateBuildOptionalHints();
+    updateBuildShortagePanel();
     const box = document.getElementById("build-error");
     if (!box) return;
-    if (next) {
-      box.textContent = next;
+    const shortages = getBuildStockShortagesFromForm();
+    if (errorMsg && !errorMsg.startsWith("Not enough stock:")) {
+      box.textContent = errorMsg;
       box.classList.remove("hidden");
+    } else if (errorMsg && errorMsg.startsWith("Not enough stock:") && shortages.length) {
+      box.textContent = "";
+      box.classList.add("hidden");
     } else {
       box.textContent = "";
       box.classList.add("hidden");
@@ -3767,8 +5232,7 @@
   // state, rank items by how much a fresh count would help a real decision: a
   // count teaches us most where we are most uncertain (beliefUncertainty) AND
   // the item matters most (relevance: core to a pack, likely to run out, the
-  // binding bottleneck). This is the honest, bounded form of a single
-  // "count this next" whisper — export-only, no volunteer UI.
+  // binding bottleneck). Stock screen shows at most one suggestion for volunteers.
 
   const VOI_MODEL_VERSION = "voi.1";
 
@@ -3847,7 +5311,7 @@
       itemsConsidered: items.length,
       topPick,
       ranked: top,
-      note: "Ranks the single most useful next count by expected decision value (uncertainty × relevance). Export-only; no volunteer UI. A whisper would surface at most the top pick, never a list.",
+      note: "Ranks the single most useful next count by expected decision value (uncertainty × relevance). Stock screen shows at most the top pick for the current pack context.",
     };
   }
 
@@ -3860,6 +5324,98 @@
         : null,
       topThree: (cp.ranked || []).slice(0, 3).map(r => ({ itemName: r.itemName, voiScore: r.voiScore, reason: r.reason })),
       sampleData: cp.sampleData,
+    };
+  }
+
+  // Volunteer stock screen — one calm "count this next" suggestion.
+  function getLastRecountDates(transactions) {
+    const map = {};
+    for (const tx of (transactions || [])) {
+      if (tx.type !== "recount" || !tx.itemId || !tx.date) continue;
+      if (!map[tx.itemId] || tx.date > map[tx.itemId]) map[tx.itemId] = tx.date;
+    }
+    return map;
+  }
+
+  function stockLastCountedLabel(isoDate) {
+    if (!isoDate) return null;
+    const days = confidenceDaysSince(isoDate);
+    if (days <= 0) return "counted today";
+    if (days === 1) return "counted yesterday";
+    if (days < 14) return `last counted ${days} days ago`;
+    if (days < 56) {
+      const weeks = Math.round(days / 7);
+      return `last counted ${weeks} week${weeks === 1 ? "" : "s"} ago`;
+    }
+    if (days < 365) {
+      const months = Math.round(days / 30);
+      return `last counted ${months} month${months === 1 ? "" : "s"} ago`;
+    }
+    return `last counted ${formatDate(isoDate)}`;
+  }
+
+  function itemInRecipeCore(itemId, packKey) {
+    return (RECIPES[packKey]?.core || []).some(c => c.itemId === itemId);
+  }
+
+  function stockCountNextDisplayName(itemId) {
+    const item = itemMap[itemId];
+    if (!item) return itemName(itemId);
+    const inMom = itemInRecipeCore(itemId, "momPack");
+    const inBaby = itemInRecipeCore(itemId, "babyPack");
+    if (inMom && !inBaby) return `${item.name} (Mom pack)`;
+    if (inBaby && !inMom) return `${item.name} (Baby pack)`;
+    return item.name;
+  }
+
+  function stockCountNextInfo(isoDate, itemId) {
+    if (!isoDate) {
+      const bal = itemId ? getBalance(itemId) : 0;
+      return {
+        status: "You haven't saved a count for this item yet",
+        detail: bal > 0 ? `On the shelf right now: ${bal}` : "",
+      };
+    }
+    let status = stockLastCountedLabel(isoDate) || "";
+    status = status.charAt(0).toUpperCase() + status.slice(1);
+    return { status, detail: "" };
+  }
+
+  function isItemVisibleInPackContext(itemId, packKey) {
+    return sortItemsForPack(packKey || getPackContext()).some(i => i.id === itemId);
+  }
+
+  function getStockCountNextSuggestion(packCtx) {
+    const pk = packCtx || getPackContext();
+    const lastRecount = getLastRecountDates(state.transactions);
+    const cp = computeCountPriorities(sessionStockBeliefState());
+    for (const row of (cp.ranked || [])) {
+      if (!isItemVisibleInPackContext(row.itemId, pk)) continue;
+      const info = stockCountNextInfo(lastRecount[row.itemId], row.itemId);
+      return {
+        itemId: row.itemId,
+        itemName: stockCountNextDisplayName(row.itemId),
+        status: info.status,
+        detail: info.detail,
+      };
+    }
+    const items = sortItemsForPack(pk);
+    let bestItem = null;
+    let bestDays = -1;
+    for (const item of items) {
+      const days = confidenceDaysSince(lastRecount[item.id]);
+      if (days > bestDays) {
+        bestDays = days;
+        bestItem = item;
+      }
+    }
+    if (!bestItem || bestDays < 14) return null;
+    const info = stockCountNextInfo(lastRecount[bestItem.id], bestItem.id);
+    return {
+      itemId: bestItem.id,
+      itemName: stockCountNextDisplayName(bestItem.id),
+      status: info.status,
+      detail: info.detail,
     };
   }
 
@@ -8436,30 +9992,52 @@
     return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H5a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V9l-6-4z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M9 5v4h4M8 13h8M8 17h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
   }
 
+  function iconBaby() {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`;
+  }
+
+  function renderBuildPackTypeCards(packKey) {
+    return `<div class="build-pack-picker" role="group" aria-label="Packing for">
+      <button type="button" class="build-pack-card build-pack-card--mom ${packKey === "momPack" ? "build-pack-card--selected" : ""}" data-pack-key="momPack">
+        <span class="build-pack-card-icon">${iconBagHeart()}</span>
+        <span class="build-pack-card-label">Mom Pack</span>
+      </button>
+      <button type="button" class="build-pack-card build-pack-card--baby ${packKey === "babyPack" ? "build-pack-card--selected" : ""}" data-pack-key="babyPack">
+        <span class="build-pack-card-icon">${iconBaby()}</span>
+        <span class="build-pack-card-label">Baby Pack</span>
+      </button>
+      <input type="hidden" id="build-pack" value="${esc(packKey)}">
+    </div>`;
+  }
+
   function renderHeader() {
     const isHome = view === "home";
     const homeClass = isHome ? " app-header--home" : "";
+    const undoDisabled = !canUndo();
+    const redoDisabled = !canRedo();
     let html = `<header class="app-header${homeClass}">`;
-    html += `<div class="header-row">`;
+    html += `<div class="header-leading">`;
     if (!isHome) {
       html += `<button type="button" class="header-back" data-go="home" aria-label="Back to home">←</button>`;
-    } else {
-      html += `<span class="header-spacer"></span>`;
     }
+    html += `<div class="header-history">`;
+    html += `<button type="button" id="btn-undo" class="header-undo" data-track-exposure="header_undo" data-exposure-label="Undo"${undoDisabled ? " disabled" : ""} aria-label="Undo last action"${undoDisabled ? ' aria-disabled="true"' : ""}>Undo</button>`;
+    html += `<button type="button" id="btn-redo" class="header-redo" data-track-exposure="header_redo" data-exposure-label="Redo"${redoDisabled ? " disabled" : ""} aria-label="Redo last undone action"${redoDisabled ? ' aria-disabled="true"' : ""}>Redo</button>`;
+    html += `</div></div>`;
     html += `<div class="header-brand"><img src="${ZOE_LOGO_B64}" alt="The Zoe Project" class="header-logo"></div>`;
-    html += `<span class="header-spacer"></span>`;
-    html += `</div>`;
+    html += `<div class="header-trailing" aria-hidden="true"></div>`;
     if (isHome) {
       html += `<p class="header-tagline">Educate | Empower | Nurture</p>`;
     } else if (VIEW_TITLES[view]) {
       html += `<h2 class="header-title">${esc(VIEW_TITLES[view])}</h2>`;
     }
-    html += `<div class="header-date">${esc(formatToday())}</div>`;
     html += `</header>`;
     return html;
   }
 
   function render() {
+    if (typeof closeZoeSelect === "function") closeZoeSelect();
+    if (typeof closeZoeDate === "function") closeZoeDate();
     const app = document.getElementById("app");
     let body = "";
     if (view === "home") body = renderHome();
@@ -8468,7 +10046,12 @@
     else if (view === "deliver") body = renderDeliver();
     else if (view === "stock") body = renderStock();
     else if (view === "intelligence") body = renderIntelligenceDashboard();
-    const viewClass = view === "home" ? "view-content view-content--home" : "view-content";
+    app.className = "wrap";
+    const viewClass = view === "home"
+      ? "view-content view-content--home"
+      : view === "build"
+        ? "view-content view-content--build"
+        : "view-content";
     app.innerHTML = renderHeader() + `<div class="${viewClass}">` + body + `</div>`;
     bindEvents();
     analyticsAfterRender();
@@ -8488,7 +10071,12 @@
     for (const cat of cats) {
       html += `<strong>${esc(cat)}</strong><br>`;
       byCat[cat].sort((a, b) => getBalance(b.id) - getBalance(a.id)).forEach(i => {
-        html += `${esc(i.name)}: ${getBalance(i.id)}<br>`;
+        const bal = getBalance(i.id);
+        if (isItemRunningLow(i.id)) {
+          html += `<span class="low-item">${esc(i.name)}: ${bal} — running low</span><br>`;
+        } else {
+          html += `${esc(i.name)}: ${bal}<br>`;
+        }
       });
       html += `<br>`;
     }
@@ -8533,11 +10121,6 @@
     let html = `<div class="home-more-wrap"><details class="home-more">
       <summary data-track-exposure="home_need_something_else" data-exposure-label="Need something else?">Need something else?</summary>
       <div class="home-more-body">`;
-    if (canUndo()) {
-      html += `<div class="home-more-section">
-        <button type="button" class="home-undo" id="btn-undo">Undo last action</button>
-      </div>`;
-    }
     html += `<div class="home-more-section">
         <details class="stock-fold"><summary data-track-exposure="home_view_stock_levels" data-exposure-label="View all stock levels">View all stock levels</summary>
           <div style="margin-top:12px;">${renderStockLevelsList("home-more-pack-context")}</div>
@@ -8578,19 +10161,12 @@
     return html;
   }
 
-  function renderFooter() {
-    return `<details class="footer">
-      <summary>Admin tools</summary>
-      ${renderAdminToolsBody()}
-    </details>`;
-  }
-
   // ═══════════════════════════════════════════════════════════════════
   // STOROOM MIND — admin intelligence dashboard (ops-facing, read-only)
   // ═══════════════════════════════════════════════════════════════════
   // Surfaces the intelligence the app already computes (belief-state,
   // recount calibration, Value of Information, operational reasoning) in
-  // plain language. Reachable only through Admin tools — never shown to
+  // plain language. Reachable only through Home → Need something else? — never shown to
   // volunteers, so the "no dashboards for volunteers" rule holds. Pure
   // render layer: reuses existing compute functions, mutates nothing.
 
@@ -9019,31 +10595,25 @@
     html += `</div>
       <button type="button" class="btn-small" id="add-line">+ Add another item</button>
       ${errorMsg ? `<div class="error">${esc(errorMsg)}</div>` : ""}
-      <div class="actions"><button class="btn btn-primary" id="donation-save">Save Donation</button></div>
-      ${renderFooter()}`;
+      <div class="actions"><button class="btn btn-primary" id="donation-save">Save Donation</button></div>`;
     return html;
   }
 
   function renderRecipeOptionalToggles(packKey) {
     const recipe = RECIPES[packKey];
     const qty = parseInt(form.qty, 10) || 0;
-    let html = `<div class="common-extras" data-track-exposure="build_optional_toggles" data-exposure-label="Did you include these?">
-      <h3>Did you include these?</h3>
-      <p class="screen-subtitle">Tap Yes for anything extra that went into each pack.</p>`;
+    let html = `<div class="common-extras" data-track-exposure="build_optional_toggles" data-exposure-label="Extras in each pack">
+      <h3>Extras in each pack?</h3>
+      <p class="screen-subtitle">Tap <strong>Yes</strong> if it went in every pack.</p>`;
     recipe.optional.forEach(opt => {
       const key = opt.itemId || opt.id;
       const label = opt.label || itemName(opt.itemId);
       const on = !!form.optional[key];
-      let stockHint = "";
-      if (opt.decrement && opt.itemId) {
-        const warn = on ? getOptionalItemStockWarning(opt.itemId, qty) : "";
-        if (warn) {
-          stockHint = `<div class="optional-stock-warn">${esc(warn)}</div>`;
-        } else if (!on && getBalance(opt.itemId) === 0) {
-          stockHint = `<div class="optional-stock-hint">0 in stock</div>`;
-        }
-      }
-      html += `<div class="toggle-row">
+      const itemAttr = opt.decrement && opt.itemId ? ` data-opt-item="${esc(opt.itemId)}"` : "";
+      const stockHint = opt.decrement && opt.itemId
+        ? `<div class="optional-hint-wrap">${renderOptionalStockHintHTML(opt.itemId, on, qty)}</div>`
+        : "";
+      html += `<div class="toggle-row"${itemAttr}>
         <div class="toggle-label-col">
           <label>${esc(label)}</label>
           ${stockHint}
@@ -9125,12 +10695,12 @@
     if (subCount) summaryParts.push(`${subCount} swap${subCount !== 1 ? "s" : ""}`);
     if (omitCount) summaryParts.push(`${omitCount} left out`);
     if (extraCount) summaryParts.push(`${extraCount} extra${extraCount !== 1 ? "s" : ""}`);
-    const summaryText = summaryParts.length ? summaryParts.join(" · ") : "Swaps, omissions, or extras not on the main screen";
+    const summaryText = summaryParts.length ? summaryParts.join(" · ") : "+ Something else happened?";
 
-    return `<details class="advanced-section exceptions-panel" id="exceptions-panel" data-track-exposure="build_something_different" data-exposure-label="Something was different" ${form.exceptionsOpen ? "open" : ""}>
+    return `<div class="build-exceptions-wrap"><details class="build-exceptions" id="exceptions-panel" data-track-exposure="build_something_different" data-exposure-label="Something was different" ${form.exceptionsOpen ? "open" : ""}>
       <summary id="open-add-item">${summaryParts.length ? esc(summaryText) : "+ Something else happened?"}</summary>
-      <div class="advanced-body">
-        <p class="screen-subtitle" style="margin-bottom:18px;">Record swaps, items left out, or extras not listed above — all on this screen.</p>
+      <div class="build-exceptions-body">
+        <p class="screen-subtitle" style="margin:0 0 18px;">Swaps, items left out, or extras not listed above.</p>
 
         <div class="exception-section" data-track-exposure="build_substitution_controls" data-exposure-label="Swapped items">
           <h4>Swapped items</h4>
@@ -9150,7 +10720,7 @@
           <button type="button" class="btn-small" id="choice-extra">+ Add extra</button>
         </div>
       </div>
-    </details>`;
+    </details></div>`;
   }
 
   function renderBuild() {
@@ -9175,53 +10745,56 @@
     const customExtras = form.customExtras.filter(e => e.itemId);
     form.subLineErrors = getSubstitutionLineErrors(qty, form.substitutions);
 
-    let html = `<div class="form-shell">
-      <div class="screen-kicker">Pack creation</div>
-      <h2>Enter today’s packs</h2>
-      <p class="screen-subtitle">Record what was packed. The stock will update in the background.</p>`;
+    const stockShortages = getBuildStockShortagesFromForm();
+    const showShortagePanel = stockShortages.length && (
+      !errorMsg || errorMsg.startsWith("Not enough stock:")
+    );
+
+    let html = `<div class="form-shell form-shell--build build-screen">
+      <header class="build-screen-header">
+        <h2>Record today’s packs</h2>
+        <p class="build-screen-lead">Record what you packed. Stock updates when you save.</p>
+      </header>`;
 
     if (!recipe.confirmed) {
       html += `<div class="banner banner-draft">Baby Pack recipe is a draft — please confirm with the volunteers what goes in each pack.</div>`;
     }
 
-    html += `<div class="form-grid">
-      <div class="field-card">
-        <label>Packing for</label>
-        <select id="build-pack">
-          <option value="momPack" ${form.packKey === "momPack" ? "selected" : ""}>Mom Pack</option>
-          <option value="babyPack" ${form.packKey === "babyPack" ? "selected" : ""}>Baby Pack</option>
-        </select>
+    html += `<div class="build-batch-card">
+      <div class="build-batch-row">
+        ${renderBuildPackTypeCards(form.packKey)}
+        <label class="build-qty-inline" for="build-qty">
+          <span class="build-qty-label">How many?</span>
+          <input type="number" id="build-qty" class="build-qty-input" min="1" value="${esc(String(form.qty))}" placeholder="0" inputmode="numeric">
+        </label>
       </div>
-      <div class="field-card">
-        <label>How many packs?</label>
-        <input type="number" id="build-qty" class="primary-number" min="1" value="${esc(String(form.qty))}" placeholder="0">
-      </div>
-      <div class="row">
-        <div class="field-card">
-          <label>Who packed?</label>
+    </div>`;
+
+    html += `<div class="build-meta-strip">
+      <div class="build-meta-grid">
+        <div>
+          <label for="build-packer">Who packed?</label>
           <select id="build-packer">${PACKERS.map(p => `<option ${form.packer === p ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>
         </div>
-        <div class="field-card">
-          <label>Destination</label>
+        <div>
+          <label for="build-dest">Going to</label>
           <select id="build-dest">${CLINICS.map(c => `<option ${form.destination === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
         </div>
-      </div>
-      <div class="field-card">
-        <label>Date packed</label>
-        <input type="date" id="build-date" value="${esc(form.buildDate)}">
+        <div class="build-meta-date">
+          <label for="build-date">Date packed</label>
+          <input type="date" id="build-date" value="${esc(form.buildDate)}">
+        </div>
       </div>
     </div>`;
 
     html += renderRecipeOptionalToggles(form.packKey);
-
-    if (qty > 0) {
-      html += `<div class="core-preview"><strong>Stock this save will use</strong><br>${formatBuildPreview(form.packKey, qty, included, customExtras, form.substitutions, true, form.omissions)}</div>`;
-    }
-
     html += renderBuildExceptions(form.packKey, qty, included, customExtras);
 
-    html += `<div id="build-error" class="error ${errorMsg ? "" : "hidden"}">${errorMsg ? esc(errorMsg) : ""}</div>`;
-    html += `<div class="actions"><button class="btn btn-primary" id="build-save" data-track-exposure="build_save_packs" data-exposure-label="Save packs">Save packs</button></div></div>`;
+    html += `<div class="build-save-zone">
+      <div id="build-stock-shortage" class="${showShortagePanel ? "" : "hidden"}">${showShortagePanel ? renderBuildStockShortagePanel(stockShortages) : ""}</div>
+      <div id="build-error" class="notice-error ${errorMsg && !showShortagePanel ? "" : "hidden"}">${errorMsg && !showShortagePanel ? esc(errorMsg) : ""}</div>
+      <div class="actions build-actions"><button class="btn btn-primary" id="build-save" data-track-exposure="build_save_packs" data-exposure-label="Save packs">Save packs</button></div>
+    </div></div>`;
     return html;
   }
 
@@ -9282,17 +10855,33 @@
     }
 
     if (errorMsg) html += `<div class="error">${esc(errorMsg)}</div>`;
-    html += `<div class="actions"><button class="btn btn-primary" id="deliver-save">Confirm Delivery</button></div>${renderFooter()}`;
+    html += `<div class="actions"><button class="btn btn-primary" id="deliver-save">Confirm Delivery</button></div>`;
     return html;
   }
 
   function renderStock() {
     const packCtx = getPackContext();
     const shortcuts = PACK_STOCK_SHORTCUTS[packCtx];
-    if (!form.stockItem || !itemMap[form.stockItem]) form.stockItem = shortcuts[0];
+    const suggestion = mindSafe(() => getStockCountNextSuggestion(packCtx), null);
+    if (!form.stockItem || !itemMap[form.stockItem]) {
+      form.stockItem = (suggestion && isItemVisibleInPackContext(suggestion.itemId, packCtx))
+        ? suggestion.itemId
+        : shortcuts[0];
+    }
     if (!form.stockDate) form.stockDate = todayISO();
-    let html = `<p style="color:#666;font-size:0.95rem;">Count one item at a time, whenever you like. No need to count everything.</p>
-      ${renderPackContextSelector("stock-pack-context", packCtx)}
+    let html = `<p style="color:#666;font-size:0.95rem;">Count one item at a time, whenever you like. No need to count everything.</p>`;
+    if (suggestion) {
+      const isActive = form.stockItem === suggestion.itemId;
+      html += `<div class="stock-count-next" data-track-exposure="stock_count_next" data-exposure-label="Count this next">
+        <p class="stock-count-next-label">Good one to count next</p>
+        <button type="button" class="stock-count-next-btn${isActive ? " stock-count-next-btn--active" : ""}" id="stock-count-next" data-id="${esc(suggestion.itemId)}">
+          <span class="stock-count-next-name">${esc(suggestion.itemName)}</span>
+          <span class="stock-count-next-status">${esc(suggestion.status)}</span>
+          ${suggestion.detail ? `<span class="stock-count-next-detail">${esc(suggestion.detail)}</span>` : ""}
+        </button>
+      </div>`;
+    }
+    html += `${renderPackContextSelector("stock-pack-context", packCtx)}
       <label>Date</label>
       <input type="date" id="stock-date" value="${esc(form.stockDate)}">
       <div class="shortcut-btns">
@@ -9307,8 +10896,7 @@
       <label>Reason (optional)</label>
       <input type="text" id="stock-reason" value="${esc(form.stockReason || "")}" placeholder="e.g. counting correction">
       ${errorMsg ? `<div class="error">${esc(errorMsg)}</div>` : ""}
-      <div class="actions"><button class="btn btn-primary" id="stock-save" data-track-exposure="stock_save_correction" data-exposure-label="Save Count">Save Count</button></div>
-      ${renderFooter()}`;
+      <div class="actions"><button class="btn btn-primary" id="stock-save" data-track-exposure="stock_save_correction" data-exposure-label="Save Count">Save Count</button></div>`;
     return html;
   }
 
@@ -9351,6 +10939,8 @@
   // ═══════════════════════════════════════════════════════════════════
 
   function bindEvents() {
+    enhanceCustomSelects();
+    enhanceDateInputs();
     document.querySelectorAll("[data-go]").forEach(el => {
       el.onclick = () => {
         const nextView = el.dataset.go;
@@ -9372,6 +10962,9 @@
 
     const undoBtn = document.getElementById("btn-undo");
     if (undoBtn) undoBtn.onclick = () => { undoLast(); };
+
+    const redoBtn = document.getElementById("btn-redo");
+    if (redoBtn) redoBtn.onclick = () => { redoLast(); };
 
     const expBtn = document.getElementById("btn-export");
     if (expBtn) expBtn.onclick = exportBackup;
@@ -9460,6 +11053,7 @@
         if (!confirm(confirmMsg)) return;
         analyticsTrack("backup_import_started", { trim });
         state = normalized;
+        state.redoStack = [];
         invalidateSessionTxDerivedCache();
         saveState();
         view = "home";
@@ -9607,8 +11201,8 @@
       el.onchange = () => refresh(false);
       el.onkeydown = onEnter;
     });
-    // Omission edits affect the "From the shelf" preview the same way swaps do —
-    // keep them live so the shelf totals never lag behind what the volunteer typed.
+    // Omission edits affect inline stock hints the same way swaps do —
+    // keep them live so counts never lag behind what the volunteer typed.
     document.querySelectorAll(".omit-item, .omit-packs, .omit-qty").forEach(el => {
       el.onchange = () => refresh(false);
       el.onkeydown = onEnter;
@@ -9683,14 +11277,19 @@
       render();
     };
 
-    const buildPackEl = document.getElementById("build-pack");
-    if (buildPackEl) buildPackEl.onchange = function() {
-      form.packKey = this.value;
-      setPackContext(form.packKey);
-      initOptionalDefaults(form.packKey);
-      readBuildForm();
-      render();
-    };
+    document.querySelectorAll(".build-pack-card").forEach(btn => {
+      btn.onclick = () => {
+        const key = btn.dataset.packKey;
+        if (form.packKey === key) return;
+        readBuildForm();
+        form.packKey = key;
+        const hidden = document.getElementById("build-pack");
+        if (hidden) hidden.value = key;
+        setPackContext(form.packKey);
+        initOptionalDefaults(form.packKey);
+        render();
+      };
+    });
     const buildPackerEl = document.getElementById("build-packer");
     if (buildPackerEl) buildPackerEl.onchange = function() {
       setSelectedPacker(this.value);
@@ -9700,8 +11299,10 @@
         readBuildForm();
         const k = btn.dataset.opt;
         form.optional[k] = !form.optional[k];
+        btn.classList.toggle("on", form.optional[k]);
+        btn.textContent = form.optional[k] ? "Yes" : "No";
         syncBuildStockWarning();
-        render();
+        updateBuildLiveUI();
       };
     });
     document.querySelectorAll(".remove-sub").forEach(btn => {
@@ -9721,10 +11322,10 @@
     bindSubFieldValidation();
     // If a stock-shortage warning is visible and the user changes anything that affects stock,
     // update or hide the warning immediately without forcing them to press Save again.
-    document.querySelectorAll("#build-qty, #build-pack, .toggle-btn, .ce-item, .ce-qty, .sub-instead, .sub-substitute, .sub-packs, .sub-qty, .omit-item, .omit-packs, .omit-qty")
+    document.querySelectorAll("#build-qty, .ce-item, .ce-qty, .sub-instead, .sub-substitute, .sub-packs, .sub-qty, .omit-item, .omit-packs, .omit-qty")
       .forEach(el => {
-        el.addEventListener("input", updateBuildErrorBannerLive);
-        el.addEventListener("change", updateBuildErrorBannerLive);
+        el.addEventListener("input", updateBuildLiveUI);
+        el.addEventListener("change", updateBuildLiveUI);
       });
     document.querySelectorAll(".remove-ce").forEach(btn => {
       btn.onclick = () => {
@@ -9898,10 +11499,22 @@
     bindPackContextSelector("stock-pack-context", (packKey) => {
       readStockForm();
       const shortcuts = PACK_STOCK_SHORTCUTS[packKey];
-      if (!shortcuts.includes(form.stockItem)) form.stockItem = shortcuts[0];
+      const suggestion = mindSafe(() => getStockCountNextSuggestion(packKey), null);
+      if (suggestion && isItemVisibleInPackContext(suggestion.itemId, packKey)) {
+        form.stockItem = suggestion.itemId;
+      } else if (!shortcuts.includes(form.stockItem)) {
+        form.stockItem = shortcuts[0];
+      }
     });
+    const countNextBtn = document.getElementById("stock-count-next");
+    if (countNextBtn) {
+      countNextBtn.onclick = () => {
+        form.stockItem = countNextBtn.dataset.id;
+        render();
+      };
+    }
     document.querySelectorAll(".stock-shortcut").forEach(btn => {
-      btn.onclick = () => { form.stockItem = btn.dataset.id; readStockForm(); render(); };
+      btn.onclick = () => { form.stockItem = btn.dataset.id; render(); };
     });
     document.getElementById("stock-item").onchange = function() {
       form.stockItem = this.value;

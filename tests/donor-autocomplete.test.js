@@ -39,18 +39,24 @@ function getConst(name) {
 const STUBS = `
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   let __DONORS__ = [];
+  let __TX__ = [];
   const getDonors = () => __DONORS__;
+  const state = { get transactions() { return __TX__; } };
 `;
 
 const harness = `
   ${STUBS}
   ${extractBlock(HTML, "function normalizeDonorName(")}
   ${getConst("DONOR_SUGGEST_LIMIT")}
+  ${extractBlock(HTML, "function donorDonationCounts(")}
+  ${extractBlock(HTML, "function donorsRankedByPopularity(")}
   ${extractBlock(HTML, "function donorSuggestMatches(")}
   ${extractBlock(HTML, "function donorSuggestLabel(")}
   return {
-    DONOR_SUGGEST_LIMIT, donorSuggestMatches, donorSuggestLabel,
+    DONOR_SUGGEST_LIMIT, donorDonationCounts, donorsRankedByPopularity,
+    donorSuggestMatches, donorSuggestLabel,
     setDonors: (d) => { __DONORS__ = d; },
+    setTransactions: (t) => { __TX__ = t; },
   };
 `;
 const api = new Function(harness)();
@@ -65,18 +71,60 @@ const DONORS = [
   "Angel Network", "Anonymous", "Baby products — Mitchell's Plain",
   "Mitchell's Plain church", "St Michael's — Mowbray", "Huggies / Dianna",
 ];
+const TX = [
+  { type: "donation", date: "2026-01-01", donor: "Milan" },
+  { type: "donation", date: "2026-02-01", donor: "Milan" },
+  { type: "donation", date: "2026-03-01", donor: "Milan" },
+  { type: "donation", date: "2026-01-15", donor: "Angel Network" },
+  { type: "donation", date: "2026-01-20", donor: "Angel Network" },
+  { type: "donation", date: "2026-04-01", donor: "Huggies / Dianna" },
+  { type: "build", date: "2026-04-02", donor: "ignored" },
+];
 api.setDonors(DONORS);
+api.setTransactions(TX);
+
+// ── popularity ranking ───────────────────────────────────────────────────
+check("empty query returns most frequent donors first", () => {
+  const m = api.donorSuggestMatches("");
+  assert.equal(m[0], "Milan");
+  assert.equal(m[1], "Angel Network");
+  assert.equal(m[2], "Huggies / Dianna");
+});
+check("donors only in transactions still appear when ranked", () => {
+  api.setDonors(["Angel Network"]);
+  api.setTransactions([{ type: "donation", date: "2026-01-01", donor: "Milan" }]);
+  assert.deepEqual(api.donorSuggestMatches(""), ["Milan", "Angel Network"]);
+  api.setDonors(DONORS);
+  api.setTransactions(TX);
+});
+check("empty query returns all donors capped at the limit", () => {
+  api.setDonors(Array.from({ length: 20 }, (_, i) => `Donor ${i}`));
+  api.setTransactions(Array.from({ length: 20 }, (_, i) => ({
+    type: "donation", date: "2026-01-01", donor: `Donor ${i}`,
+  })));
+  assert.equal(api.donorSuggestMatches("").length, api.DONOR_SUGGEST_LIMIT);
+  api.setDonors(DONORS);
+  api.setTransactions(TX);
+});
 
 // ── matching ─────────────────────────────────────────────────────────────
-check("empty query returns all donors (capped at the limit)", () => {
-  api.setDonors(Array.from({ length: 20 }, (_, i) => `Donor ${i}`));
-  assert.equal(api.donorSuggestMatches("").length, api.DONOR_SUGGEST_LIMIT);
-  assert.equal(api.donorSuggestMatches("   ").length, api.DONOR_SUGGEST_LIMIT); // whitespace trims to empty
-  api.setDonors(DONORS);
-});
 check("matches are case-insensitive and substring (mid-word counts)", () => {
   const m = api.donorSuggestMatches("mi");
-  assert.deepEqual(m, ["Baby products — Mitchell's Plain", "Mitchell's Plain church", "St Michael's — Mowbray"]);
+  assert.ok(m.includes("Milan"));
+  assert.ok(m.includes("Baby products — Mitchell's Plain"));
+  assert.ok(m.includes("Mitchell's Plain church"));
+  assert.ok(m.includes("St Michael's — Mowbray"));
+});
+check("prefix matches rank above mid-string at same frequency", () => {
+  api.setDonors(["Milan", "St Michael's — Mowbray"]);
+  api.setTransactions([
+    { type: "donation", date: "2026-01-01", donor: "Milan" },
+    { type: "donation", date: "2026-01-02", donor: "St Michael's — Mowbray" },
+  ]);
+  const m = api.donorSuggestMatches("mi");
+  assert.equal(m[0], "Milan");
+  api.setDonors(DONORS);
+  api.setTransactions(TX);
 });
 check("query is trimmed before matching", () => {
   assert.deepEqual(api.donorSuggestMatches("  angel  "), ["Angel Network"]);
@@ -86,8 +134,12 @@ check("no matches returns an empty list", () => {
 });
 check("results are capped at DONOR_SUGGEST_LIMIT", () => {
   api.setDonors(Array.from({ length: 30 }, (_, i) => `Match ${i}`));
+  api.setTransactions(Array.from({ length: 30 }, (_, i) => ({
+    type: "donation", date: "2026-01-01", donor: `Match ${i}`,
+  })));
   assert.equal(api.donorSuggestMatches("match").length, api.DONOR_SUGGEST_LIMIT);
   api.setDonors(DONORS);
+  api.setTransactions(TX);
 });
 
 // ── label (highlight + escaping) ───────────────────────────────────────────
