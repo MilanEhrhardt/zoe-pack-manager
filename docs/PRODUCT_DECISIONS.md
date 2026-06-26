@@ -24,6 +24,17 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Storeroom Mind — admin intelligence dashboard (ops-facing, read-only)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Add a single in-app, read-only **admin** screen (`view = "intelligence"`) that surfaces the existing intelligence engines — recount calibration (`rc.2`), stock belief-state (`bs.1`), Value of Information (`voi.1`), and operational reasoning (Phase 4) — in plain language, instead of leaving them visible only as raw JSON in the AI Data Pack. Reachable solely through **Admin tools → "What the app is thinking"** (in *Need something else?* and the footer); never on the volunteer home flow. Five sections in **trust-first order**: (1) *Can I trust these numbers yet?* (calibration verdict + within-tolerance rate, rendered first); (2) *Count this next* (VoI top pick whisper + next two); (3) *Shelf confidence* (belief-state quantities, bands, stock-out risk); (4) *What the app has noticed* (top reasoning conclusions; raw sentinels and sub-0.35-confidence rows filtered); (5) *Stock at risk* (buildable counts + below-reorder-line items). An honesty banner flags synthetic ("This is sample data") or still-provisional ("Still learning") data. Pure render layer (`computeIntelligenceDashboardModel`, `renderIntelligenceDashboard`, section renderers, `mindSafe`/`mindVerdictPill`/`mindUsableReasoning` helpers); reuses compute functions via the same wiring as `exportAIDataPack`, mutates no stock, adds no persistence or transaction schema. Headless test `tests/intelligence-dashboard.test.js`. |
+| **Date** | 2026-06-26 |
+| **Context** | ~74% of the app's script is intelligence (belief-state, calibration, VoI, six analytics/reasoning phases) that no human could read without exporting JSON. The intelligence was built but invisible; surfacing it to the operator is higher leverage than adding more models, none of which can be validated until real recounts exist. |
+| **Reasoning** | The "no dashboards/tables/charts for volunteers" rule is explicitly volunteer-scoped — an ops-facing admin view where numbers are allowed does not violate it. Rendering calibration *first* keeps the dashboard honest: while data is synthetic or provisional it says so plainly rather than presenting confident-looking numbers. It also becomes the natural place where future real field data visibly improves the trust verdict. |
+| **Alternatives Considered** | **Keep export-only JSON** — rejected; nobody reads it, so the intelligence delivered no operator value. **Surface the VoI "one whisper" to volunteers now** — rejected/deferred; gated behind real calibration data (a product decision, not built). **Build more ML / self-tuning first** — rejected; premature with zero real recounts to validate against. |
+| **Status** | Accepted |
+
 ### Operational reasoning engine (Phase 4, export only)
 
 | Field | Content |
