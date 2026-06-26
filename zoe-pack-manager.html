@@ -287,6 +287,24 @@
       padding: 18px;
       box-shadow: var(--shadow-soft);
     }
+    /* Donation item card — space from donor field, add button, and inside the bordered box */
+    select.pack-context-select { margin-bottom: 14px; }
+    .donation-screen-hint { margin: 0 0 18px; color: var(--text-muted); font-size: 0.9rem; }
+    #donation-date { margin-bottom: 14px; }
+    #donor { margin-bottom: 6px; }
+    #donation-lines {
+      margin: 20px 0 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .donation-line {
+      margin-bottom: 0;
+      padding: 20px 20px 22px;
+    }
+    .donation-line label:not(:first-child) { margin-top: 14px; }
+    .donation-line .remove-line { margin-top: 14px; }
+    #add-line { margin-top: 4px; }
     label {
       display: block;
       margin: 0 0 7px;
@@ -8270,7 +8288,7 @@
     const packCtx = getPackContext();
     let html = `
       ${renderPackContextSelector("donation-pack-context", packCtx)}
-      <p style="color:#666;font-size:0.9rem;margin-top:0;">Helps sort the item list — doesn't affect what you can add.</p>
+      <p class="donation-screen-hint">Helps sort the item list — doesn't affect what you can add.</p>
       <label>Date</label>
       <input type="date" id="donation-date" value="${esc(form.donationDate)}">
       <label>Donor name (optional)</label>

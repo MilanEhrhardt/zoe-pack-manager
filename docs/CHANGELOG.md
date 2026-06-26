@@ -8,7 +8,9 @@
 
 ### Added
 
+- Donation form spacing: item line card no longer butts against donor field or **Add another item**; extra padding and label gaps inside the bordered item card
 - GitHub Actions workflow `tests.yml` — runs all headless `tests/*.test.js` on push (`main`, `feat/**`) and pull requests
+
 - Field validation kit: `docs/FIELD_VALIDATION.md` (session script, observation checklist, pass/fail rubric); structured capture templates in `docs/USER_RESEARCH.md`
 - Bible documentation pass: filled User Personas, Physical Workflow, Information Architecture, Screen Specifications, Inventory/Donation/Packing/Delivery logic, Rejected Ideas, Technical Architecture, and Glossary in `docs/THE_ZOE_PROJECT_BIBLE.md`
 - Content-Security-Policy meta tag in `zoe-pack-manager.html` for defense-in-depth when hosted (`default-src 'self'`, inline script/style allowed, `connect-src 'none'`, `data:` images); comment documents equivalent server header for deploys including `frame-ancestors 'none'`
