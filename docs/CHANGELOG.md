@@ -26,6 +26,7 @@
 
 ### Changed
 
+- Custom-styled `<select>` dropdowns: `appearance: none`, Zoe purple SVG chevron, hover/disabled states, and consistent `option` styling — closed state matches rounded inputs app-wide (native open menu still OS-controlled in Safari)
 - Packing habit trend windows prefer **calendar comparison** (last 90 days vs previous 90 days per pack type) with count-based fallback when a date window is too sparse; denominators use actual builds in each window; `windowsSummary` exports `windowMode`, `windowDays`, and date spans
 - Item confidence movement scoring is **unit-weighted**: `totalMovements` sums pack deductions and donation units since last recount, not one tick per build touch; scoring thresholds and reason copy adjusted accordingly (`buildTouchCount` unchanged for volunteer view)
 - Operational memory **deduplication**: memory ctx reads `stockBeliefState` and `recountCalibration` first; habit memories suppressed when trend evidence is `too_early`; weak stock/confidence memories dropped when belief-state or calibration already covers the signal; subject-level dedupe before top-10 cap
