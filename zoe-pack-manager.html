@@ -2377,6 +2377,8 @@
     const recountCalibrationSummary = recountCalibrationSummaryConcise(recountCalibration);
     const stockBeliefState = opts.stockBeliefState || sessionStockBeliefState();
     const stockBeliefSummary = buildStockBeliefSummary(stockBeliefState);
+    const countPriorities = opts.countPriorities || computeCountPriorities(stockBeliefState);
+    const countPrioritiesSummary = countPrioritiesSummaryConcise(countPriorities);
     const evidenceFusion = opts.evidenceFusion || computeEvidenceFusion({
       itemConfidence,
       packingHabits: packingHabitsFull,
@@ -2457,6 +2459,7 @@
       operationalMemorySummary,
       recountCalibrationSummary,
       stockBeliefSummary,
+      countPrioritiesSummary,
       interactionEpisodeSummary,
       ...sessionBreakdown,
     };
@@ -2526,6 +2529,7 @@
       evidenceFusion, stockBeliefState, recountCalibration,
       synthetic: !!state.sampleData,
     });
+    const countPriorities = computeCountPriorities(stockBeliefState);
     const payload = {
       exportedAt: new Date().toISOString(),
       app: "Zoe Pack Manager",
@@ -2561,10 +2565,11 @@
       operationalMemory,
       recountCalibration,
       stockBeliefState,
+      countPriorities,
       analytics: state.analytics,
       summary: analyticsDerivedSummary({
         itemConfidence, packingHabits, operationalIntelligence, evidenceFusion, operationalReasoning,
-        beliefEngine, operationalMemory, recountCalibration, stockBeliefState,
+        beliefEngine, operationalMemory, recountCalibration, stockBeliefState, countPriorities,
       }),
     };
     downloadTextFile(JSON.stringify(payload, null, 2), `zoe-ai-data-pack-${todayISO()}.json`, "application/json");
@@ -3536,6 +3541,109 @@
       leastConfident,
       highestStockOutRisk,
       sampleData: !!(beliefState && beliefState.sampleData),
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // VALUE OF INFORMATION — what is most worth counting next (export / ops)
+  // ═══════════════════════════════════════════════════════════════════
+  // The storeroom's scarcest resource is volunteer attention. Given the belief
+  // state, rank items by how much a fresh count would help a real decision: a
+  // count teaches us most where we are most uncertain (beliefUncertainty) AND
+  // the item matters most (relevance: core to a pack, likely to run out, the
+  // binding bottleneck). This is the honest, bounded form of a single
+  // "count this next" whisper — export-only, no volunteer UI.
+
+  const VOI_MODEL_VERSION = "voi.1";
+
+  function voiCapitalize(s) {
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  }
+
+  // The binding core constraint per pack: the item with the lowest believed
+  // qty / per-pack need. Resolving its uncertainty most affects what we can build.
+  function voiBottleneckItemIds(beliefById) {
+    const ids = new Set();
+    for (const packKey of Object.keys(RECIPES)) {
+      let minRatio = Infinity, minItem = null;
+      for (const c of RECIPES[packKey].core) {
+        const b = beliefById[c.itemId];
+        if (!b || !(c.qty > 0)) continue;
+        const ratio = b.believedQty / c.qty;
+        if (ratio < minRatio) { minRatio = ratio; minItem = c.itemId; }
+      }
+      if (minItem) ids.add(minItem);
+    }
+    return ids;
+  }
+
+  function voiReason(r) {
+    const bits = [];
+    if (r.beliefUncertainty >= 0.6) bits.push("we're not sure how many there are");
+    else if (r.beliefUncertainty >= 0.3) bits.push("the estimate has drifted since the last count");
+    if (r.isBottleneck) bits.push("it's the item most likely to run out first");
+    else if (r.lowStockProbability >= 0.5) bits.push("it may be running low");
+    if (r.isCore && !r.isBottleneck) bits.push("it's needed for every pack");
+    if (!bits.length) return "Worth a quick count when convenient.";
+    return voiCapitalize(bits.join(", ")) + ".";
+  }
+
+  function computeCountPriorities(beliefState) {
+    const items = (beliefState && beliefState.items) || [];
+    const byId = {};
+    items.forEach(i => { byId[i.itemId] = i; });
+    const bottlenecks = voiBottleneckItemIds(byId);
+
+    const ranked = items.map(i => {
+      const beliefUncertainty = Math.max(0, Math.min(1, 1 - (i.confidenceProbability || 0)));
+      const isBottleneck = bottlenecks.has(i.itemId);
+      let relevance = 0.2
+        + (i.isCore ? 0.5 : 0)
+        + (i.lowStockProbability || 0) * 0.5
+        + (isBottleneck ? 0.3 : 0);
+      if (i.isOutOfSeason) relevance *= 0.3;
+      const row = {
+        itemId: i.itemId,
+        itemName: i.itemName,
+        voiScore: Math.round(beliefUncertainty * relevance * 100),
+        beliefUncertainty: Math.round(beliefUncertainty * 100) / 100,
+        relevance: Math.round(relevance * 100) / 100,
+        isCore: !!i.isCore,
+        isBottleneck,
+        believedQty: i.believedQty,
+        lowStockProbability: i.lowStockProbability,
+        confidenceScore: i.confidenceScore,
+      };
+      row.reason = voiReason(row);
+      return row;
+    })
+      .filter(r => r.voiScore > 0)
+      .sort((a, b) => b.voiScore - a.voiScore || a.itemName.localeCompare(b.itemName));
+
+    const top = ranked.slice(0, 10);
+    const topPick = top[0]
+      ? { ...top[0], message: `If you have a minute, counting ${top[0].itemName} would help most — ${top[0].reason.charAt(0).toLowerCase()}${top[0].reason.slice(1)}` }
+      : null;
+
+    return {
+      modelVersion: VOI_MODEL_VERSION,
+      sampleData: !!(beliefState && beliefState.sampleData),
+      itemsConsidered: items.length,
+      topPick,
+      ranked: top,
+      note: "Ranks the single most useful next count by expected decision value (uncertainty × relevance). Export-only; no volunteer UI. A whisper would surface at most the top pick, never a list.",
+    };
+  }
+
+  function countPrioritiesSummaryConcise(cp) {
+    if (!cp) return null;
+    return {
+      modelVersion: cp.modelVersion,
+      topPick: cp.topPick
+        ? { itemId: cp.topPick.itemId, itemName: cp.topPick.itemName, voiScore: cp.topPick.voiScore, message: cp.topPick.message }
+        : null,
+      topThree: (cp.ranked || []).slice(0, 3).map(r => ({ itemName: r.itemName, voiScore: r.voiScore, reason: r.reason })),
+      sampleData: cp.sampleData,
     };
   }
 

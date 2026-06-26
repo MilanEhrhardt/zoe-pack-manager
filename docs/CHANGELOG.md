@@ -8,6 +8,7 @@
 
 ### Added
 
+- Value of Information count prioritisation (`voi.1`, export-only): ranks the single most useful next physical count by expected decision value, consuming the belief-state. For each item, `voiScore = beliefUncertainty × relevance` where `beliefUncertainty = 1 − confidenceProbability` (how much a count would teach us) and `relevance` rewards core recipe items, stock-out likelihood, and the binding per-pack bottleneck (lowest believed-qty/need ratio), discounted for out-of-season items. Confidently-known items score ~0 (nothing to learn). Exported as `countPriorities` (ranked top 10 + a single `topPick` with a calm, whisper-ready message) in AI Data Pack and `countPrioritiesSummary` (topPick + topThree) in analytics summary. The honest, bounded form of the future SPE "one whisper" — a whisper would surface at most the top pick, never a list. No volunteer UI. Headless test `tests/value-of-information.test.js`
 - GitHub Actions workflow `tests.yml` — runs all headless `tests/*.test.js` on push (`main`, `feat/**`) and pull requests
 - Field validation kit: `docs/FIELD_VALIDATION.md` (session script, observation checklist, pass/fail rubric); structured capture templates in `docs/USER_RESEARCH.md`
 - Bible documentation pass: filled User Personas, Physical Workflow, Information Architecture, Screen Specifications, Inventory/Donation/Packing/Delivery logic, Rejected Ideas, Technical Architecture, and Glossary in `docs/THE_ZOE_PROJECT_BIBLE.md`
