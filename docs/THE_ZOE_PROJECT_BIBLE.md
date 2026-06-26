@@ -108,7 +108,7 @@ See [`docs/PRODUCT_DECISIONS.md`](PRODUCT_DECISIONS.md).
 
 ### Interaction Episodes (Phase 3D — export only)
 
-**Phase 3D (shipped):** A read-only **behavioural episode layer** groups tracked-control analytics into coherent `interaction_episode_complete` events. Active episodes keyed by `screen` + `controlId` accumulate visibility, hovers, clicks, focus, blur, and changes. Related raw events auto-carry `interactionEpisodeId`. Episode ends on click, blur, navigation, hidden, timeout, or cancel. Analytics summary includes `interactionEpisodeSummary`. **Future AI should consume episodes rather than raw analytics events.** Not SPE, not recommendations, not volunteer-facing. **Janet sees nothing new.**
+**Phase 3D (shipped):** A read-only **behavioural episode layer** groups tracked-control analytics into coherent `interaction_episode_complete` events. Active episodes keyed by `screen` + `controlId` accumulate visibility, hovers, clicks, focus, blur, and changes. Related raw events auto-carry `interactionEpisodeId`. Episode ends on click, blur, navigation, hidden, timeout, cancel, or **export flush** before Analytics JSON / AI Data Pack export. Analytics summary includes `interactionEpisodeSummary`. **Future AI should consume episodes rather than raw analytics events.** Not SPE, not recommendations, not volunteer-facing. **Janet sees nothing new.**
 
 **Phase 3D.1 (shipped):** Consolidation — removed legacy batch `ui_exposure` screen snapshots (`details.controlCount`, `details.controls[]`). Interaction Episodes are the canonical behavioural primitive. Per-control exposure only in new sessions. Deprecated `ignoredControls` summary removed.
 
