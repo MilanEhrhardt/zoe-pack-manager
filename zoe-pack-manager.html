@@ -762,7 +762,6 @@
     const usage = {};
     const subs = normalizeSubstitutions(substitutions);
     const omits = normalizeOmissions(omissions);
-    const subPacksInstead = {};
     const subPacksSubstitute = {};
 
     for (const c of recipe.core) {
@@ -780,7 +779,6 @@
     }
 
     for (const s of subs) {
-      subPacksInstead[s.insteadOf] = (subPacksInstead[s.insteadOf] || 0) + s.packCount;
       subPacksSubstitute[s.substitute] = (subPacksSubstitute[s.substitute] || 0) + s.packCount;
       const origPerPack = recipeQtyPerPack(packKey, s.insteadOf, optionalIncluded, customExtras);
       usage[s.insteadOf] = (usage[s.insteadOf] || 0) - s.packCount * origPerPack;
@@ -796,7 +794,11 @@
       const key = opt.itemId || opt.id;
       if (!optionalIncluded.includes(key)) continue;
       if (!opt.decrement || !opt.itemId) continue;
-      const skip = Math.min(qty, (subPacksInstead[key] || 0) + (subPacksSubstitute[key] || 0));
+      // De-dup only the substitute side: when an included optional is itself used
+      // as a substitute, those packs already counted it via the substitute add above.
+      // The insteadOf side is already removed in the substitution loop, so re-removing
+      // it here would double-subtract and under-deduct the optional (overstating stock).
+      const skip = Math.min(qty, (subPacksSubstitute[key] || 0));
       if (skip > 0) usage[key] = (usage[key] || 0) - skip;
     }
 
@@ -6516,7 +6518,13 @@
       buildQty.onchange = () => refresh(false);
       buildQty.onkeydown = onEnter;
     }
-    document.querySelectorAll(".sub-packs").forEach(el => {
+    document.querySelectorAll(".sub-packs, .sub-qty").forEach(el => {
+      el.onchange = () => refresh(false);
+      el.onkeydown = onEnter;
+    });
+    // Omission edits affect the "From the shelf" preview the same way swaps do —
+    // keep them live so the shelf totals never lag behind what the volunteer typed.
+    document.querySelectorAll(".omit-item, .omit-packs, .omit-qty").forEach(el => {
       el.onchange = () => refresh(false);
       el.onkeydown = onEnter;
     });
