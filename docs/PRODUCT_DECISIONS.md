@@ -239,6 +239,18 @@ Copy this block for each new decision:
 | **Alternatives Considered** | **Conservative:** copy/label tweaks only — extras still two taps away. **Radical:** wizard or one-item-per-screen — rejected; repeats failed Today's Changes UX. |
 | **Status** | Accepted |
 
+### Tissues optional defaults to “No”
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Tissues is no longer pre-checked “Yes” on the Pack Creation screen. Added `defaultOff: true` to its recipe optional, matching `hand-cream`. |
+| **Date** | 2026-06-26 |
+| **Context** | Tissues was the only optional that could default to “Yes”: its `surplusDriven` flag pre-checked it whenever stock exceeded 2× threshold. In the field this surprised volunteers — packs were recorded as containing tissues that were not actually added — and made Tissues inconsistent with every other tracked optional (deo, panties, breast-pads, wet-wipes), which all default to “No”. |
+| **Decision** | Keep `surplusDriven` (so the home “use-it-up” surplus nudge still fires) but add `defaultOff: true` so the toggle starts at “No”. Config-only change; no edits to `commitBuild`, `checkBuild`, or stock logic. |
+| **Reasoning** | Volunteers should opt items *in* deliberately, not un-check a pre-filled “Yes”. A silent default-on risks recording contents that were never packed — the opposite of a trustworthy storeroom memory. The surplus nudge remains the right, non-blocking way to encourage using up surplus. |
+| **Alternatives Considered** | **Remove `surplusDriven` entirely** — rejected; that would also drop the legitimate surplus “use-it-up” nudge. **Leave as-is** — rejected; the default-on behaviour was the reported problem. |
+| **Status** | Accepted |
+
 ### Lead Product Engineer workflow
 
 | Field | Content |

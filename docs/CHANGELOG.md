@@ -24,6 +24,7 @@
 
 ### Changed
 
+- Pack Creation: **Tissues** optional no longer defaults to “Yes”. It was the only optional that pre-checked itself (via `surplusDriven` when stock exceeded 2× threshold), which surprised volunteers and recorded tissues that were not actually packed. Added `defaultOff: true` to its recipe optional (matching `hand-cream`) so it starts at “No” like every other tracked optional; the surplus “use-it-up” home nudge is unchanged. Config-only — no stock-logic changes. See `PRODUCT_DECISIONS.md`.
 - Packing habit trend windows prefer **calendar comparison** (last 90 days vs previous 90 days per pack type) with count-based fallback when a date window is too sparse; denominators use actual builds in each window; `windowsSummary` exports `windowMode`, `windowDays`, and date spans
 - Item confidence movement scoring is **unit-weighted**: `totalMovements` sums pack deductions and donation units since last recount, not one tick per build touch; scoring thresholds and reason copy adjusted accordingly (`buildTouchCount` unchanged for volunteer view)
 - Operational memory **deduplication**: memory ctx reads `stockBeliefState` and `recountCalibration` first; habit memories suppressed when trend evidence is `too_early`; weak stock/confidence memories dropped when belief-state or calibration already covers the signal; subject-level dedupe before top-10 cap
