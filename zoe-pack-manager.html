@@ -488,6 +488,60 @@
       .home-action-icon { width: 46px; height: 46px; border-radius: 15px; }
       .row { grid-template-columns: 1fr; }
     }
+
+    /* Storeroom Mind — admin intelligence dashboard (ops-facing, read-only) */
+    .mind-intro { color: var(--text-muted); font-size: 0.95rem; margin: 0 0 18px; }
+    .mind-banner {
+      border-radius: var(--radius-sm); padding: 14px 16px; margin: 0 0 20px;
+      font-size: 0.93rem; line-height: 1.45; border: 1px solid var(--border-strong);
+      background: #FBF6EC; color: #6b5a36;
+    }
+    .mind-banner strong { color: #5a4a2a; }
+    .mind-section { margin: 0 0 22px; padding: 0 0 4px; }
+    .mind-section > h3 {
+      font-size: 1.08rem; margin: 0 0 4px; color: var(--zoe-purple-dark);
+      display: flex; align-items: baseline; gap: 8px;
+    }
+    .mind-section > .mind-sub { color: var(--text-muted); font-size: 0.85rem; margin: 0 0 12px; }
+    .mind-card {
+      background: var(--surface-solid); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 14px 16px; margin: 0 0 10px;
+      box-shadow: var(--shadow-soft);
+    }
+    .mind-card--headline { border-left: 4px solid var(--zoe-purple); }
+    .mind-headline { font-size: 1.0rem; line-height: 1.5; margin: 0; color: var(--text); }
+    .mind-list { list-style: none; padding: 0; margin: 0; }
+    .mind-list li {
+      display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+      padding: 9px 0; border-bottom: 1px solid var(--border);
+    }
+    .mind-list li:last-child { border-bottom: none; }
+    .mind-item-name { font-weight: 600; color: var(--text); }
+    .mind-item-detail { color: var(--text-muted); font-size: 0.88rem; }
+    .mind-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .mind-pill {
+      display: inline-block; font-size: 0.74rem; font-weight: 600; letter-spacing: 0.02em;
+      padding: 2px 9px; border-radius: 999px; white-space: nowrap;
+    }
+    .mind-pill--trusted { background: #E4F3EA; color: var(--zoe-green); }
+    .mind-pill--probably_right { background: #E7F0F8; color: var(--zoe-blue); }
+    .mind-pill--uncertain { background: #FBF1E2; color: #9a6a1e; }
+    .mind-pill--needs_checking { background: #F8E6E4; color: #A13A34; }
+    .mind-pill--well_calibrated { background: #E4F3EA; color: var(--zoe-green); }
+    .mind-pill--provisional, .mind-pill--insufficient { background: #FBF1E2; color: #9a6a1e; }
+    .mind-pill--overconfident, .mind-pill--underconfident { background: #F8E6E4; color: #A13A34; }
+    .mind-empty { color: var(--text-muted); font-size: 0.92rem; font-style: italic; margin: 0; }
+    .mind-stat-row { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 4px 0 0; }
+    .mind-stat { font-size: 0.85rem; color: var(--text-muted); }
+    .mind-stat b { color: var(--text); font-weight: 600; }
+    .admin-mind-btn {
+      width: 100%; text-align: left; background: var(--surface-solid);
+      border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+      padding: 13px 15px; cursor: pointer; color: var(--zoe-purple-dark); font-weight: 600;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    }
+    .admin-mind-btn small { display: block; color: var(--text-muted); font-weight: 400; font-size: 0.82rem; margin-top: 2px; }
+    .admin-mind-btn:hover { border-color: var(--zoe-purple); }
 </style>
 </head>
 <body>
@@ -8201,6 +8255,7 @@
     build: "We Packed Packs",
     deliver: "Deliver Packs",
     stock: "Stock Count",
+    intelligence: "What the App Is Thinking",
   };
 
   function iconBagHeart() {
@@ -8250,6 +8305,7 @@
     else if (view === "build") body = renderBuild();
     else if (view === "deliver") body = renderDeliver();
     else if (view === "stock") body = renderStock();
+    else if (view === "intelligence") body = renderIntelligenceDashboard();
     const viewClass = view === "home" ? "view-content view-content--home" : "view-content";
     app.innerHTML = renderHeader() + `<div class="${viewClass}">` + body + `</div>`;
     bindEvents();
@@ -8280,7 +8336,11 @@
 
   function renderAdminToolsBody(trackExposure) {
     const exp = (id, label) => trackExposure ? ` data-track-exposure="${id}" data-exposure-label="${label}"` : "";
-    return `<p>Your work saves automatically on this computer. Use Export Backup to keep a copy safe.</p>
+    return `<button type="button" class="admin-mind-btn" data-go="intelligence"${exp("admin_intelligence_dashboard", "What the app is thinking")}>
+        <span>What the app is thinking<small>The app's stock confidence, what to count next, and what it has noticed</small></span>
+        <span aria-hidden="true">→</span>
+      </button>
+      <p style="margin-top:18px;">Your work saves automatically on this computer. Use Export Backup to keep a copy safe.</p>
       <div class="footer-tools">
         <button type="button" id="btn-export"${exp("admin_export_backup", "Export Backup")}>Export Backup</button>
         <button type="button" id="btn-import"${exp("admin_import_backup", "Import Backup")}>Import Backup</button>
@@ -8361,6 +8421,243 @@
       <summary>Admin tools</summary>
       ${renderAdminToolsBody()}
     </details>`;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // STOROOM MIND — admin intelligence dashboard (ops-facing, read-only)
+  // ═══════════════════════════════════════════════════════════════════
+  // Surfaces the intelligence the app already computes (belief-state,
+  // recount calibration, Value of Information, operational reasoning) in
+  // plain language. Reachable only through Admin tools — never shown to
+  // volunteers, so the "no dashboards for volunteers" rule holds. Pure
+  // render layer: reuses existing compute functions, mutates nothing.
+
+  function mindSafe(fn, fallback) {
+    try { return fn(); } catch (e) { return fallback; }
+  }
+
+  // Assemble the concise summaries, mirroring exportAIDataPack's wiring but
+  // returning only what the dashboard renders. Each engine is isolated so a
+  // failure in one section never blanks the whole screen.
+  function computeIntelligenceDashboardModel() {
+    const itemConfidence = mindSafe(() => computeAllItemConfidence(), null);
+    const packingHabits = mindSafe(() => packingHabitSummary(), null);
+    const stockBeliefState = mindSafe(() => sessionStockBeliefState(), null);
+    const beliefSummary = mindSafe(() => buildStockBeliefSummary(stockBeliefState), null);
+    const recountCalibration = mindSafe(() => buildRecountCalibration(state.transactions), null);
+    const calibration = mindSafe(() => recountCalibrationSummaryConcise(recountCalibration), null);
+    const countPriorities = mindSafe(() => countPrioritiesSummaryConcise(computeCountPriorities(stockBeliefState)), null);
+
+    let reasoning = null;
+    mindSafe(() => {
+      const operationalIntelligence = computeOperationalIntelligence({ itemConfidence, packingHabits });
+      const evidenceFusion = computeEvidenceFusion({
+        itemConfidence, packingHabits, operationalIntelligence, stockBeliefState, recountCalibration,
+        analyticsEvents: state.analytics?.events || [], synthetic: !!state.sampleData,
+      });
+      const operationalReasoning = computeOperationalReasoning({
+        itemConfidence, packingHabits, operationalIntelligence, evidenceFusion,
+        stockBeliefState, recountCalibration,
+        analyticsEvents: state.analytics?.events || [], synthetic: !!state.sampleData,
+      });
+      reasoning = operationalReasoningSummaryConcise(operationalReasoning);
+    }, null);
+
+    const lowStock = mindSafe(() => getLowStock().map(i => ({
+      name: i.name, balance: getBalance(i.id), threshold: i.threshold,
+    })).sort((a, b) => (a.balance - a.threshold) - (b.balance - b.threshold)), []);
+    const buildable = mindSafe(() => Object.keys(RECIPES).map(k => ({
+      label: RECIPES[k].label, count: buildableCount(k),
+    })), []);
+
+    return {
+      sampleData: !!state.sampleData,
+      calibration, countPriorities, beliefSummary, reasoning, lowStock, buildable,
+    };
+  }
+
+  function mindPct(x) {
+    if (x == null || isNaN(x)) return "—";
+    return Math.round(x * 100) + "%";
+  }
+
+  function mindBandPill(band) {
+    const label = mindSafe(() => confidenceVolunteerLabel(band), band) || band;
+    return `<span class="mind-pill mind-pill--${esc(band)}">${esc(label)}</span>`;
+  }
+
+  function mindReasoningTypeLabel(type) {
+    return esc(String(type || "").replace(/_/g, " "));
+  }
+
+  // Calibration verdicts are their own vocabulary — never route them through
+  // the stock-band labels, which only know trusted/uncertain/etc.
+  function mindVerdictPill(verdict) {
+    const labels = {
+      well_calibrated: "Well calibrated",
+      overconfident: "Overconfident",
+      underconfident: "Underconfident",
+      provisional: "Still learning",
+      insufficient: "Not enough data yet",
+    };
+    const label = labels[verdict] || "Still learning";
+    return `<span class="mind-pill mind-pill--${esc(verdict || "provisional")}">${esc(label)}</span>`;
+  }
+
+  // A usable reasoning conclusion is a human sentence, not a bare engine token
+  // (e.g. "insufficient_evidence"). Drop sentinels and very-low-confidence rows
+  // so this section stays plain-language and meaningful.
+  function mindUsableReasoning(r) {
+    const c = String(r && r.conclusion || "").trim();
+    if (!c) return false;
+    if (/^[a-z][a-z0-9_]*$/.test(c)) return false; // bare snake_case sentinel
+    if ((r.confidenceProbability || 0) < 0.35) return false;
+    return true;
+  }
+
+  // Section 1 (renders FIRST, by design): how far the intelligence can be
+  // trusted yet. While calibration is provisional or data is synthetic, the
+  // dashboard says so plainly instead of presenting confident-looking numbers.
+  function renderMindTrustSection(model) {
+    const cal = model.calibration;
+    let body;
+    if (!cal) {
+      body = `<p class="mind-empty">Calibration is not available yet.</p>`;
+    } else {
+      const bc = cal.beliefCalibration || {};
+      const verdict = bc.verdict || (cal.readyForCalibration ? "well_calibrated" : "provisional");
+      body = `<p class="mind-headline">${esc(cal.headline || "")}</p>
+        <p class="mind-headline" style="margin-top:8px;">${esc(cal.beliefHeadline || "")}</p>
+        <div class="mind-stat-row" style="margin-top:12px;">
+          <span class="mind-stat">Real recounts scored: <b>${esc(String(cal.realLabeledRecounts ?? 0))}</b></span>
+          <span class="mind-stat">Shelf match rate: <b>${mindPct(cal.withinToleranceRate)}</b></span>
+          <span class="mind-stat">Interval fit: ${mindVerdictPill(verdict)}</span>
+        </div>`;
+    }
+    return `<div class="mind-section">
+      <h3>Can I trust these numbers yet?</h3>
+      <p class="mind-sub">The app scoring its own past guesses against real recounts.</p>
+      <div class="mind-card mind-card--headline">${body}</div>
+    </div>`;
+  }
+
+  function renderMindCountNextSection(model) {
+    const cp = model.countPriorities;
+    let body;
+    if (!cp || !cp.topPick) {
+      body = `<p class="mind-empty">Nothing stands out to count right now — the shelf readings are settled.</p>`;
+    } else {
+      body = `<div class="mind-card mind-card--headline"><p class="mind-headline">${esc(cp.topPick.message || "")}</p></div>`;
+      const rest = (cp.topThree || []).slice(1);
+      if (rest.length) {
+        body += `<ul class="mind-list">` + rest.map(r => `<li>
+          <span><span class="mind-item-name">${esc(r.itemName)}</span><br><span class="mind-item-detail">${esc(r.reason || "")}</span></span>
+          <span class="mind-num mind-item-detail">value ${esc(String(r.voiScore ?? 0))}</span>
+        </li>`).join("") + `</ul>`;
+      }
+    }
+    return `<div class="mind-section">
+      <h3>Count this next</h3>
+      <p class="mind-sub">Where one count would teach the app the most.</p>
+      ${body}
+    </div>`;
+  }
+
+  function renderMindShelfSection(model) {
+    const bs = model.beliefSummary;
+    if (!bs) {
+      return `<div class="mind-section"><h3>Shelf confidence</h3>
+        <p class="mind-empty">The shelf model is not available yet.</p></div>`;
+    }
+    const risk = bs.highestStockOutRisk || [];
+    const least = bs.leastConfident || [];
+    let body = `<div class="mind-card"><div class="mind-stat-row">
+      <span class="mind-stat">Items modelled: <b>${esc(String(bs.itemCount ?? 0))}</b></span>
+      <span class="mind-stat">Counted recently: <b>${esc(String(bs.anchoredCount ?? 0))}</b></span>
+      <span class="mind-stat">Low confidence: <b>${esc(String(bs.lowConfidenceCount ?? 0))}</b></span>
+    </div></div>`;
+
+    if (risk.length) {
+      body += `<p class="mind-sub" style="margin-top:6px;">Most likely to run out:</p><ul class="mind-list">` +
+        risk.slice(0, 6).map(i => `<li>
+          <span class="mind-item-name">${esc(i.itemName)}</span>
+          <span class="mind-num mind-item-detail">~${esc(String(i.believedQty))} on hand · ${mindPct(i.lowStockProbability)} chance below ${esc(String(i.threshold))}</span>
+        </li>`).join("") + `</ul>`;
+    }
+    if (least.length) {
+      body += `<p class="mind-sub" style="margin-top:14px;">Least sure about:</p><ul class="mind-list">` +
+        least.slice(0, 6).map(i => `<li>
+          <span class="mind-item-name">${esc(i.itemName)}</span>
+          <span>${mindBandPill(i.band)} <span class="mind-num mind-item-detail">~${esc(String(i.believedQty))} ±${esc(String(Math.round((i.sd || 0) * 2)))}</span></span>
+        </li>`).join("") + `</ul>`;
+    }
+    return `<div class="mind-section">
+      <h3>Shelf confidence</h3>
+      <p class="mind-sub">What the app believes is on the shelf, and how sure it is.</p>
+      ${body}
+    </div>`;
+  }
+
+  function renderMindNoticedSection(model) {
+    const r = model.reasoning;
+    const top = ((r && r.topThreeReasonings) || []).filter(mindUsableReasoning);
+    let body;
+    if (!top.length) {
+      body = `<p class="mind-empty">Nothing notable yet — patterns appear once there's more activity.</p>`;
+    } else {
+      body = `<ul class="mind-list">` + top.map(t => `<li>
+        <span><span class="mind-item-name">${esc(t.conclusion || "")}</span><br><span class="mind-item-detail">${mindReasoningTypeLabel(t.reasoningType)}</span></span>
+        <span class="mind-num mind-item-detail">${mindPct(t.confidenceProbability)} sure</span>
+      </li>`).join("") + `</ul>`;
+    }
+    return `<div class="mind-section">
+      <h3>What the app has noticed</h3>
+      <p class="mind-sub">Patterns drawn from the activity log.</p>
+      ${body}
+    </div>`;
+  }
+
+  function renderMindStockSection(model) {
+    const low = model.lowStock || [];
+    const buildable = model.buildable || [];
+    let body = `<div class="mind-card"><div class="mind-stat-row">` +
+      buildable.map(b => `<span class="mind-stat">${esc(b.label)}s buildable now: <b>${esc(String(b.count))}</b></span>`).join("") +
+      `</div></div>`;
+    if (low.length) {
+      body += `<p class="mind-sub" style="margin-top:6px;">Below the reorder line:</p><ul class="mind-list">` +
+        low.slice(0, 10).map(i => `<li>
+          <span class="mind-item-name">${esc(i.name)}</span>
+          <span class="mind-num mind-item-detail">${esc(String(i.balance))} on hand · line ${esc(String(i.threshold))}</span>
+        </li>`).join("") + `</ul>`;
+    } else {
+      body += `<p class="mind-empty" style="margin-top:6px;">Nothing below its reorder line.</p>`;
+    }
+    return `<div class="mind-section">
+      <h3>Stock at risk</h3>
+      <p class="mind-sub">Today's hard numbers — no model, just counts.</p>
+      ${body}
+    </div>`;
+  }
+
+  function renderIntelligenceDashboard() {
+    const model = mindSafe(() => computeIntelligenceDashboardModel(), null);
+    if (!model) {
+      return `<p class="mind-empty">The intelligence view could not be assembled.</p>`;
+    }
+    let banner = "";
+    const calProvisional = !model.calibration || !model.calibration.readyForCalibration;
+    if (model.sampleData) {
+      banner = `<div class="mind-banner"><strong>This is sample data.</strong> These readings are illustrative — they're built from demo records, not your real storeroom. Load real activity to see the app's true thinking.</div>`;
+    } else if (calProvisional) {
+      banner = `<div class="mind-banner"><strong>Still learning.</strong> The app hasn't been checked against enough real recounts yet, so treat the readings below as early guesses. They sharpen every time someone counts something again.</div>`;
+    }
+    return `<p class="mind-intro">A look inside what the app is thinking. Read-only — nothing here changes your stock. For you, not for the volunteers.</p>
+      ${banner}
+      ${renderMindTrustSection(model)}
+      ${renderMindCountNextSection(model)}
+      ${renderMindShelfSection(model)}
+      ${renderMindNoticedSection(model)}
+      ${renderMindStockSection(model)}`;
   }
 
   function getDonationQtyErrors(lines) {
