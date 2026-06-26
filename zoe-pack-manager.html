@@ -2329,14 +2329,27 @@
       synthetic: !!state.sampleData,
     });
     const evidenceFusionSummary = evidenceFusionSummaryConcise(evidenceFusion);
+    const operationalReasoning = opts.operationalReasoning || computeOperationalReasoning({
+      itemConfidence,
+      packingHabits: packingHabitsFull,
+      operationalIntelligence,
+      evidenceFusion,
+      stockBeliefState,
+      recountCalibration,
+      analyticsEvents: events,
+      synthetic: !!state.sampleData,
+    });
+    const operationalReasoningSummary = operationalReasoningSummaryConcise(operationalReasoning);
     const beliefEngine = opts.beliefEngine || computeBeliefEngine({
       itemConfidence, packingHabits: packingHabitsFull, operationalIntelligence, evidenceFusion,
+      operationalReasoning, stockBeliefState, recountCalibration,
+      analyticsEvents: events,
       synthetic: !!state.sampleData,
     });
     const beliefEngineSummary = beliefEngineSummaryConcise(beliefEngine);
     const operationalMemory = opts.operationalMemory || computeOperationalMemory({
       itemConfidence, packingHabits: packingHabitsFull, operationalIntelligence, beliefEngine,
-      evidenceFusion, stockBeliefState, recountCalibration,
+      operationalReasoning, evidenceFusion, stockBeliefState, recountCalibration,
       synthetic: !!state.sampleData,
     });
     const operationalMemorySummary = operationalMemorySummaryConcise(operationalMemory);
@@ -2381,6 +2394,7 @@
       packingHabitTrends,
       operationalIntelligenceSummary,
       evidenceFusionSummary,
+      operationalReasoningSummary,
       beliefEngineSummary,
       operationalMemorySummary,
       recountCalibrationSummary,
@@ -2437,13 +2451,21 @@
       analyticsEvents: state.analytics?.events || [],
       synthetic: !!state.sampleData,
     });
-    const beliefEngine = computeBeliefEngine({
+    const operationalReasoning = computeOperationalReasoning({
       itemConfidence, packingHabits, operationalIntelligence, evidenceFusion,
+      stockBeliefState, recountCalibration,
+      analyticsEvents: state.analytics?.events || [],
+      synthetic: !!state.sampleData,
+    });
+    const beliefEngine = computeBeliefEngine({
+      itemConfidence, packingHabits, operationalIntelligence, evidenceFusion, operationalReasoning,
+      stockBeliefState, recountCalibration,
+      analyticsEvents: state.analytics?.events || [],
       synthetic: !!state.sampleData,
     });
     const operationalMemory = computeOperationalMemory({
-      itemConfidence, packingHabits, operationalIntelligence, beliefEngine, evidenceFusion,
-      stockBeliefState, recountCalibration,
+      itemConfidence, packingHabits, operationalIntelligence, beliefEngine, operationalReasoning,
+      evidenceFusion, stockBeliefState, recountCalibration,
       synthetic: !!state.sampleData,
     });
     const payload = {
@@ -2476,14 +2498,15 @@
       packingHabits,
       operationalIntelligence,
       evidenceFusion,
+      operationalReasoning,
       beliefEngine,
       operationalMemory,
       recountCalibration,
       stockBeliefState,
       analytics: state.analytics,
       summary: analyticsDerivedSummary({
-        itemConfidence, packingHabits, operationalIntelligence, evidenceFusion, beliefEngine,
-        operationalMemory, recountCalibration, stockBeliefState,
+        itemConfidence, packingHabits, operationalIntelligence, evidenceFusion, operationalReasoning,
+        beliefEngine, operationalMemory, recountCalibration, stockBeliefState,
       }),
     };
     downloadTextFile(JSON.stringify(payload, null, 2), `zoe-ai-data-pack-${todayISO()}.json`, "application/json");
@@ -5748,10 +5771,989 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // OPERATIONAL REASONING ENGINE — Phase 4 (export / ops only)
+  // ═══════════════════════════════════════════════════════════════════
+
+  const REASONING_MODEL_VERSION = "4.0";
+
+  function orCopySafe(text) {
+    return beCopySafe(text);
+  }
+
+  function orConfidenceBand(p) {
+    return beConfidenceBand(p);
+  }
+
+  function buildReasoningCtx(deps) {
+    return {
+      itemConfidence: deps.itemConfidence,
+      packingHabits: deps.packingHabits,
+      operationalIntelligence: deps.operationalIntelligence,
+      evidenceFusion: deps.evidenceFusion || null,
+      stockBeliefState: deps.stockBeliefState || null,
+      recountCalibration: deps.recountCalibration || null,
+      analyticsEvents: deps.analyticsEvents || [],
+      synthetic: deps.synthetic != null ? deps.synthetic : !!state.sampleData,
+    };
+  }
+
+  function orNormalizeProbabilities(hypotheses) {
+    const list = (hypotheses || []).map(h => ({ ...h }));
+    if (!list.length) return [];
+    let sum = list.reduce((s, h) => s + (typeof h.confidence === "number" ? h.confidence : 0), 0);
+    if (sum <= 0) {
+      const even = Math.round((1 / list.length) * 100) / 100;
+      list.forEach((h, i) => {
+        h.confidence = i === list.length - 1
+          ? Math.round((1 - even * (list.length - 1)) * 100) / 100
+          : even;
+      });
+    } else {
+      list.forEach(h => { h.confidence = Math.round((h.confidence / sum) * 100) / 100; });
+      const roundedSum = list.reduce((s, h) => s + h.confidence, 0);
+      if (list.length && Math.abs(roundedSum - 1) > 0.001) {
+        list[list.length - 1].confidence = Math.round((list[list.length - 1].confidence + (1 - roundedSum)) * 100) / 100;
+      }
+    }
+    const sorted = [...list].sort((a, b) => b.confidence - a.confidence);
+    sorted.forEach((h, idx) => {
+      if (h.confidence < 0.05) h.status = "insufficient_evidence";
+      else if (idx === 0 && h.confidence >= 0.45) h.status = "leading";
+      else if (idx === 0 || h.confidence >= 0.25) h.status = "plausible";
+      else if (h.confidence >= 0.10) h.status = "weak";
+      else h.status = "contradicted";
+    });
+    return sorted;
+  }
+
+  function orMakeHypothesis(partial) {
+    return {
+      hypothesisId: partial.hypothesisId,
+      cause: partial.cause,
+      confidence: partial.confidence,
+      reason: orCopySafe(partial.reason || ""),
+      evidenceObjectIds: partial.evidenceObjectIds || [],
+      status: partial.status || "plausible",
+    };
+  }
+
+  function orUniqueSources(evidenceObjectIds, ctx) {
+    const objects = ctx.evidenceFusion?.objects || [];
+    const sources = new Set();
+    (evidenceObjectIds || []).forEach(id => {
+      const obj = objects.find(o => o.objectId === id);
+      if (obj?.source) sources.add(obj.source);
+    });
+    return sources.size;
+  }
+
+  function orEvidenceDiversityScore(evidenceObjectIds, ctx) {
+    const count = (evidenceObjectIds || []).length;
+    const sources = orUniqueSources(evidenceObjectIds, ctx);
+    if (!count) return 0;
+    return Math.round(Math.min(1, (sources.size / Math.max(1, count)) + count * 0.05) * 100) / 100;
+  }
+
+  function orReasoningMaturity(reasoning) {
+    const hyps = reasoning.hypotheses || [];
+    const leading = hyps.find(h => h.status === "leading");
+    const avgFresh = reasoning.evidenceFreshnessSummary?.averageFreshnessWeight ?? 0.5;
+    if (!hyps.length) return "nascent";
+    if (leading && leading.confidence >= 0.55 && avgFresh >= 0.6) return "established";
+    if (leading && leading.confidence >= 0.35) return "developing";
+    return "nascent";
+  }
+
+  function orRevisionLikelihood(reasoning) {
+    const maturity = reasoning.reasoningMaturity || orReasoningMaturity(reasoning);
+    const stale = (reasoning.evidenceFreshnessSummary?.staleEvidenceCount || 0)
+      + (reasoning.evidenceFreshnessSummary?.historicalEvidenceCount || 0);
+    if (maturity === "nascent") return "high";
+    if (stale > 0 && maturity === "developing") return "moderate";
+    if (maturity === "established") return "low";
+    return "moderate";
+  }
+
+  function orStabilityScore(reasoning) {
+    const leading = (reasoning.hypotheses || []).find(h => h.status === "leading");
+    const diversity = reasoning.evidenceDiversityScore ?? 0;
+    const fresh = reasoning.evidenceFreshnessSummary?.averageFreshnessWeight ?? 0.5;
+    let score = 0.35;
+    if (leading) score += leading.confidence * 0.35;
+    score += diversity * 0.15;
+    score += fresh * 0.15;
+    return Math.max(0, Math.min(1, Math.round(score * 100) / 100));
+  }
+
+  function orApplyFreshnessToReasoning(reasoning, ctx, referenceAt) {
+    const evidenceObjectIds = reasoning.evidenceObjectIds || [];
+    const objects = ctx.evidenceFusion?.objects || [];
+    const evidenceDetail = [];
+    evidenceObjectIds.forEach(id => {
+      const obj = objects.find(o => o.objectId === id);
+      (obj?.evidence || []).forEach(e => evidenceDetail.push({ freshness: e.freshness }));
+    });
+    (reasoning.supportingEvidence || []).forEach(desc => {
+      const rec = annotateEvidenceFreshness({
+        description: desc, date: todayISO(), evidenceType: reasoning.defaultEvidenceType || "unknown",
+      }, { referenceAt, evidenceType: reasoning.defaultEvidenceType || "unknown" });
+      evidenceDetail.push({ freshness: rec.freshness });
+    });
+    const evidenceFreshnessSummary = summarizeEvidenceFreshness(evidenceDetail);
+    return {
+      ...reasoning,
+      evidenceFreshnessSummary,
+      independentEvidenceSources: orUniqueSources(evidenceObjectIds, ctx),
+      evidenceDiversityScore: orEvidenceDiversityScore(evidenceObjectIds, ctx),
+      reasoningMaturity: orReasoningMaturity({ ...reasoning, evidenceFreshnessSummary }),
+      revisionLikelihood: orRevisionLikelihood({ ...reasoning, evidenceFreshnessSummary }),
+      stabilityScore: orStabilityScore({ ...reasoning, evidenceFreshnessSummary }),
+    };
+  }
+
+  function orMakeReasoning(partial, ctx, referenceAt) {
+    const hypotheses = orNormalizeProbabilities(partial.hypotheses || []);
+    const leading = hypotheses.find(h => h.status === "leading") || hypotheses[0] || null;
+    const confidenceProbability = partial.confidenceProbability != null
+      ? partial.confidenceProbability
+      : (leading?.confidence ?? 0.35);
+    const base = {
+      reasoningId: partial.reasoningId,
+      reasoningType: partial.reasoningType,
+      generator: partial.generator,
+      subject: partial.subject,
+      hypotheses,
+      leadingHypothesisId: leading?.hypothesisId || null,
+      conclusion: partial.conclusion,
+      confidenceProbability,
+      confidenceBand: partial.confidenceBand || orConfidenceBand(confidenceProbability),
+      supportingEvidence: (partial.supportingEvidence || []).map(orCopySafe),
+      contradictingEvidence: (partial.contradictingEvidence || []).map(orCopySafe),
+      contradictions: (partial.contradictions || partial.contradictingEvidence || []).map(orCopySafe),
+      missingEvidence: (partial.missingEvidence || []).map(orCopySafe),
+      reasoningSteps: (partial.reasoningSteps || []).map(s => ({
+        step: s.step,
+        description: orCopySafe(s.description || ""),
+      })),
+      assumptions: (partial.assumptions || []).map(orCopySafe),
+      counterfactuals: (partial.counterfactuals || []).map(c => ({
+        condition: orCopySafe(c.condition || ""),
+        outcome: orCopySafe(c.outcome || ""),
+      })),
+      wouldChangeConclusion: (partial.wouldChangeConclusion || partial.wouldChangeMyMind || []).slice(0, 3).map(w => ({
+        condition: orCopySafe(w.condition || ""),
+        direction: w.direction || "revise",
+        description: orCopySafe(w.description || w.condition || ""),
+      })),
+      nextBestEvidence: (partial.nextBestEvidence || []).slice(0, 3).map(n => ({
+        evidenceType: n.evidenceType || "unknown",
+        description: orCopySafe(n.description || ""),
+        expectedImpact: n.expectedImpact || "moderate",
+      })),
+      evidenceObjectIds: partial.evidenceObjectIds || [],
+      dependencyEdges: partial.dependencyEdges || [],
+      derivedBeliefIds: partial.derivedBeliefIds || [],
+      balanceStatus: partial.balanceStatus || null,
+      shortageStatus: partial.shortageStatus || null,
+      reasoning: orCopySafe(partial.reasoning || ""),
+      limitations: (partial.limitations || []).map(orCopySafe),
+      defaultEvidenceType: partial.defaultEvidenceType || "unknown",
+    };
+    return orApplyFreshnessToReasoning(base, ctx, referenceAt);
+  }
+
+  function orHypothesesFromCauses(causes, prefix, evidenceObjectIds) {
+    return (causes || []).slice(0, 3).map((c, i) => orMakeHypothesis({
+      hypothesisId: `${prefix}:${i}`,
+      cause: c.cause || c.label || `cause_${i}`,
+      confidence: c.confidence ?? c.probability ?? 0.33,
+      reason: c.reason || c.description || "",
+      evidenceObjectIds: evidenceObjectIds || [],
+    }));
+  }
+
+  function orGenerateItemConstraintStock(ctx, referenceAt) {
+    const reasonings = [];
+    const ri = beReadinessInputs(ctx);
+    beImportantItemIds(ctx).forEach(itemId => {
+      const row = beItemConfidenceRow(ctx, itemId);
+      const risk = beStockRiskRow(ctx, itemId);
+      if (!row && !risk) return;
+      const conf = row?.volunteerConfidence;
+      const band = conf?.confidenceBand;
+      const hasEvidence = !!(conf && (conf.stats?.totalMovements > 0 || conf.stats?.hasEverBeenRecounted || risk));
+      const balanceStatus = beBalanceStatusFromConfidence(band, hasEvidence);
+      const isCore = (risk?.recipeRoles || []).some(role => role.role === "core");
+      let shortageStatus = null;
+      if (risk) {
+        const meaningful = risk.zeroStock || risk.lowStock || isCore
+          || risk.riskBand === "high" || risk.riskBand === "critical"
+          || risk.recentSubstitutionTouches >= 2;
+        if (meaningful) {
+          if (!risk.appearsInRecipes && risk.zeroStock) shortageStatus = "insufficient_evidence";
+          else if (risk.zeroStock && isCore) shortageStatus = "likely_real_shortage";
+          else if (risk.zeroStock) shortageStatus = "possible_shortage";
+          else if (risk.lowStock && isCore) shortageStatus = "possible_shortage";
+          else if (risk.riskBand === "critical") shortageStatus = "likely_real_shortage";
+          else if (risk.riskBand === "high") shortageStatus = "possible_shortage";
+          else if (risk.recentSubstitutionTouches >= 2 && (risk.lowStock || risk.zeroStock)) shortageStatus = "possible_shortage";
+        }
+      }
+      const supporting = [];
+      const contradicting = [];
+      const missing = [];
+      if (conf) {
+        supporting.push(`Volunteer confidence is ${conf.volunteerLabel || band}.`);
+        if (conf.confidenceReason) supporting.push(conf.confidenceReason);
+      }
+      if (risk) {
+        if (risk.zeroStock) supporting.push(`${risk.itemName} is at zero balance.`);
+        else if (risk.lowStock) supporting.push(`${risk.itemName} is below the low-stock threshold.`);
+        if (risk.riskSignals?.length) supporting.push(`Risk signals: ${risk.riskSignals.join(", ")}.`);
+      }
+      if (!conf?.stats?.hasEverBeenRecounted) missing.push("No physical recount recorded in this system yet.");
+      const evidenceObjectIds = [
+        `stock:${itemId}`,
+        `item_confidence:${itemId}`,
+      ].filter(id => (ctx.evidenceFusion?.objects || []).some(o => o.objectId === id));
+      const hypotheses = orNormalizeProbabilities([
+        orMakeHypothesis({
+          hypothesisId: `hyp:stock:balance_reliable:${itemId}`,
+          cause: "balance_reliable",
+          confidence: balanceStatus === "balance_probably_reliable" ? 0.5 : 0.2,
+          reason: `Recorded balance for ${row?.itemName || itemName(itemId)} appears ${balanceStatus.replace(/_/g, " ")}.`,
+          evidenceObjectIds,
+        }),
+        orMakeHypothesis({
+          hypothesisId: `hyp:stock:shortage:${itemId}`,
+          cause: "stock_shortage",
+          confidence: shortageStatus && shortageStatus !== "insufficient_evidence" ? 0.35 : 0.1,
+          reason: shortageStatus ? `Shortage signal: ${shortageStatus.replace(/_/g, " ")}.` : "No strong shortage signal.",
+          evidenceObjectIds,
+        }),
+        orMakeHypothesis({
+          hypothesisId: `hyp:stock:recount_needed:${itemId}`,
+          cause: "recount_discrepancy",
+          confidence: !conf?.stats?.hasEverBeenRecounted ? 0.25 : 0.1,
+          reason: "Physical recount would reduce balance uncertainty.",
+          evidenceObjectIds,
+        }),
+      ]);
+      const confInputs = {
+        ...ri,
+        multipleSources: supporting.length >= 2,
+        strongItemConfidence: band === "trusted" || band === "probably_right",
+        operationalRelevance: risk && (risk.riskBand === "high" || risk.riskBand === "critical"),
+        insufficientEvidence: balanceStatus === "insufficient_evidence" && !shortageStatus,
+      };
+      const confidenceProbability = computeBeliefConfidence(confInputs);
+      const derivedBeliefIds = [`item_balance:${itemId}`];
+      if (shortageStatus) derivedBeliefIds.push(`shortage:${itemId}`);
+      reasonings.push(orMakeReasoning({
+        reasoningId: `reasoning:stock:${itemId}`,
+        reasoningType: "stock",
+        generator: "item_constraint",
+        subject: { itemId, itemName: row?.itemName || risk?.itemName || itemName(itemId) },
+        hypotheses,
+        conclusion: shortageStatus || balanceStatus,
+        balanceStatus,
+        shortageStatus,
+        confidenceProbability,
+        supportingEvidence: supporting,
+        contradictingEvidence: contradicting,
+        missingEvidence: missing,
+        reasoningSteps: [
+          { step: 1, description: "Review fused inventory and confidence evidence." },
+          { step: 2, description: "Weigh balance reliability against shortage signals." },
+          { step: 3, description: "Form cautious stock constraint conclusion — observe only." },
+        ],
+        assumptions: ["Running balance model is approximately correct between recounts."],
+        counterfactuals: [{
+          condition: "A recent recount confirms shelf quantity",
+          outcome: "Balance confidence would increase; shortage hypothesis may weaken.",
+        }],
+        wouldChangeConclusion: [
+          { condition: "Physical recount within 14 days", direction: "strengthen_balance", description: "Fresh recount evidence would revise balance confidence." },
+          { condition: "Zero balance persists after donation", direction: "strengthen_shortage", description: "Would increase shortage hypothesis weight." },
+        ],
+        nextBestEvidence: [
+          { evidenceType: "recount", description: `Recount ${row?.itemName || itemName(itemId)} on the shelf.`, expectedImpact: "high" },
+        ],
+        evidenceObjectIds,
+        derivedBeliefIds,
+        dependencyEdges: shortageStatus ? [{ toReasoningId: `reasoning:habit:substitution:momPack:${itemId}:*`, edgeType: "stock_pressure", strength: 0.4 }] : [],
+        reasoning: `Evidence suggests stock constraints for ${row?.itemName || itemName(itemId)} warrant monitoring. Balance appears ${balanceStatus.replace(/_/g, " ")}${shortageStatus ? `; shortage signal is ${shortageStatus.replace(/_/g, " ")}` : ""}. Observe only.`,
+        limitations: ctx.synthetic ? ["Synthetic sample data caps reasoning confidence."] : ["Stock reasoning is export-only scaffolding."],
+        defaultEvidenceType: "stock_balance",
+      }, ctx, referenceAt));
+    });
+    return reasonings;
+  }
+
+  function orGenerateSubstitutionCauseHabit(ctx, referenceAt) {
+    const reasonings = [];
+    const ri = beReadinessInputs(ctx);
+    const seen = new Set();
+    (ctx.packingHabits?.observations || []).forEach(obs => {
+      if (obs.type !== "substitution") return;
+      const key = `habit:${obs.type}:${obs.packKey}:${obs.itemId}:${obs.replacementItemId || ""}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const habitKey = packingHabitPatternKey(obs.type, obs.packKey, obs.itemId, obs.replacementItemId || "");
+      const evidenceObjectIds = [
+        `packing_habit:${habitKey}`,
+        `habit:substitution:${obs.packKey}:${obs.itemId}:${obs.replacementItemId || ""}`,
+      ].filter(id => (ctx.evidenceFusion?.objects || []).some(o => o.objectId === id));
+      const status = beHabitStatusFromTrend(obs.trend, obs.evidence, obs.percentage);
+      const hypotheses = orHypothesesFromCauses(
+        obs.possibleCauses || [{ cause: "volunteer_preference", confidence: 0.5, reason: obs.trendReason || obs.volunteerText }],
+        `hyp:habit:sub:${habitKey}`,
+        evidenceObjectIds
+      );
+      if (!hypotheses.length) {
+        hypotheses.push(...orNormalizeProbabilities([orMakeHypothesis({
+          hypothesisId: `hyp:habit:sub:${habitKey}:0`,
+          cause: "volunteer_preference",
+          confidence: 0.6,
+          reason: obs.volunteerText || "Substitution pattern in packing records.",
+          evidenceObjectIds,
+        })]));
+      }
+      const confInputs = {
+        ...ri,
+        multipleSources: !!(obs.trend && obs.possibleCauses?.length),
+        repeatedPattern: obs.count >= 3,
+        earlyEvidence: obs.evidence === "early" || obs.evidence === "too_early",
+        insufficientEvidence: status === "insufficient_evidence",
+        operationalRelevance: true,
+      };
+      reasonings.push(orMakeReasoning({
+        reasoningId: `reasoning:habit:substitution:${obs.packKey}:${obs.itemId}:${obs.replacementItemId || ""}`,
+        reasoningType: "habit",
+        generator: "substitution_cause",
+        subject: {
+          type: obs.type, packKey: obs.packKey, packLabel: obs.packLabel,
+          itemId: obs.itemId, itemName: obs.itemName,
+          replacementItemId: obs.replacementItemId, replacementItemName: obs.replacementItemName,
+        },
+        hypotheses,
+        conclusion: status,
+        confidenceProbability: computeBeliefConfidence(confInputs),
+        supportingEvidence: [obs.volunteerText, obs.trendReason].filter(Boolean),
+        missingEvidence: obs.insufficientHistory ? ["Not enough packing history for a firm conclusion."] : [],
+        reasoningSteps: [
+          { step: 1, description: "Collect substitution evidence from packing habits and operational intelligence." },
+          { step: 2, description: "Evaluate competing causes for the substitution pattern." },
+          { step: 3, description: "Conclude cautiously — observe only, not a recipe note." },
+        ],
+        wouldChangeConclusion: [
+          { condition: "Pattern appears in 5+ additional builds", direction: "strengthen", description: "Would elevate from emerging to established practice." },
+        ],
+        nextBestEvidence: [
+          { evidenceType: "substitution", description: "More production builds without tester sessions.", expectedImpact: "moderate" },
+        ],
+        evidenceObjectIds,
+        derivedBeliefIds: [key],
+        reasoning: `Evidence suggests ${obs.replacementItemName || obs.itemName} may appear as a substitute in ${obs.packLabel}. Observe only.`,
+        limitations: ["Substitution reasoning describes observed practice, not volunteer instructions."],
+        defaultEvidenceType: "substitution",
+      }, ctx, referenceAt));
+    });
+    (ctx.operationalIntelligence?.substitutionImpact || []).forEach(sub => {
+      const key = `habit:substitution:${sub.packKey}:${sub.insteadOfItemId}:${sub.substituteItemId}`;
+      if (seen.has(key)) return;
+      if (sub.packsAffected < 1) return;
+      seen.add(key);
+      const habitKey = packingHabitPatternKey("substitution", sub.packKey, sub.insteadOfItemId, sub.substituteItemId);
+      const evidenceObjectIds = [`habit:substitution:${sub.packKey}:${sub.insteadOfItemId}:${sub.substituteItemId}`, `packing_habit:${habitKey}`]
+        .filter(id => (ctx.evidenceFusion?.objects || []).some(o => o.objectId === id));
+      const trend = sub.relatedTrend;
+      const status = trend?.trend
+        ? beHabitStatusFromTrend(trend.trend, trend.evidence, 0)
+        : (sub.packsAffected >= 5 ? "likely_emerging_practice" : "possible_emerging_practice");
+      const hypotheses = orNormalizeProbabilities([
+        orMakeHypothesis({
+          hypothesisId: `hyp:habit:sub:oi:${sub.packKey}:${sub.insteadOfItemId}:${sub.substituteItemId}`,
+          cause: "operational_substitution",
+          confidence: sub.packsAffected >= 5 ? 0.55 : 0.35,
+          reason: `${sub.substituteItemName} substituted in ${sub.packsAffected} pack records.`,
+          evidenceObjectIds,
+        }),
+        orMakeHypothesis({
+          hypothesisId: `hyp:habit:sub:stock:${sub.insteadOfItemId}`,
+          cause: "stock_shortage",
+          confidence: 0.25,
+          reason: "Substitution may reflect shelf availability pressure.",
+          evidenceObjectIds: [`stock:${sub.insteadOfItemId}`].filter(id => (ctx.evidenceFusion?.objects || []).some(o => o.objectId === id)),
+        }),
+      ]);
+      reasonings.push(orMakeReasoning({
+        reasoningId: `reasoning:habit:substitution:${sub.packKey}:${sub.insteadOfItemId}:${sub.substituteItemId}`,
+        reasoningType: "habit",
+        generator: "substitution_cause",
+        subject: {
+          type: "substitution", packKey: sub.packKey, packLabel: sub.packLabel,
+          itemId: sub.insteadOfItemId, itemName: sub.insteadOfItemName,
+          replacementItemId: sub.substituteItemId, replacementItemName: sub.substituteItemName,
+        },
+        hypotheses,
+        conclusion: status,
+        confidenceProbability: computeBeliefConfidence({
+          ...ri, multipleSources: true, repeatedPattern: sub.packsAffected >= 3,
+          operationalRelevance: true, earlyEvidence: sub.packsAffected < 5,
+        }),
+        supportingEvidence: [
+          `${sub.substituteItemName} substituted for ${sub.insteadOfItemName} in ${sub.packsAffected} ${sub.packLabel} pack records.`,
+          sub.possibleOperationalMeaning,
+        ].filter(Boolean),
+        nextBestEvidence: [{ evidenceType: "substitution", description: "Track whether pattern persists.", expectedImpact: "moderate" }],
+        evidenceObjectIds,
+        derivedBeliefIds: [key],
+        dependencyEdges: [{ toReasoningId: `reasoning:stock:${sub.insteadOfItemId}`, edgeType: "substitution_pressure", strength: 0.5 }],
+        reasoning: `Evidence suggests ${sub.substituteItemName} may replace ${sub.insteadOfItemName} in some ${sub.packLabel} packs. Monitor only.`,
+        limitations: ["Substitution habit reasoning is observational scaffolding only."],
+        defaultEvidenceType: "substitution",
+      }, ctx, referenceAt));
+    });
+    return reasonings;
+  }
+
+  function orGenerateOptionalItemHabit(ctx, referenceAt) {
+    const reasonings = [];
+    const ri = beReadinessInputs(ctx);
+    (ctx.packingHabits?.observations || []).forEach(obs => {
+      if (obs.type !== "optional_usage") return;
+      if (obs.percentage < 20 && (obs.count || 0) < 3) return;
+      const key = `habit:${obs.type}:${obs.packKey}:${obs.itemId}`;
+      const habitKey = packingHabitPatternKey(obs.type, obs.packKey, obs.itemId, "");
+      const evidenceObjectIds = [`packing_habit:${habitKey}`, `habit:optional:${obs.packKey}:${obs.itemId}`]
+        .filter(id => (ctx.evidenceFusion?.objects || []).some(o => o.objectId === id));
+      const status = beHabitStatusFromTrend(obs.trend, obs.evidence, obs.percentage);
+      const hypotheses = orHypothesesFromCauses(
+        obs.possibleCauses || [{ cause: "volunteer_preference", confidence: 0.5, reason: obs.volunteerText }],
+        `hyp:habit:opt:${habitKey}`,
+        evidenceObjectIds
+      );
+      reasonings.push(orMakeReasoning({
+        reasoningId: `reasoning:habit:optional:${obs.packKey}:${obs.itemId}`,
+        reasoningType: "habit",
+        generator: "optional_item",
+        subject: { type: obs.type, packKey: obs.packKey, packLabel: obs.packLabel, itemId: obs.itemId, itemName: obs.itemName },
+        hypotheses: hypotheses.length ? hypotheses : orNormalizeProbabilities([orMakeHypothesis({
+          hypothesisId: `hyp:habit:opt:${habitKey}:0`, cause: "optional_inclusion", confidence: 0.5,
+          reason: obs.volunteerText || `Optional ${obs.itemName} usage pattern.`, evidenceObjectIds,
+        })]),
+        conclusion: status,
+        confidenceProbability: computeBeliefConfidence({
+          ...ri, repeatedPattern: obs.count >= 3, earlyEvidence: obs.evidence === "early",
+          insufficientEvidence: status === "insufficient_evidence",
+        }),
+        supportingEvidence: [obs.volunteerText].filter(Boolean),
+        nextBestEvidence: [{ evidenceType: "optional_usage", description: "More Mom Pack builds for stable optional rate.", expectedImpact: "moderate" }],
+        evidenceObjectIds,
+        derivedBeliefIds: [key],
+        reasoning: `Evidence suggests optional ${obs.itemName} usage in ${obs.packLabel} may reflect packing practice. Observe only.`,
+        limitations: ["Optional habit reasoning does not alter pack recipes."],
+        defaultEvidenceType: "optional_usage",
+      }, ctx, referenceAt));
+    });
+    return reasonings;
+  }
+
+  function orGenerateRecipeAlignment(ctx, referenceAt) {
+    const reasonings = [];
+    const ri = beReadinessInputs(ctx);
+    const subImpact = ctx.operationalIntelligence?.substitutionImpact || [];
+    Object.keys(RECIPES).forEach(packKey => {
+      const recipe = RECIPES[packKey];
+      let status = "insufficient_evidence";
+      const supporting = [];
+      const missing = [];
+      const evidenceObjectIds = [];
+      if (!recipe.confirmed) {
+        status = "unconfirmed_recipe";
+        missing.push(`${recipe.label} is marked unconfirmed in configuration.`);
+        supporting.push("Recipe contents are not yet confirmed for operational use.");
+        if ((ctx.evidenceFusion?.objects || []).some(o => o.objectId === `recipe:${packKey}:unconfirmed`)) {
+          evidenceObjectIds.push(`recipe:${packKey}:unconfirmed`);
+        }
+      } else {
+        const coreSubs = subImpact.filter(s =>
+          s.packKey === packKey && recipe.core.some(c => c.itemId === s.insteadOfItemId)
+        );
+        const totalAffected = coreSubs.reduce((s, x) => s + x.packsAffected, 0);
+        if (totalAffected >= 8) {
+          status = "likely_recipe_mismatch";
+          supporting.push(`Repeated substitutions touch core items across ${totalAffected} pack records.`);
+        } else if (totalAffected >= 3) {
+          status = "possible_recipe_mismatch";
+          supporting.push(`Some substitutions touch core ${recipe.label} items (${totalAffected} pack records).`);
+        } else if ((ctx.operationalIntelligence?.summary?.productionPacksCreated || 0) >= 10) {
+          status = "recipe_aligned";
+          supporting.push(`No strong substitution pressure on core ${recipe.label} items.`);
+        } else {
+          missing.push("Limited production history for this pack type.");
+        }
+      }
+      const hypotheses = orNormalizeProbabilities([
+        orMakeHypothesis({
+          hypothesisId: `hyp:recipe:aligned:${packKey}`, cause: "recipe_aligned",
+          confidence: status === "recipe_aligned" ? 0.55 : 0.2,
+          reason: `Recipe alignment appears ${status.replace(/_/g, " ")}.`, evidenceObjectIds,
+        }),
+        orMakeHypothesis({
+          hypothesisId: `hyp:recipe:mismatch:${packKey}`, cause: "recipe_mismatch",
+          confidence: status.includes("mismatch") ? 0.45 : 0.15,
+          reason: "Substitution pressure on core items.", evidenceObjectIds,
+        }),
+      ]);
+      reasonings.push(orMakeReasoning({
+        reasoningId: `reasoning:recipe:${packKey}`,
+        reasoningType: "recipe",
+        generator: "recipe_alignment",
+        subject: { packKey, packLabel: recipe.label, confirmed: !!recipe.confirmed },
+        hypotheses,
+        conclusion: status,
+        confidenceProbability: computeBeliefConfidence({
+          ...ri, multipleSources: supporting.length >= 1,
+          sufficientHistory: (ctx.operationalIntelligence?.summary?.productionPacksCreated || 0) >= 20,
+          insufficientEvidence: status === "insufficient_evidence",
+          weakBabyPackHistory: packKey === "babyPack" && status === "insufficient_evidence",
+        }),
+        supportingEvidence: supporting,
+        missingEvidence: missing,
+        nextBestEvidence: [{ evidenceType: "recipe_config", description: "Confirm recipe with volunteers.", expectedImpact: "high" }],
+        evidenceObjectIds,
+        derivedBeliefIds: [`recipe_alignment:${packKey}`],
+        reasoning: status === "unconfirmed_recipe"
+          ? `We currently believe ${recipe.label} alignment is unconfirmed. Observe only.`
+          : `Evidence suggests ${recipe.label} is ${status.replace(/_/g, " ")}. Monitor only.`,
+        limitations: ["Recipe alignment reasoning does not alter pack recipes."],
+        defaultEvidenceType: "recipe_config",
+      }, ctx, referenceAt));
+    });
+    return reasonings;
+  }
+
+  function orGenerateDonationReasoning(ctx, referenceAt) {
+    const reasonings = [];
+    const donations = [...(ctx.operationalIntelligence?.donationImpact || [])]
+      .map(d => ({ donation: d, maxEnable: opDonationMaxEnablement(d) }))
+      .filter(x => x.maxEnable >= 5)
+      .sort((a, b) => b.maxEnable - a.maxEnable)
+      .slice(0, 5);
+    donations.forEach(({ donation: d, maxEnable }) => {
+      const topLine = [...(d.lines || [])].sort((a, b) => opDonationLineMaxEnablement(b) - opDonationLineMaxEnablement(a))[0];
+      if (!topLine) return;
+      const donationId = d.donationId || d.id || `${d.date}-${d.donor || "unknown"}`;
+      const evidenceObjectIds = [`donation:${donationId}`]
+        .filter(id => (ctx.evidenceFusion?.objects || []).some(o => o.objectId === id));
+      const hypotheses = orNormalizeProbabilities([
+        orMakeHypothesis({
+          hypothesisId: `hyp:donation:enable:${donationId}`,
+          cause: "donation_enablement",
+          confidence: maxEnable >= 10 ? 0.6 : 0.4,
+          reason: `Donation may enable up to ${maxEnable} packs (estimated).`,
+          evidenceObjectIds,
+        }),
+        orMakeHypothesis({
+          hypothesisId: `hyp:donation:partial:${donationId}`,
+          cause: "partial_impact",
+          confidence: 0.25,
+          reason: "Enablement estimate depends on other stock constraints.",
+          evidenceObjectIds,
+        }),
+      ]);
+      reasonings.push(orMakeReasoning({
+        reasoningId: `reasoning:donation:${donationId}`,
+        reasoningType: "donation",
+        generator: "donation_impact",
+        subject: { itemId: topLine.itemId, itemName: itemName(topLine.itemId), donor: d.donor, date: d.date, donationId },
+        hypotheses,
+        conclusion: maxEnable >= 10 ? "meaningful_enablement" : "possible_enablement",
+        confidenceProbability: computeBeliefConfidence({
+          ...beReadinessInputs(ctx), operationalRelevance: true, insufficientEvidence: maxEnable < 5,
+        }),
+        supportingEvidence: [`Donation on ${d.date} from ${d.donor || "unknown donor"} may enable up to ${maxEnable} packs (estimated).`],
+        derivedBeliefIds: [],
+        nextBestEvidence: [{ evidenceType: "donation", description: "Track post-donation packing volume.", expectedImpact: "moderate" }],
+        evidenceObjectIds,
+        reasoning: `Evidence suggests a meaningful donation of ${itemName(topLine.itemId)} may have enabled packing capacity. Observe only.`,
+        limitations: ["Donation enablement is an estimate, not a guarantee.", "No derived belief type — reasoning only."],
+        defaultEvidenceType: "donation",
+      }, ctx, referenceAt));
+    });
+    return reasonings;
+  }
+
+  function orGenerateInventoryConfidence(ctx, referenceAt) {
+    const reasonings = [];
+    const ri = beReadinessInputs(ctx);
+    const ir = ctx.operationalIntelligence?.impactReadiness || {};
+    const confSummary = buildConfidenceSummary(ctx.itemConfidence || []);
+    const lowRatio = (ctx.itemConfidence || []).length > 0
+      ? (confSummary.volunteer.uncertain + confSummary.volunteer.needs_checking) / ctx.itemConfidence.length
+      : 1;
+    if (!ir.readyForImpactJudgement || lowRatio > 0.3 || ri.fewRecounts) {
+      const evidenceObjectIds = (ctx.itemConfidence || []).slice(0, 5)
+        .map(r => `item_confidence:${r.itemId}`)
+        .filter(id => (ctx.evidenceFusion?.objects || []).some(o => o.objectId === id));
+      const hypotheses = orNormalizeProbabilities([
+        orMakeHypothesis({
+          hypothesisId: "hyp:confidence:immaturity",
+          cause: "insufficient_recounts",
+          confidence: ri.fewRecounts ? 0.5 : 0.3,
+          reason: "Few physical recounts recorded.",
+          evidenceObjectIds,
+        }),
+        orMakeHypothesis({
+          hypothesisId: "hyp:confidence:movement_noise",
+          cause: "movement_uncertainty",
+          confidence: lowRatio > 0.3 ? 0.4 : 0.25,
+          reason: `${Math.round(lowRatio * 100)}% of items have low volunteer confidence.`,
+          evidenceObjectIds,
+        }),
+      ]);
+      reasonings.push(orMakeReasoning({
+        reasoningId: "reasoning:confidence:system",
+        reasoningType: "confidence",
+        generator: "inventory_confidence",
+        subject: { scope: "system_confidence" },
+        hypotheses,
+        conclusion: ctx.synthetic ? "insufficient_evidence" : "confidence_immature",
+        confidenceProbability: computeBeliefConfidence({
+          ...ri, multipleSources: true, impactReadinessFalse: !ir.readyForImpactJudgement,
+          insufficientEvidence: ctx.synthetic,
+        }),
+        supportingEvidence: (ir.blockers || []).slice(0, 3),
+        missingEvidence: ri.fewRecounts ? ["More recounts needed."] : [],
+        derivedBeliefIds: [],
+        nextBestEvidence: [{ evidenceType: "recount", description: "Regular shelf recounts across core items.", expectedImpact: "high" }],
+        evidenceObjectIds,
+        reasoning: "Evidence suggests confidence across the storeroom is still immature. Observe only.",
+        limitations: ["Confidence reasoning is export-only — no derived belief type."],
+        defaultEvidenceType: "analytics_signal",
+      }, ctx, referenceAt));
+    }
+    return reasonings;
+  }
+
+  function orGenerateWorkflowFrictionReadiness(ctx, referenceAt) {
+    const reasonings = [];
+    const ri = beReadinessInputs(ctx);
+    const ir = ctx.operationalIntelligence?.impactReadiness || {};
+    const episodes = (ctx.analyticsEvents || []).filter(e => e.event === "interaction_episode_complete").slice(-10);
+    const frictionEvidence = episodes.filter(e =>
+      ["timeout", "field_abandoned", "error"].includes(e.details?.completionReason)
+      || (e.details?.visibleMs || 0) > 30000
+    );
+    let status = "not_ready";
+    if (ctx.synthetic) status = "blocked";
+    else if (ir.readyForImpactJudgement) status = "ready";
+    else if ((ir.readinessScore || 0) >= 50) status = "nearly_ready";
+    else if ((ir.blockers || []).length >= 3) status = "blocked";
+    const evidenceObjectIds = episodes.slice(0, 3).map(e => `episode:${e.details?.interactionEpisodeId || e.flowId || e.timestamp}`)
+      .filter(id => (ctx.evidenceFusion?.objects || []).some(o => o.objectId === id));
+    const hypotheses = orNormalizeProbabilities([
+      orMakeHypothesis({
+        hypothesisId: "hyp:readiness:impact_gate",
+        cause: "impact_readiness",
+        confidence: ir.readyForImpactJudgement ? 0.55 : 0.35,
+        reason: ir.readyForImpactJudgement ? "Impact judgement gate is open." : "Impact judgement not ready.",
+        evidenceObjectIds: [],
+      }),
+      orMakeHypothesis({
+        hypothesisId: "hyp:readiness:workflow_friction",
+        cause: "workflow_friction",
+        confidence: frictionEvidence.length >= 2 ? 0.35 : 0.1,
+        reason: frictionEvidence.length ? `${frictionEvidence.length} interaction episodes show friction signals.` : "Limited workflow friction evidence.",
+        evidenceObjectIds,
+      }),
+    ]);
+    const supporting = (ir.reasons || []).slice(0, 5);
+    if (frictionEvidence.length) supporting.push(`${frictionEvidence.length} episodes with timeout, abandonment, or long dwell.`);
+    reasonings.push(orMakeReasoning({
+      reasoningId: "reasoning:readiness:overall",
+      reasoningType: "readiness",
+      generator: frictionEvidence.length ? "workflow_friction" : "readiness_gate",
+      subject: { scope: "operational_readiness" },
+      hypotheses,
+      conclusion: status,
+      confidenceProbability: computeBeliefConfidence({
+        ...ri, multipleSources: supporting.length >= 2,
+        sufficientHistory: (ctx.operationalIntelligence?.summary?.productionPacksCreated || 0) >= 50,
+        impactReadinessFalse: !ir.readyForImpactJudgement,
+      }),
+      supportingEvidence: supporting,
+      missingEvidence: (ir.blockers || []).slice(0, 5),
+      evidenceObjectIds,
+      derivedBeliefIds: ["readiness:overall"],
+      dependencyEdges: [{ toReasoningId: "reasoning:confidence:system", edgeType: "confidence_dependency", strength: 0.4 }],
+      nextBestEvidence: [{ evidenceType: "analytics_signal", description: "More production recounts and builds.", expectedImpact: "high" }],
+      reasoning: ctx.synthetic
+        ? "Operational readiness is blocked by synthetic sample data. Observe only."
+        : `Evidence suggests overall readiness is ${status.replace(/_/g, " ")}.`,
+      limitations: ["Readiness reasoning is framework scaffolding, not volunteer messaging."],
+      defaultEvidenceType: "analytics_signal",
+    }, ctx, referenceAt));
+    return reasonings;
+  }
+
+  function orBuildReasoningDependencyGraph(reasonings) {
+    const edges = [];
+    const nodeIds = new Set((reasonings || []).map(r => r.reasoningId));
+    (reasonings || []).forEach(r => {
+      (r.dependencyEdges || []).forEach(e => {
+        const target = String(e.toReasoningId || "").replace(/\*/g, "");
+        const match = [...nodeIds].find(id => id.startsWith(target) || target.startsWith(id));
+        if (match && match !== r.reasoningId) {
+          edges.push({ fromReasoningId: r.reasoningId, toReasoningId: match, edgeType: e.edgeType, strength: e.strength });
+        }
+      });
+    });
+    return { nodes: [...nodeIds], edges };
+  }
+
+  function computeOperationalReasoning(deps) {
+    const ctx = buildReasoningCtx(deps || {});
+    const referenceAt = deps.referenceAt || new Date().toISOString();
+    const reasonings = [
+      ...orGenerateItemConstraintStock(ctx, referenceAt),
+      ...orGenerateSubstitutionCauseHabit(ctx, referenceAt),
+      ...orGenerateOptionalItemHabit(ctx, referenceAt),
+      ...orGenerateRecipeAlignment(ctx, referenceAt),
+      ...orGenerateDonationReasoning(ctx, referenceAt),
+      ...orGenerateInventoryConfidence(ctx, referenceAt),
+      ...orGenerateWorkflowFrictionReadiness(ctx, referenceAt),
+    ];
+    const dependencyGraph = orBuildReasoningDependencyGraph(reasonings);
+    const allEvidence = reasonings.flatMap(r => (r.evidenceFreshnessSummary ? [{ freshness: { freshnessWeight: r.evidenceFreshnessSummary.averageFreshnessWeight } }] : []));
+    const freshnessRollup = summarizeEvidenceFreshness(allEvidence);
+    const byType = {};
+    reasonings.forEach(r => { byType[r.reasoningType] = (byType[r.reasoningType] || 0) + 1; });
+    return {
+      generatedAt: referenceAt,
+      modelVersion: REASONING_MODEL_VERSION,
+      activeLearning: { enabled: false },
+      dataQuality: { synthetic: ctx.synthetic, productionOnlyDefault: true },
+      dependencyGraph,
+      reasonings,
+      summary: {
+        totalReasonings: reasonings.length,
+        byType,
+        byGenerator: reasonings.reduce((acc, r) => {
+          acc[r.generator] = (acc[r.generator] || 0) + 1;
+          return acc;
+        }, {}),
+        evidenceFreshnessSummary: freshnessRollup,
+      },
+      limitations: [
+        "Operational reasoning is export-only scaffolding, not volunteer instructions.",
+        ctx.synthetic ? "Synthetic sample data limits reasoning confidence." : null,
+        "Donation and confidence reasoning objects do not derive belief types.",
+      ].filter(Boolean),
+    };
+  }
+
+  function orBeliefFromStockReasoning(r, ctx) {
+    const beliefs = [];
+    const itemId = r.subject?.itemId;
+    if (!itemId) return beliefs;
+    const ri = beReadinessInputs(ctx);
+    const balanceStatus = r.balanceStatus;
+    const shortageStatus = r.shortageStatus;
+    if (balanceStatus && r.derivedBeliefIds?.includes(`item_balance:${itemId}`)) {
+      const row = beItemConfidenceRow(ctx, itemId);
+      const risk = beStockRiskRow(ctx, itemId);
+      const band = row?.volunteerConfidence?.confidenceBand;
+      const supporting = r.supportingEvidence || [];
+      const confInputs = {
+        ...ri,
+        multipleSources: supporting.length >= 2,
+        strongItemConfidence: band === "trusted" || band === "probably_right",
+        operationalRelevance: risk && (risk.riskBand === "high" || risk.riskBand === "critical"),
+        insufficientEvidence: balanceStatus === "insufficient_evidence",
+      };
+      beliefs.push({
+        ...beMakeBelief({
+          beliefId: `item_balance:${itemId}`,
+          beliefType: "item_balance",
+          subject: r.subject,
+          status: balanceStatus,
+          confidenceProbability: r.confidenceProbability,
+          supportingEvidence: supporting,
+          contradictingEvidence: [],
+          unknowns: r.missingEvidence || [],
+          reasoning: r.reasoning,
+          limitations: r.limitations || [],
+        }, ctx),
+        derivedFromReasoningId: r.reasoningId,
+        leadingHypothesisId: r.leadingHypothesisId,
+        wouldChangeMyMind: r.wouldChangeConclusion || [],
+        nextBestEvidence: r.nextBestEvidence || [],
+      });
+    }
+    if (shortageStatus && r.derivedBeliefIds?.includes(`shortage:${itemId}`)) {
+      const risk = beStockRiskRow(ctx, itemId);
+      beliefs.push({
+        ...beMakeBelief({
+          beliefId: `shortage:${itemId}`,
+          beliefType: "shortage",
+          subject: r.subject,
+          status: shortageStatus,
+          confidenceProbability: r.confidenceProbability,
+          supportingEvidence: r.supportingEvidence || [],
+          contradictingEvidence: risk && risk.balance > risk.threshold && !risk.zeroStock
+            ? [`Balance (${risk.balance}) is above the low-stock threshold.`] : [],
+          unknowns: r.missingEvidence || [],
+          reasoning: r.reasoning,
+          limitations: r.limitations || [],
+        }, ctx),
+        derivedFromReasoningId: r.reasoningId,
+        leadingHypothesisId: r.leadingHypothesisId,
+        wouldChangeMyMind: r.wouldChangeConclusion || [],
+        nextBestEvidence: r.nextBestEvidence || [],
+      });
+    }
+    return beliefs;
+  }
+
+  function orBeliefFromHabitReasoning(r, ctx) {
+    const beliefId = r.derivedBeliefIds?.[0];
+    if (!beliefId) return [];
+    return [{
+      ...beMakeBelief({
+        beliefId,
+        beliefType: "habit",
+        subject: r.subject,
+        status: r.conclusion,
+        confidenceProbability: r.confidenceProbability,
+        supportingEvidence: r.supportingEvidence || [],
+        contradictingEvidence: r.contradictingEvidence || [],
+        unknowns: r.missingEvidence || [],
+        reasoning: r.reasoning,
+        limitations: r.limitations || [],
+      }, ctx),
+      derivedFromReasoningId: r.reasoningId,
+      leadingHypothesisId: r.leadingHypothesisId,
+      wouldChangeMyMind: r.wouldChangeConclusion || [],
+      nextBestEvidence: r.nextBestEvidence || [],
+    }];
+  }
+
+  function orBeliefFromRecipeReasoning(r, ctx) {
+    const beliefId = r.derivedBeliefIds?.[0];
+    if (!beliefId) return [];
+    return [{
+      ...beMakeBelief({
+        beliefId,
+        beliefType: "recipe_alignment",
+        subject: r.subject,
+        status: r.conclusion,
+        confidenceProbability: r.confidenceProbability,
+        supportingEvidence: r.supportingEvidence || [],
+        contradictingEvidence: r.contradictingEvidence || [],
+        unknowns: r.missingEvidence || [],
+        reasoning: r.reasoning,
+        limitations: r.limitations || [],
+      }, ctx),
+      derivedFromReasoningId: r.reasoningId,
+      leadingHypothesisId: r.leadingHypothesisId,
+      wouldChangeMyMind: r.wouldChangeConclusion || [],
+      nextBestEvidence: r.nextBestEvidence || [],
+    }];
+  }
+
+  function orBeliefFromReadinessReasoning(r, ctx) {
+    const beliefId = r.derivedBeliefIds?.[0];
+    if (!beliefId) return [];
+    return [{
+      ...beMakeBelief({
+        beliefId,
+        beliefType: "readiness",
+        subject: r.subject,
+        status: r.conclusion,
+        confidenceProbability: r.confidenceProbability,
+        supportingEvidence: r.supportingEvidence || [],
+        contradictingEvidence: r.contradictingEvidence || [],
+        unknowns: r.missingEvidence || [],
+        reasoning: r.reasoning,
+        limitations: r.limitations || [],
+        actionability: "observe_only",
+      }, ctx),
+      derivedFromReasoningId: r.reasoningId,
+      leadingHypothesisId: r.leadingHypothesisId,
+      wouldChangeMyMind: r.wouldChangeConclusion || [],
+      nextBestEvidence: r.nextBestEvidence || [],
+    }];
+  }
+
+  function deriveBeliefsFromReasoning(operationalReasoning, deps) {
+    const ctx = beBeliefCtx(deps || {});
+    const referenceAt = deps.referenceAt || operationalReasoning?.generatedAt || new Date().toISOString();
+    const reasonings = operationalReasoning?.reasonings || [];
+    let beliefs = [];
+    reasonings.forEach(r => {
+      if (r.reasoningType === "stock") beliefs.push(...orBeliefFromStockReasoning(r, ctx));
+      else if (r.reasoningType === "habit") beliefs.push(...orBeliefFromHabitReasoning(r, ctx));
+      else if (r.reasoningType === "recipe") beliefs.push(...orBeliefFromRecipeReasoning(r, ctx));
+      else if (r.reasoningType === "readiness") beliefs.push(...orBeliefFromReadinessReasoning(r, ctx));
+    });
+    beliefs = beliefs.map(b => beApplyFreshnessToBelief(b, ctx, referenceAt));
+    const freshnessRollup = summarizeEvidenceFreshness(
+      beliefs.flatMap(b => (b.supportingEvidenceDetail || []).map(d => ({ freshness: d.freshness })))
+    );
+    const limitations = [
+      "Beliefs are derived from operational reasoning — export-only compatibility layer.",
+      ctx.synthetic ? "Synthetic sample data limits belief confidence." : null,
+      !beImpactReady(ctx) ? "Impact readiness gate is closed — beliefs remain cautious." : null,
+      "Evidence freshness adjusts confidence for current relevance — older evidence is not discarded.",
+    ].filter(Boolean);
+    return {
+      generatedAt: referenceAt,
+      modelVersion: BE_MODEL_VERSION,
+      compatibilityLayer: true,
+      sourceModelVersion: REASONING_MODEL_VERSION,
+      dataQuality: { synthetic: ctx.synthetic, productionOnlyDefault: true },
+      summary: { ...beBuildBeliefSummary(beliefs, ctx), evidenceFreshnessSummary: freshnessRollup, derivedBeliefCount: beliefs.length },
+      beliefs,
+      limitations,
+    };
+  }
+
+  function operationalReasoningSummaryConcise(operationalReasoning) {
+    if (!operationalReasoning) return null;
+    const reasonings = operationalReasoning.reasonings || [];
+    const sorted = [...reasonings].sort((a, b) => b.confidenceProbability - a.confidenceProbability);
+    const uncertain = [...reasonings].sort((a, b) => a.confidenceProbability - b.confidenceProbability);
+    return {
+      totalReasonings: reasonings.length,
+      byType: operationalReasoning.summary?.byType || {},
+      byGenerator: operationalReasoning.summary?.byGenerator || {},
+      dependencyEdgeCount: operationalReasoning.dependencyGraph?.edges?.length || 0,
+      activeLearningEnabled: operationalReasoning.activeLearning?.enabled ?? false,
+      topThreeReasonings: sorted.slice(0, 3).map(r => ({
+        reasoningId: r.reasoningId,
+        reasoningType: r.reasoningType,
+        generator: r.generator,
+        conclusion: r.conclusion,
+        confidenceProbability: r.confidenceProbability,
+        reasoningMaturity: r.reasoningMaturity,
+      })),
+      highestUncertaintyReasonings: uncertain.slice(0, 3).map(r => ({
+        reasoningId: r.reasoningId,
+        reasoningType: r.reasoningType,
+        confidenceProbability: r.confidenceProbability,
+      })),
+      evidenceFreshnessSummary: operationalReasoning.summary?.evidenceFreshnessSummary || null,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // BELIEF ENGINE — Phase 3B framework (export / ops only)
   // ═══════════════════════════════════════════════════════════════════
 
-  const BE_MODEL_VERSION = "3B.1";
+  const BE_MODEL_VERSION = "4.0";
   const BE_BANNED_COPY = /\b(ai|algorithm|detected|recommendation|should|must|proven|guaranteed|decision|optimis[ez]ation|optimisation|change recipe)\b/gi;
 
   function beCopySafe(text) {
@@ -6260,32 +7262,12 @@
   }
 
   function computeBeliefEngine(deps) {
-    const ctx = beBeliefCtx(deps || {});
-    const referenceAt = deps.referenceAt || new Date().toISOString();
-    const beliefs = [
-      ...computeItemBalanceBeliefs(ctx),
-      ...computeShortageBeliefs(ctx),
-      ...computeHabitBeliefs(ctx),
-      ...computeRecipeAlignmentBeliefs(ctx),
-      ...computeReadinessBeliefs(ctx),
-    ].map(b => beApplyFreshnessToBelief(b, ctx, referenceAt));
-    const freshnessRollup = summarizeEvidenceFreshness(
-      beliefs.flatMap(b => (b.supportingEvidenceDetail || []).map(d => ({ freshness: d.freshness })))
-    );
-    const limitations = [
-      "Beliefs are export-only scaffolding, not volunteer instructions.",
-      ctx.synthetic ? "Synthetic sample data limits belief confidence." : null,
-      !beImpactReady(ctx) ? "Impact readiness gate is closed — beliefs remain cautious." : null,
-      "Evidence freshness adjusts confidence for current relevance — older evidence is not discarded.",
-    ].filter(Boolean);
-    return {
-      generatedAt: referenceAt,
-      modelVersion: BE_MODEL_VERSION,
-      dataQuality: { synthetic: ctx.synthetic, productionOnlyDefault: true },
-      summary: { ...beBuildBeliefSummary(beliefs, ctx), evidenceFreshnessSummary: freshnessRollup },
-      beliefs,
-      limitations,
-    };
+    const operationalReasoning = deps.operationalReasoning
+      || computeOperationalReasoning(deps || {});
+    return deriveBeliefsFromReasoning(operationalReasoning, {
+      ...(deps || {}),
+      operationalReasoning,
+    });
   }
 
   function beliefEngineSummaryConcise(beliefEngine) {
@@ -6296,6 +7278,9 @@
     const byAction = beliefEngine.summary?.byActionability || beCountBy(beliefs, b => b.actionability);
     return {
       totalBeliefs: beliefs.length,
+      compatibilityLayer: beliefEngine.compatibilityLayer ?? false,
+      sourceModelVersion: beliefEngine.sourceModelVersion || null,
+      derivedBeliefCount: beliefEngine.summary?.derivedBeliefCount ?? beliefs.length,
       readyForRecommendations: beliefEngine.summary?.readyForRecommendations ?? false,
       monitorBeliefCount: byAction.monitor || 0,
       observeOnlyBeliefCount: byAction.observe_only || 0,
@@ -6305,6 +7290,7 @@
         beliefType: b.beliefType,
         status: b.status,
         confidenceProbability: b.confidenceProbability,
+        derivedFromReasoningId: b.derivedFromReasoningId || null,
       })),
       highestUncertaintyBeliefs: uncertain.slice(0, 3).map(b => ({
         beliefId: b.beliefId,
@@ -6383,6 +7369,7 @@
       packingHabits: deps.packingHabits,
       operationalIntelligence: deps.operationalIntelligence,
       beliefEngine: deps.beliefEngine || null,
+      operationalReasoning: deps.operationalReasoning || null,
       evidenceFusion: deps.evidenceFusion || null,
       stockBeliefState: deps.stockBeliefState || null,
       recountCalibration: deps.recountCalibration || null,
@@ -6433,7 +7420,7 @@
           ? `habit:${memory.subject.type}:${memory.subject.packKey}:${memory.subject.itemId}:${memory.subject.replacementItemId}`
           : `habit:${memory.subject.type}:${memory.subject.packKey}:${memory.subject.itemId}`;
         const belief = omBelief(ctx, beliefId);
-        if (belief && obs?.evidence === "too_early" && belief.recommendedAction === "observe_only") return false;
+        if (belief && obs?.evidence === "too_early" && belief.actionability === "observe_only") return false;
       }
 
       if (memory.memoryType === "stock_memory" && memory.subject?.itemId) {

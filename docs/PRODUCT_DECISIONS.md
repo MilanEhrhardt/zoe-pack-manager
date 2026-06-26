@@ -24,6 +24,17 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Operational reasoning engine (Phase 4, export only)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Add Phase 4 Operational Reasoning Engine as the primary epistemic layer between Evidence Fusion and Belief Engine. `computeOperationalReasoning` with six reasoning types (`stock`, `habit`, `recipe`, `donation`, `confidence`, `readiness`) and generators (`item_constraint`, `substitution_cause`, `optional_item`, `recipe_alignment`, `donation_impact`, `inventory_confidence`, `workflow_friction`). Reasoning objects carry hypotheses with `normalizeProbabilities`, reasoning metadata (`reasoningSteps`, `assumptions`, `counterfactuals`, `wouldChangeConclusion`, `nextBestEvidence`, `dependencyEdges`), maturity/stability scores, and top-level `dependencyGraph`. `deriveBeliefsFromReasoning` projects lightweight beliefs with stable IDs and traceability fields (`derivedFromReasoningId`, `leadingHypothesisId`, `wouldChangeMyMind`, `nextBestEvidence`). `computeBeliefEngine` becomes a thin wrapper only (`compatibilityLayer: true`, `BE_MODEL_VERSION` 4.0). Donation/confidence reasoning-only — no new belief types. Full `operationalReasoning` in AI Data Pack; analytics `operationalReasoningSummary` only. `activeLearning: { enabled: false }`. Operational Memory thin ctx + `belief.actionability` fix in `omFilterRedundantMemories` only. Reuses Phase 3E freshness helpers. No localStorage, commit, render, recipe, or volunteer UI changes. |
+| **Date** | 2026-06-26 |
+| **Context** | Phase 3B beliefs mixed measurement conclusions with epistemic scaffolding. Phase 4 reframes reasoning as the source of truth; beliefs are a compatibility projection for existing export consumers. |
+| **Reasoning** | Separates evidence → hypotheses → reasoning → beliefs → memory; enables future SPE/Mission Control consumers to read `operationalReasoning` first while preserving `beliefEngine` contract. |
+| **Alternatives Considered** | Enrich beliefs in place (superseded); reasoning-only export without top-level `beliefEngine` (rejected — breaks backward compat); dual-path shadow layer (rejected — maintenance burden). |
+| **Status** | Accepted |
+
 ### Evidence freshness layer (Phase 3E, export only)
 
 | Field | Content |
