@@ -925,7 +925,7 @@
   // capture what the model believed an item held just before the count and
   // score it against what was actually counted. A belief is "effectively right"
   // if it was within RECOUNT_TOLERANCE_ABS units OR RECOUNT_TOLERANCE_PCT.
-  const RECOUNT_CALIBRATION_MODEL_VERSION = "rc.1";
+  const RECOUNT_CALIBRATION_MODEL_VERSION = "rc.2"; // rc.2 also captures the belief-state interval
   const RECOUNT_TOLERANCE_ABS = 2;
   const RECOUNT_TOLERANCE_PCT = 0.10;
   const RECOUNT_MIN_LABELED = 8; // real labeled recounts needed before calibration is meaningful
@@ -2320,15 +2320,16 @@
       synthetic: !!state.sampleData,
     });
     const beliefEngineSummary = beliefEngineSummaryConcise(beliefEngine);
-    const operationalMemory = opts.operationalMemory || computeOperationalMemory({
-      itemConfidence, packingHabits: packingHabitsFull, operationalIntelligence, beliefEngine,
-      synthetic: !!state.sampleData,
-    });
-    const operationalMemorySummary = operationalMemorySummaryConcise(operationalMemory);
     const recountCalibration = opts.recountCalibration || buildRecountCalibration(tx);
     const recountCalibrationSummary = recountCalibrationSummaryConcise(recountCalibration);
     const stockBeliefState = opts.stockBeliefState || computeStockBeliefState(tx);
     const stockBeliefSummary = buildStockBeliefSummary(stockBeliefState);
+    const operationalMemory = opts.operationalMemory || computeOperationalMemory({
+      itemConfidence, packingHabits: packingHabitsFull, operationalIntelligence, beliefEngine,
+      stockBeliefState, recountCalibration,
+      synthetic: !!state.sampleData,
+    });
+    const operationalMemorySummary = operationalMemorySummaryConcise(operationalMemory);
     const productionIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { productionOnly: true });
     const testerIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { testerOnly: true });
     const interactionEpisodeSummary = analyticsInteractionEpisodeSummary(events);
@@ -2421,11 +2422,13 @@
     const beliefEngine = computeBeliefEngine({
       itemConfidence, packingHabits, operationalIntelligence, synthetic: !!state.sampleData,
     });
-    const operationalMemory = computeOperationalMemory({
-      itemConfidence, packingHabits, operationalIntelligence, beliefEngine, synthetic: !!state.sampleData,
-    });
     const recountCalibration = buildRecountCalibration(state.transactions);
     const stockBeliefState = computeStockBeliefState(state.transactions);
+    const operationalMemory = computeOperationalMemory({
+      itemConfidence, packingHabits, operationalIntelligence, beliefEngine,
+      stockBeliefState, recountCalibration,
+      synthetic: !!state.sampleData,
+    });
     const payload = {
       exportedAt: new Date().toISOString(),
       app: "Zoe Pack Manager",
@@ -2742,7 +2745,8 @@
           const s = ensure(line.itemId);
           if (!confidenceTxAfterAnchor(tx.date, s.lastRecountDate)) continue;
           s.donationLineCount += 1;
-          s.totalMovements += 1;
+          const donationUnits = Number(line.unitsAdded ?? line.qty) || 0;
+          s.totalMovements += donationUnits > 0 ? donationUnits : 1;
         }
         return;
       }
@@ -2759,10 +2763,10 @@
           const s = ensure(itemId);
           if (!confidenceTxAfterAnchor(tx.date, s.lastRecountDate)) continue;
           s.packDeductions += deduct;
+          s.totalMovements += deduct;
           if (!touched.has(itemId)) {
             s.buildTouchCount += 1;
             touched.add(itemId);
-            s.totalMovements += 1;
           }
           if (isTester) s.testerBuildTouches += 1;
           else s.volunteerBuildTouches += 1;
@@ -2820,8 +2824,8 @@
     if (days > 90) {
       return "Not physically checked for a while.";
     }
-    if (stats.totalMovements > 25) {
-      return "Many pack movements since last count.";
+    if (stats.totalMovements > 50) {
+      return "Many units moved since last count.";
     }
     if (stats.donationLineCount >= 3) {
       return "Several donations since last count.";
@@ -2875,10 +2879,10 @@
     }
 
     const movements = stats.totalMovements;
-    if (movements <= 2) score += 10;
-    else if (movements <= 10) score += 5;
-    else if (movements <= 25) score -= 5;
-    else if (movements <= 50) score -= 15;
+    if (movements <= 5) score += 10;
+    else if (movements <= 20) score += 5;
+    else if (movements <= 50) score -= 5;
+    else if (movements <= 120) score -= 15;
     else score -= 25;
 
     score -= Math.min(stats.donationLineCount, 10);
@@ -2995,9 +2999,28 @@
       const balance = getBalance(itemId);
       const conf = computeItemConfidence(item, balance, stats, stats, { volunteerView: false, sampleData: false });
       const band = conf.confidenceBand;
+      // Also snapshot the probabilistic belief-state interval (μ ± 2σ) for this
+      // item, computed from the log BEFORE this recount — so we can later score
+      // whether the variance itself is calibrated, not just the point estimate.
+      let belief = null;
+      try {
+        const row = computeStockBeliefState(txs).items.find(r => r.itemId === itemId);
+        if (row && row.standardDeviation > 0) {
+          const sd = row.standardDeviation;
+          belief = {
+            mean: row.rawMean,
+            sd,
+            lower95: Math.round((row.rawMean - 2 * sd) * 100) / 100,
+            upper95: Math.round((row.rawMean + 2 * sd) * 100) / 100,
+            confidenceProbability: row.confidenceProbability,
+            band: row.confidenceBand,
+          };
+        }
+      } catch (e) { belief = null; }
       return {
         modelVersion: RECOUNT_CALIBRATION_MODEL_VERSION,
         predictedQty: balance,
+        belief,
         confidenceScore: conf.confidenceScore,
         confidenceBand: band,
         confidenceProbability: Math.round(conf.confidenceScore) / 100,
@@ -3042,6 +3065,16 @@
         const p = typeof pred.confidenceProbability === "number"
           ? pred.confidenceProbability
           : (Number(pred.confidenceScore) || 0) / 100;
+        // Belief-state interval scoring: standardized error z = (actual − μ)/σ.
+        const belief = pred.belief || null;
+        let beliefMean = null, beliefSd = null, z = null, within95 = null, beliefAbsError = null;
+        if (belief && typeof belief.mean === "number" && belief.sd > 0) {
+          beliefMean = belief.mean;
+          beliefSd = belief.sd;
+          beliefAbsError = Math.round(Math.abs(actualQty - beliefMean) * 100) / 100;
+          z = Math.round(((actualQty - beliefMean) / beliefSd) * 100) / 100;
+          within95 = Math.abs(z) <= 2;
+        }
         return {
           itemId: t.itemId,
           itemName: itemName(t.itemId),
@@ -3057,6 +3090,11 @@
           withinTolerance,
           verdict: classifyRecountVerdict(trustworthy, withinTolerance),
           brierContribution: Math.round(Math.pow(p - (withinTolerance ? 1 : 0), 2) * 1000) / 1000,
+          beliefMean,
+          beliefSd,
+          beliefAbsError,
+          z,
+          within95,
           synthetic: !!pred.syntheticAtCapture,
         };
       });
@@ -3107,8 +3145,34 @@
       catchRate: rcRate(verdictCounts.flagged_correctly, wrongRows.length),
       falseAlarmRate: rcRate(verdictCounts.false_alarm, flaggedRows.length),
       byBand,
+      beliefCalibration: buildBeliefCalibration(rows.filter(r => r.beliefSd && r.beliefSd > 0 && r.z !== null)),
       trackRecord: allRows.slice(-RECOUNT_MIN_LABELED).reverse(),
       limitations: rcCalibrationLimitations(allRows.length, n),
+    };
+  }
+
+  // Scores the belief-state's uncertainty, not just its point estimate: with a
+  // well-calibrated Gaussian, ~95% of counts land within μ±2σ and the mean of
+  // z² ≈ 1. z² ≫ 1 means intervals are too narrow (overconfident); ≪ 1 too wide.
+  function buildBeliefCalibration(beliefRows) {
+    const n = beliefRows.length;
+    if (!n) return { n: 0, ready: false, verdict: "insufficient", note: "No recounts captured with a belief-state interval yet." };
+    const meanZSquared = rcMean(beliefRows.map(r => r.z * r.z));
+    const ready = n >= RECOUNT_MIN_LABELED;
+    let verdict;
+    if (!ready) verdict = "provisional";
+    else if (meanZSquared > 2) verdict = "overconfident";
+    else if (meanZSquared < 0.5) verdict = "underconfident";
+    else verdict = "well_calibrated";
+    return {
+      n,
+      ready,
+      coverage95: rcRate(beliefRows.filter(r => r.within95).length, n),
+      expectedCoverage95: 0.95,
+      meanZ: rcMean(beliefRows.map(r => r.z)),       // bias of the belief mean (~0 ideal)
+      meanZSquared,                                  // variance fit (~1 ideal)
+      meanBeliefAbsError: rcMean(beliefRows.map(r => r.beliefAbsError)),
+      verdict,
     };
   }
 
@@ -3117,7 +3181,7 @@
     if (total === 0) out.push("No recounts have been captured with a prediction yet.");
     if (real < RECOUNT_MIN_LABELED) out.push(`Fewer than ${RECOUNT_MIN_LABELED} real recounts — calibration is provisional.`);
     if (total > real) out.push("Some recounts were captured on sample data and are excluded from calibration.");
-    out.push("Calibration measures the item-confidence model only, not packing or donation accuracy.");
+    out.push("Calibration measures the item-confidence model and belief-state intervals, not packing or donation accuracy.");
     return out;
   }
 
@@ -3132,6 +3196,11 @@
     } else {
       headline = `The confidence model matched ${Math.round((cal.withinToleranceRate || 0) * 100)}% of ${cal.realLabeledRecounts} recounts; overconfident on ${v.overconfident || 0}, good catches ${v.flagged_correctly || 0}.`;
     }
+    const bc = cal.beliefCalibration || {};
+    let beliefHeadline;
+    if (!bc.n) beliefHeadline = "Belief-state intervals not scored yet (no recounts captured with one).";
+    else if (!bc.ready) beliefHeadline = `Belief-state: provisional on ${bc.n} recount(s); ${Math.round((bc.coverage95 || 0) * 100)}% landed within the 95% interval.`;
+    else beliefHeadline = `Belief-state intervals are ${bc.verdict} (${Math.round((bc.coverage95 || 0) * 100)}% within ±2σ vs 95% target; mean z² ${bc.meanZSquared}).`;
     return {
       modelVersion: cal.modelVersion,
       realLabeledRecounts: cal.realLabeledRecounts,
@@ -3144,6 +3213,14 @@
       catchRate: cal.catchRate,
       falseAlarmRate: cal.falseAlarmRate,
       headline,
+      beliefCalibration: {
+        n: bc.n || 0,
+        verdict: bc.verdict,
+        coverage95: bc.coverage95,
+        meanZ: bc.meanZ,
+        meanZSquared: bc.meanZSquared,
+      },
+      beliefHeadline,
     };
   }
 
@@ -3323,6 +3400,8 @@
   const PACKING_HABIT_MIN_DENOMINATOR = 5;
   const PACKING_HABIT_MIN_COUNT = 3;
   const PACKING_HABIT_MIN_PERCENT = 40;
+  const PACKING_HABIT_WINDOW_DAYS = 90;
+  const PACKING_HABIT_MIN_BUILDS_DATE_WINDOW = 3;
 
   function isProductionBuild(tx) {
     return tx.type === "build" && !isTesterUser(tx.packer);
@@ -3520,6 +3599,12 @@
     return null;
   }
 
+  function habitShiftISODate(dateStr, deltaDays) {
+    const d = new Date(`${dateStr}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + deltaDays);
+    return d.toISOString().slice(0, 10);
+  }
+
   function deriveHistoricalHabitWindows(productionBuilds) {
     const byPack = {};
     (productionBuilds || []).forEach(tx => {
@@ -3532,29 +3617,76 @@
     Object.entries(byPack).forEach(([packKey, builds]) => {
       const sorted = builds.slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
       const totalBuilds = sorted.length;
-      const windowSize = chooseHabitWindowSize(totalBuilds);
-      if (!windowSize) {
+      const emptyWindow = {
+        packKey,
+        totalBuilds,
+        windowMode: null,
+        windowDays: null,
+        windowSize: null,
+        recentBuilds: [],
+        previousBuilds: [],
+        recentDenominator: 0,
+        previousDenominator: 0,
+      };
+      if (totalBuilds < PACKING_HABIT_MIN_DENOMINATOR) {
+        windows[packKey] = emptyWindow;
+        return;
+      }
+
+      const referenceDate = sorted[sorted.length - 1]?.date || todayISO();
+      const recentStart = habitShiftISODate(referenceDate, -(PACKING_HABIT_WINDOW_DAYS - 1));
+      const previousEnd = habitShiftISODate(recentStart, -1);
+      const previousStart = habitShiftISODate(previousEnd, -(PACKING_HABIT_WINDOW_DAYS - 1));
+      const recentBuilds = sorted.filter(tx => {
+        const d = tx.date || "";
+        return d >= recentStart && d <= referenceDate;
+      });
+      const previousBuilds = sorted.filter(tx => {
+        const d = tx.date || "";
+        return d >= previousStart && d <= previousEnd;
+      });
+
+      if (recentBuilds.length >= PACKING_HABIT_MIN_BUILDS_DATE_WINDOW
+        && previousBuilds.length >= PACKING_HABIT_MIN_BUILDS_DATE_WINDOW) {
         windows[packKey] = {
           packKey,
           totalBuilds,
+          windowMode: "date",
+          windowDays: PACKING_HABIT_WINDOW_DAYS,
           windowSize: null,
-          recentBuilds: [],
-          previousBuilds: [],
+          recentBuilds,
+          previousBuilds,
+          recentStartDate: recentStart,
+          recentEndDate: referenceDate,
+          previousStartDate: previousStart,
+          previousEndDate: previousEnd,
+          recentDenominator: recentBuilds.length,
+          previousDenominator: previousBuilds.length,
         };
         return;
       }
-      const recentBuilds = sorted.slice(-windowSize);
-      const previousBuilds = sorted.slice(-windowSize * 2, -windowSize);
+
+      const windowSize = chooseHabitWindowSize(totalBuilds);
+      if (!windowSize) {
+        windows[packKey] = emptyWindow;
+        return;
+      }
+      const countRecentBuilds = sorted.slice(-windowSize);
+      const countPreviousBuilds = sorted.slice(-windowSize * 2, -windowSize);
       windows[packKey] = {
         packKey,
         totalBuilds,
+        windowMode: "count",
+        windowDays: null,
         windowSize,
-        recentBuilds,
-        previousBuilds,
-        recentStartDate: recentBuilds[0]?.date || "",
-        recentEndDate: recentBuilds[recentBuilds.length - 1]?.date || "",
-        previousStartDate: previousBuilds[0]?.date || "",
-        previousEndDate: previousBuilds[previousBuilds.length - 1]?.date || "",
+        recentBuilds: countRecentBuilds,
+        previousBuilds: countPreviousBuilds,
+        recentStartDate: countRecentBuilds[0]?.date || "",
+        recentEndDate: countRecentBuilds[countRecentBuilds.length - 1]?.date || "",
+        previousStartDate: countPreviousBuilds[0]?.date || "",
+        previousEndDate: countPreviousBuilds[countPreviousBuilds.length - 1]?.date || "",
+        recentDenominator: countRecentBuilds.length,
+        previousDenominator: countPreviousBuilds.length,
       };
     });
     return windows;
@@ -3570,7 +3702,9 @@
   function compareHabitWindows(windowsByPack) {
     const comparisons = [];
     Object.values(windowsByPack || {}).forEach(w => {
-      if (!w.windowSize) return;
+      const recentDenom = w.recentDenominator || w.recentBuilds?.length || w.windowSize || 0;
+      const previousDenom = w.previousDenominator || w.previousBuilds?.length || w.windowSize || 0;
+      if (!recentDenom && !previousDenom) return;
       const recentMap = packingHabitPatternMapFromBuilds(w.recentBuilds);
       const previousMap = packingHabitPatternMapFromBuilds(w.previousBuilds);
       const keys = new Set([...Object.keys(recentMap), ...Object.keys(previousMap)]);
@@ -3585,14 +3719,18 @@
           replacementItemId: parts[3] || "",
           recentCount: recent.count,
           recentPercent: recent.percentage,
-          recentDenominator: w.windowSize,
+          recentDenominator: recentDenom,
           previousCount: previous.count,
           previousPercent: previous.percentage,
-          previousDenominator: w.windowSize,
+          previousDenominator: previousDenom,
           deltaPercent: recent.percentage - previous.percentage,
+          windowMode: w.windowMode,
+          windowDays: w.windowDays,
           windowSize: w.windowSize,
           recentStartDate: w.recentStartDate,
           recentEndDate: w.recentEndDate,
+          previousStartDate: w.previousStartDate,
+          previousEndDate: w.previousEndDate,
         });
       });
     });
@@ -3710,25 +3848,31 @@
       ? recipeOptionalLabel(comparison.packKey, comparison.itemId)
       : itemName(comparison.itemId);
     const replacementNameStr = comparison.replacementItemId ? itemName(comparison.replacementItemId) : "";
+    const countPhrase = comparison.windowMode === "date" && comparison.windowDays
+      ? `in ${count} of ${denom} ${packLabel}s in the last ${comparison.windowDays} days`
+      : `in ${count} of the last ${denom} ${packLabel}s`;
     if (comparison.type === "substitution") {
-      return `${replacementNameStr} replaced ${itemNameStr} in ${count} of the last ${denom} ${packLabel}s`;
+      return `${replacementNameStr} replaced ${itemNameStr} ${countPhrase}`;
     }
     if (comparison.type === "optional_usage") {
-      return `${itemNameStr} ${habitWasWere(itemNameStr)} included in ${count} of the last ${denom} ${packLabel}s`;
+      return `${itemNameStr} ${habitWasWere(itemNameStr)} included ${countPhrase}`;
     }
     if (comparison.type === "custom_extra") {
-      return `${itemNameStr} ${habitWasWere(itemNameStr)} added to ${count} of the last ${denom} ${packLabel}s`;
+      return `${itemNameStr} ${habitWasWere(itemNameStr)} added ${countPhrase}`;
     }
     if (comparison.type === "omission") {
-      return `${itemNameStr} ${habitWasWere(itemNameStr)} left out of ${count} of the last ${denom} ${packLabel}s`;
+      return `${itemNameStr} ${habitWasWere(itemNameStr)} left out ${countPhrase}`;
     }
-    return `${itemNameStr} in ${count} of the last ${denom} ${packLabel}s`;
+    return `${itemNameStr} ${countPhrase}`;
   }
 
   function habitDescribePreviousWindow(comparison) {
     const packLabel = RECIPES[comparison.packKey]?.label || comparison.packKey;
     const count = comparison.previousCount;
     const denom = comparison.previousDenominator;
+    if (comparison.windowMode === "date" && comparison.windowDays) {
+      return `this happened in ${count} of ${denom} ${packLabel}s in the previous ${comparison.windowDays} days`;
+    }
     return `this happened in ${count} of the previous ${denom} ${packLabel}s`;
   }
 
@@ -4047,10 +4191,16 @@
     const windowsSummary = {};
     Object.entries(windows).forEach(([packKey, w]) => {
       windowsSummary[packKey] = {
-        windowSize: w.windowSize,
+        windowMode: w.windowMode,
+        windowDays: w.windowDays,
+        windowSize: w.windowMode === "count" ? w.windowSize : null,
         totalBuilds: w.totalBuilds,
         recentBuildCount: w.recentBuilds.length,
         previousBuildCount: w.previousBuilds.length,
+        recentStartDate: w.recentStartDate || null,
+        recentEndDate: w.recentEndDate || null,
+        previousStartDate: w.previousStartDate || null,
+        previousEndDate: w.previousEndDate || null,
       };
     });
     return { windows: windowsSummary, counts, trendRows, insights };
@@ -5646,8 +5796,93 @@
       packingHabits: deps.packingHabits,
       operationalIntelligence: deps.operationalIntelligence,
       beliefEngine: deps.beliefEngine || null,
+      stockBeliefState: deps.stockBeliefState || null,
+      recountCalibration: deps.recountCalibration || null,
       synthetic: deps.synthetic != null ? deps.synthetic : !!state.sampleData,
     };
+  }
+
+  function omStockBeliefForItem(ctx, itemId) {
+    return (ctx.stockBeliefState?.items || []).find(row => row.itemId === itemId) || null;
+  }
+
+  function omHabitObs(ctx, type, packKey, itemId, replacementItemId) {
+    return (ctx.packingHabits?.observations || []).find(o =>
+      o.type === type && o.packKey === packKey && o.itemId === itemId
+      && (o.replacementItemId || "") === (replacementItemId || "")
+    ) || null;
+  }
+
+  function omShouldSuppressHabitMemory(obs) {
+    if (!obs) return false;
+    return obs.trend === "too_early_to_tell" || obs.evidence === "too_early";
+  }
+
+  function omMemoryDedupKey(memory) {
+    if (memory.memoryType === "habit_memory" && memory.subject?.itemId) {
+      return `habit:${memory.subject.type}:${memory.subject.packKey}:${memory.subject.itemId}:${memory.subject.replacementItemId || ""}`;
+    }
+    if (memory.memoryType === "stock_memory" && memory.subject?.itemId) {
+      return `stock:${memory.subject.itemId}`;
+    }
+    if (memory.memoryType === "confidence_memory" && memory.subject?.scope === "system_confidence") {
+      return "confidence:system";
+    }
+    return memory.memoryId;
+  }
+
+  function omFilterRedundantMemories(memories, ctx) {
+    const cal = ctx.recountCalibration;
+    const beliefSummary = ctx.stockBeliefState?.summary;
+    return memories.filter(memory => {
+      if (memory.memoryType === "habit_memory" && memory.subject) {
+        const obs = omHabitObs(
+          ctx, memory.subject.type, memory.subject.packKey,
+          memory.subject.itemId, memory.subject.replacementItemId
+        );
+        if (omShouldSuppressHabitMemory(obs)) return false;
+        const beliefId = memory.subject.replacementItemId
+          ? `habit:${memory.subject.type}:${memory.subject.packKey}:${memory.subject.itemId}:${memory.subject.replacementItemId}`
+          : `habit:${memory.subject.type}:${memory.subject.packKey}:${memory.subject.itemId}`;
+        const belief = omBelief(ctx, beliefId);
+        if (belief && obs?.evidence === "too_early" && belief.recommendedAction === "observe_only") return false;
+      }
+
+      if (memory.memoryType === "stock_memory" && memory.subject?.itemId) {
+        const bs = omStockBeliefForItem(ctx, memory.subject.itemId);
+        if (bs && memory.status === "insufficient_evidence"
+          && bs.confidenceBand === "trusted" && (bs.zeroProbability || 0) < 0.1 && (bs.lowStockProbability || 0) < 0.2) {
+          return false;
+        }
+      }
+
+      if (memory.memoryId === "confidence_memory:system:immaturity" && cal && !cal.readyForCalibration
+        && beliefSummary?.anchoredCount >= (beliefSummary?.itemCount || 1) * 0.8) {
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  function omDedupeOperationalMemories(memories) {
+    const seen = new Map();
+    const out = [];
+    memories.forEach(memory => {
+      const key = omMemoryDedupKey(memory);
+      const existing = seen.get(key);
+      if (existing) {
+        if (memory.confidenceProbability > existing.confidenceProbability) {
+          const idx = out.indexOf(existing);
+          if (idx >= 0) out[idx] = memory;
+          seen.set(key, memory);
+        }
+        return;
+      }
+      seen.set(key, memory);
+      out.push(memory);
+    });
+    return out;
   }
 
   function omImpactReady(ctx) {
@@ -5726,7 +5961,8 @@
     const risk = (ctx.operationalIntelligence?.stockRisk || []).find(r => r.itemId === itemId);
     const shortageBelief = omBelief(ctx, `shortage:${itemId}`);
     const balanceBelief = omBelief(ctx, `item_balance:${itemId}`);
-    if (!risk && !shortageBelief && !balanceBelief) return memories;
+    const stockBelief = omStockBeliefForItem(ctx, itemId);
+    if (!risk && !shortageBelief && !balanceBelief && !stockBelief) return memories;
 
     const isCore = (risk?.recipeRoles || []).some(role => role.role === "core");
     const dates = omItemDates(itemId);
@@ -5744,6 +5980,11 @@
     if (isCore) evidence.push("Pads is a core Mom Pack item.");
     if (shortageBelief) evidence.push(...(shortageBelief.supportingEvidence || []).slice(0, 2));
     if (balanceBelief) evidence.push(...(balanceBelief.supportingEvidence || []).slice(0, 1));
+    if (stockBelief) {
+      evidence.push(`Belief-state μ ${stockBelief.rawMean ?? stockBelief.believedQty} (σ ${stockBelief.standardDeviation}) — ${stockBelief.confidenceBand} confidence.`);
+      if (stockBelief.zeroProbability >= 0.5) evidence.push(`Zero-stock probability ${Math.round(stockBelief.zeroProbability * 100)}%.`);
+      else if (stockBelief.lowStockProbability >= 0.3) evidence.push(`Below-threshold risk ${Math.round(stockBelief.lowStockProbability * 100)}%.`);
+    }
 
     const confInputs = {
       ...ri,
@@ -5782,7 +6023,7 @@
     );
     const subBelief = omBelief(ctx, "habit:substitution:momPack:pads:breast-pads");
 
-    if (subImpact || subObs || subBelief) {
+    if ((subImpact || subObs || subBelief) && !omShouldSuppressHabitMemory(subObs)) {
       const packsAffected = subImpact?.packsAffected || subObs?.count || 0;
       const firstSeen = subImpact?.firstSeen || subObs?.firstSeen || null;
       const lastSeen = subImpact?.lastSeen || subObs?.lastSeen || null;
@@ -5824,7 +6065,7 @@
     const deoObs = (ctx.packingHabits?.observations || []).find(o =>
       o.type === "optional_usage" && o.packKey === "momPack" && o.itemId === "deo"
     );
-    if (deoOpt || (deoObs && deoObs.percentage >= 40)) {
+    if ((deoOpt || (deoObs && deoObs.percentage >= 40)) && !omShouldSuppressHabitMemory(deoObs)) {
       const inclusionRate = deoOpt?.inclusionRateByPacks ?? (deoObs ? deoObs.percentage / 100 : 0);
       const firstSeen = deoObs?.firstSeen || null;
       const lastSeen = deoObs?.lastSeen || null;
@@ -6057,14 +6298,14 @@
 
   function computeOperationalMemory(deps) {
     const ctx = buildMemoryCtx(deps || {});
-    const memories = [
+    const memories = omDedupeOperationalMemories(omFilterRedundantMemories([
       ...computeStockMemories(ctx),
       ...computeHabitMemories(ctx),
       ...computeRecipeMemories(ctx),
       ...computeDonationMemories(ctx),
       ...computeConfidenceMemories(ctx),
       ...computeReadinessMemories(ctx),
-    ].slice(0, 10);
+    ], ctx)).slice(0, 10);
     const limitations = [
       "Memories are export-only recall objects, not volunteer instructions.",
       "Memories are derived at export time from transaction history — not persisted across sessions.",

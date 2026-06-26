@@ -47,24 +47,31 @@ const blocks = [
   extractBlock(HTML, "function rcMean("),
   extractBlock(HTML, "function rcRate("),
   extractBlock(HTML, "function buildRecountCalibration("),
+  extractBlock(HTML, "function buildBeliefCalibration("),
   extractBlock(HTML, "function rcCalibrationLimitations("),
   extractBlock(HTML, "function recountCalibrationSummaryConcise("),
 ].join("\n\n");
 
 // eslint-disable-next-line no-new-func
 const api = new Function(
-  `${blocks}\nreturn { buildRecountCalibration, buildRecountCalibrationRows, classifyRecountVerdict, recountWithinTolerance, recountCalibrationSummaryConcise };`
+  `${blocks}\nreturn { buildRecountCalibration, buildRecountCalibrationRows, classifyRecountVerdict, recountWithinTolerance, recountCalibrationSummaryConcise, buildBeliefCalibration };`
 )();
 
 // Build a recount transaction carrying a prediction label.
-function rc(predictedQty, actualQty, band, trustworthy, p, synthetic = false) {
+// `belief` (optional) = { mean, sd } adds a belief-state interval to score.
+function rc(predictedQty, actualQty, band, trustworthy, p, synthetic = false, belief = null) {
   return {
     type: "recount", itemId: "x", date: "2026-06-01", newQty: actualQty,
     prediction: {
       predictedQty, confidenceBand: band, predictedTrustworthy: trustworthy,
       confidenceProbability: p, syntheticAtCapture: synthetic,
+      ...(belief ? { belief } : {}),
     },
   };
+}
+// Build a recount whose belief interval has a chosen standardized error z.
+function rcZ(z, sd = 10, mean = 50) {
+  return rc(mean, mean + z * sd, "trusted", true, 0.8, false, { mean, sd });
 }
 
 let failed = 0;
@@ -127,6 +134,35 @@ check("trackRecord newest-first", cal.trackRecord[0].actualQty, 99);
 
 const summary = api.recountCalibrationSummaryConcise(cal);
 checkTrue("summary headline reports a match rate", /matched 50% of 8 recounts/i.test(summary.headline));
+
+// --- belief-state interval calibration (Step 2) ---
+// z = (actual − μ)/σ. Well-calibrated: ~95% within ±2σ and mean z² ≈ 1.
+const wellZ = [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 0.8];
+const wellCal = api.buildRecountCalibration(wellZ.map(z => rcZ(z))).beliefCalibration;
+check("belief: well-calibrated verdict", wellCal.verdict, "well_calibrated");
+check("belief: full coverage within ±2σ", wellCal.coverage95, 1);
+checkTrue("belief: mean z² near 1 (0.5–2)", wellCal.meanZSquared >= 0.5 && wellCal.meanZSquared <= 2);
+
+// Overconfident: σ too small, counts land far outside ±2σ -> z² ≫ 1.
+const overCal = api.buildRecountCalibration([3, -3, 4, 2.5, -2.5, 3, -3, 2.5].map(z => rcZ(z))).beliefCalibration;
+check("belief: overconfident verdict", overCal.verdict, "overconfident");
+checkTrue("belief: overconfident coverage low", overCal.coverage95 < 0.5);
+
+// Underconfident: σ too large, counts hug the mean -> z² ≪ 1.
+const underCal = api.buildRecountCalibration([0.1, -0.1, 0.2, 0, 0.1, -0.2, 0.1, -0.1].map(z => rcZ(z))).beliefCalibration;
+check("belief: underconfident verdict", underCal.verdict, "underconfident");
+
+// Provisional below the minimum; insufficient when nothing carries a belief.
+check("belief: provisional under min", api.buildRecountCalibration([rcZ(0.5), rcZ(-0.5)]).beliefCalibration.verdict, "provisional");
+check("belief: insufficient with no interval rows", api.buildBeliefCalibration([]).verdict, "insufficient");
+
+// z and within95 are computed correctly on a single row.
+(() => {
+  const row = api.buildRecountCalibrationRows([rc(50, 70, "trusted", true, 0.8, false, { mean: 50, sd: 10 })])[0];
+  check("belief row: z = (70−50)/10 = 2", row.z, 2);
+  check("belief row: within95 at |z|=2", row.within95, true);
+  check("belief row: beliefAbsError = 20", row.beliefAbsError, 20);
+})();
 
 console.log(`\n${failed ? "FAILURES: " + failed : "all passed"}`);
 process.exit(failed ? 1 : 0);

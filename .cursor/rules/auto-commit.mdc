@@ -1,0 +1,25 @@
+---
+description: Always commit completed work without waiting to be asked
+alwaysApply: true
+---
+
+# Auto-commit
+
+Milan wants commits created **automatically** when work is complete.
+
+After finishing a task (implementation, fixes, docs that belong with the change):
+
+1. Run `git status` and `git diff` to verify what changed
+2. Stage relevant files (never secrets: `.env`, credentials, etc.)
+3. Commit with a concise why-focused message via HEREDOC
+4. Run `git status` to confirm success
+
+Do **not** wait for "please commit" or "commit this".
+
+Skip committing only when:
+
+- The user explicitly says "don't commit", "plan only", or "no commit"
+- Work is clearly incomplete or broken
+- There are no changes to commit
+
+Do not force-push `main`. Do not skip hooks unless the user asks.
