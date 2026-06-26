@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- Confirm modal XSS hardening (L2): `showConfirmModal()` no longer injects hand-built HTML strings. Summaries use an allowlisted `confirmHtml()` builder (`summarySpec` → escaped text, `<p>`, `<strong>`, `<ul>/<li>`, `<br>`, vetted `style` only); `formatBuildPreview` escapes all dynamic item names. Headless test `tests/confirm-modal.test.js`.
 - Pack Creation stock math: optional-item substitutions no longer double-subtract the swapped-out item. `computeBuildStockPlan` removed the `insteadOf` packs in both the substitution loop and the optional de-dup step (Step 6), so swapping an *included optional* out of *some* packs under-deducted it (e.g. deo→panties in 2 of 3 packs deducted 0 deo instead of 1), silently overstating stock. Step 6 now de-dups only the substitute side; removed the now-dead `subPacksInstead` accumulator
 - Pack Creation: the swap **“how many per pack”** field (`.sub-qty`) and the omission fields now refresh the build preview live. They were never wired into the build `refresh` path (only `.sub-packs` was), so editing per-pack quantity was ignored in the **“From the shelf”** preview (2 packs × 2 per pack showed `2 × …`, not `4 ×`); the value only reached the planner on Save. Wired `.sub-qty`, `.omit-item`, `.omit-packs`, `.omit-qty` into `refresh`-on-change, matching `.sub-packs`
 - Interaction episodes: flush all active episodes with `completionReason: "export"` before Analytics JSON and AI Data Pack export so open episodes always have matching `interaction_episode_complete` events
