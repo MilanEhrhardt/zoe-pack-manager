@@ -259,6 +259,12 @@
     .footer p { margin-bottom: 10px; }
     .footer button { margin-right: 14px; }
     .footer-tools { display: flex; flex-wrap: wrap; gap: 14px; }
+    .analytics-note {
+      margin-top: 12px;
+      font-size: 0.86rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
 
     /* Form surfaces */
     .form-shell { max-width: 720px; margin: 0 auto; }
@@ -908,7 +914,7 @@
     subs.forEach(s => addShelf(s.substitute));
     Object.keys(usage).forEach(id => addShelf(id));
 
-    html += shelfLines.join("<br>") || "—";
+    html += shelfLines.map(line => esc(line)).join("<br>") || "—";
     return html;
   }
 
@@ -920,6 +926,11 @@
 
   // How many recent actions can be undone, one at a time (bounds storage).
   const UNDO_STACK_LIMIT = 25;
+
+  // Backup import / localStorage reload caps — keep persisted state bounded.
+  const BACKUP_IMPORT_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+  const BACKUP_IMPORT_MAX_TRANSACTIONS = 50000; // ~years of storeroom activity; matches analytics scale
+  const BACKUP_IMPORT_MAX_DONORS = 5000;
 
   // Recount calibration (feedback loop): every recount is ground truth, so we
   // capture what the model believed an item held just before the count and
@@ -1359,22 +1370,7 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        ITEMS.forEach(i => {
-          if (parsed.balances[i.id] === undefined) parsed.balances[i.id] = 0;
-        });
-        if (!parsed.readyPacks) parsed.readyPacks = { momPack: 0, babyPack: 0 };
-        if (!parsed.transactions) parsed.transactions = [];
-        if (!parsed.packContext) parsed.packContext = "momPack";
-        if (parsed.lastSelectedPacker === undefined) parsed.lastSelectedPacker = "";
-        // Migrate single-slot undo (undoSnapshot) to the multi-level undo stack.
-        if (!Array.isArray(parsed.undoStack)) {
-          parsed.undoStack = parsed.undoSnapshot ? [parsed.undoSnapshot] : [];
-        }
-        delete parsed.undoSnapshot;
-        if (!parsed.donors || !parsed.donors.length) {
-          parsed.donors = extractDonorsFromTransactions(parsed.transactions);
-        }
-        return parsed;
+        return normalizeImportedState(parsed).state;
       }
     } catch (e) { /* no-op */ }
     const seeded = buildSyntheticState();
@@ -8027,6 +8023,7 @@
         <button type="button" id="btn-export-analytics-json">Export Analytics JSON</button>
         <button type="button" id="btn-export-ai-pack"${exp("admin_export_ai_pack", "Export AI Data Pack")}>Export AI Data Pack</button>
       </div>
+      <div class="analytics-note"><strong>Before you share:</strong> Backup and AI Data Pack files can include sensitive local data — donor and packer names, clinics, transaction history, and analytics. Only save or send them somewhere you trust.</div>
       <div class="analytics-controls">
         <div class="analytics-status">
           <div><strong>Analytics recording</strong><br><span class="muted">Pause this while you test. Resume before your mom uses it.</span></div>
