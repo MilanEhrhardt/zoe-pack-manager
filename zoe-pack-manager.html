@@ -918,6 +918,9 @@
 
   const STORAGE_KEY = "zoePackManager_v1";
 
+  // How many recent actions can be undone, one at a time (bounds storage).
+  const UNDO_STACK_LIMIT = 25;
+
   const itemMap = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 
   var ANALYTICS_SCHEMA_VERSION = "1.3.0";
@@ -1035,7 +1038,7 @@
       balances,
       readyPacks: { momPack: 0, babyPack: 0 },
       transactions: [],
-      undoSnapshot: null,
+      undoStack: [],
       packContext: "momPack",
       donors: [],
       lastSelectedPacker: "",
@@ -1313,7 +1316,7 @@
       balances,
       readyPacks: { momPack: 0, babyPack: 0 },
       transactions,
-      undoSnapshot: null,
+      undoStack: [],
       sampleData: true,
       packContext: "momPack",
       donors,
@@ -1342,6 +1345,11 @@
         if (!parsed.transactions) parsed.transactions = [];
         if (!parsed.packContext) parsed.packContext = "momPack";
         if (parsed.lastSelectedPacker === undefined) parsed.lastSelectedPacker = "";
+        // Migrate single-slot undo (undoSnapshot) to the multi-level undo stack.
+        if (!Array.isArray(parsed.undoStack)) {
+          parsed.undoStack = parsed.undoSnapshot ? [parsed.undoSnapshot] : [];
+        }
+        delete parsed.undoSnapshot;
         if (!parsed.donors || !parsed.donors.length) {
           parsed.donors = extractDonorsFromTransactions(parsed.transactions);
         }
@@ -2448,7 +2456,12 @@
   }
 
   function beginTransaction() {
-    state.undoSnapshot = snapshotForUndo();
+    if (!Array.isArray(state.undoStack)) state.undoStack = [];
+    state.undoStack.push(snapshotForUndo());
+    // Keep only the most recent actions so saved state stays bounded.
+    if (state.undoStack.length > UNDO_STACK_LIMIT) {
+      state.undoStack.splice(0, state.undoStack.length - UNDO_STACK_LIMIT);
+    }
   }
 
   function finishTransaction(tx) {
@@ -2460,14 +2473,18 @@
     saveState();
   }
 
+  function canUndo() {
+    return Array.isArray(state.undoStack) && state.undoStack.length > 0;
+  }
+
   function undoLast() {
-    analyticsTrack("undo_clicked", { snapshot: analyticsOperationalSnapshot() });
-    if (!state.undoSnapshot) return;
-    const snap = state.undoSnapshot;
+    const remainingBefore = Array.isArray(state.undoStack) ? state.undoStack.length : 0;
+    analyticsTrack("undo_clicked", { undosAvailable: remainingBefore, snapshot: analyticsOperationalSnapshot() });
+    if (!canUndo()) return;
+    const snap = state.undoStack.pop();
     state.balances = snap.balances;
     state.readyPacks = snap.readyPacks;
     state.transactions = state.transactions.slice(0, snap.txCount);
-    state.undoSnapshot = null;
     state.transactions.push({ id: uid(), type: "undo", date: todayISO() });
     saveState();
     render();
@@ -5838,11 +5855,10 @@
   }
 
   function renderHomeMore() {
-    const canUndo = !!state.undoSnapshot;
     let html = `<div class="home-more-wrap"><details class="home-more">
       <summary data-track-exposure="home_need_something_else" data-exposure-label="Need something else?">Need something else?</summary>
       <div class="home-more-body">`;
-    if (canUndo) {
+    if (canUndo()) {
       html += `<div class="home-more-section">
         <button type="button" class="home-undo" id="btn-undo">Undo last action</button>
       </div>`;
