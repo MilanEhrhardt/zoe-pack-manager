@@ -918,6 +918,18 @@
 
   const STORAGE_KEY = "zoePackManager_v1";
 
+  // How many recent actions can be undone, one at a time (bounds storage).
+  const UNDO_STACK_LIMIT = 25;
+
+  // Recount calibration (feedback loop): every recount is ground truth, so we
+  // capture what the model believed an item held just before the count and
+  // score it against what was actually counted. A belief is "effectively right"
+  // if it was within RECOUNT_TOLERANCE_ABS units OR RECOUNT_TOLERANCE_PCT.
+  const RECOUNT_CALIBRATION_MODEL_VERSION = "rc.1";
+  const RECOUNT_TOLERANCE_ABS = 2;
+  const RECOUNT_TOLERANCE_PCT = 0.10;
+  const RECOUNT_MIN_LABELED = 8; // real labeled recounts needed before calibration is meaningful
+
   const itemMap = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 
   var ANALYTICS_SCHEMA_VERSION = "1.3.0";
@@ -1035,7 +1047,7 @@
       balances,
       readyPacks: { momPack: 0, babyPack: 0 },
       transactions: [],
-      undoSnapshot: null,
+      undoStack: [],
       packContext: "momPack",
       donors: [],
       lastSelectedPacker: "",
@@ -1313,7 +1325,7 @@
       balances,
       readyPacks: { momPack: 0, babyPack: 0 },
       transactions,
-      undoSnapshot: null,
+      undoStack: [],
       sampleData: true,
       packContext: "momPack",
       donors,
@@ -1342,6 +1354,11 @@
         if (!parsed.transactions) parsed.transactions = [];
         if (!parsed.packContext) parsed.packContext = "momPack";
         if (parsed.lastSelectedPacker === undefined) parsed.lastSelectedPacker = "";
+        // Migrate single-slot undo (undoSnapshot) to the multi-level undo stack.
+        if (!Array.isArray(parsed.undoStack)) {
+          parsed.undoStack = parsed.undoSnapshot ? [parsed.undoSnapshot] : [];
+        }
+        delete parsed.undoSnapshot;
         if (!parsed.donors || !parsed.donors.length) {
           parsed.donors = extractDonorsFromTransactions(parsed.transactions);
         }
@@ -2296,6 +2313,8 @@
       synthetic: !!state.sampleData,
     });
     const operationalMemorySummary = operationalMemorySummaryConcise(operationalMemory);
+    const recountCalibration = opts.recountCalibration || buildRecountCalibration(tx);
+    const recountCalibrationSummary = recountCalibrationSummaryConcise(recountCalibration);
     const productionIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { productionOnly: true });
     const testerIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { testerOnly: true });
     const interactionEpisodeSummary = analyticsInteractionEpisodeSummary(events);
@@ -2338,6 +2357,7 @@
       operationalIntelligenceSummary,
       beliefEngineSummary,
       operationalMemorySummary,
+      recountCalibrationSummary,
       interactionEpisodeSummary,
       ...sessionBreakdown,
     };
@@ -2389,6 +2409,7 @@
     const operationalMemory = computeOperationalMemory({
       itemConfidence, packingHabits, operationalIntelligence, beliefEngine, synthetic: !!state.sampleData,
     });
+    const recountCalibration = buildRecountCalibration(state.transactions);
     const payload = {
       exportedAt: new Date().toISOString(),
       app: "Zoe Pack Manager",
@@ -2420,8 +2441,9 @@
       operationalIntelligence,
       beliefEngine,
       operationalMemory,
+      recountCalibration,
       analytics: state.analytics,
-      summary: analyticsDerivedSummary({ itemConfidence, packingHabits, operationalIntelligence, beliefEngine, operationalMemory }),
+      summary: analyticsDerivedSummary({ itemConfidence, packingHabits, operationalIntelligence, beliefEngine, operationalMemory, recountCalibration }),
     };
     downloadTextFile(JSON.stringify(payload, null, 2), `zoe-ai-data-pack-${todayISO()}.json`, "application/json");
   }
@@ -2448,7 +2470,12 @@
   }
 
   function beginTransaction() {
-    state.undoSnapshot = snapshotForUndo();
+    if (!Array.isArray(state.undoStack)) state.undoStack = [];
+    state.undoStack.push(snapshotForUndo());
+    // Keep only the most recent actions so saved state stays bounded.
+    if (state.undoStack.length > UNDO_STACK_LIMIT) {
+      state.undoStack.splice(0, state.undoStack.length - UNDO_STACK_LIMIT);
+    }
   }
 
   function finishTransaction(tx) {
@@ -2460,14 +2487,18 @@
     saveState();
   }
 
+  function canUndo() {
+    return Array.isArray(state.undoStack) && state.undoStack.length > 0;
+  }
+
   function undoLast() {
-    analyticsTrack("undo_clicked", { snapshot: analyticsOperationalSnapshot() });
-    if (!state.undoSnapshot) return;
-    const snap = state.undoSnapshot;
+    const remainingBefore = Array.isArray(state.undoStack) ? state.undoStack.length : 0;
+    analyticsTrack("undo_clicked", { undosAvailable: remainingBefore, snapshot: analyticsOperationalSnapshot() });
+    if (!canUndo()) return;
+    const snap = state.undoStack.pop();
     state.balances = snap.balances;
     state.readyPacks = snap.readyPacks;
     state.transactions = state.transactions.slice(0, snap.txCount);
-    state.undoSnapshot = null;
     state.transactions.push({ id: uid(), type: "undo", date: todayISO() });
     saveState();
     render();
@@ -2595,10 +2626,14 @@
 
   function commitRecount(itemId, newQty, reason, date) {
     const oldQty = getBalance(itemId);
+    // Feedback loop: snapshot what the model believed BEFORE we overwrite it,
+    // so this recount becomes a labeled (belief, outcome) pair. Never blocks.
+    const prediction = captureRecountPrediction(itemId);
     beginTransaction();
     state.balances[itemId] = newQty;
     finishTransaction({
       id: uid(), type: "recount", date: date || todayISO(), itemId, oldQty, newQty, reason: reason || "",
+      prediction,
     });
   }
 
@@ -2923,6 +2958,175 @@
         ...allBands,
         lowConfidenceCount: allBands.uncertain + allBands.needs_checking,
       },
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // RECOUNT CALIBRATION — feedback loop: belief vs ground truth (export / ops)
+  // ═══════════════════════════════════════════════════════════════════
+
+  // Capture, at recount time, what the model believed this item held and how
+  // confident it was — so the recount (ground truth) becomes a label we can
+  // later score the confidence model against. Reads current state; never mutates.
+  function captureRecountPrediction(itemId) {
+    try {
+      const item = itemMap[itemId];
+      if (!item) return null;
+      const txs = state.transactions || [];
+      const allIndex = buildItemActivityStatsIndex(txs, { excludeTesterBuilds: false });
+      const stats = deriveItemActivityStats(itemId, allIndex);
+      const balance = getBalance(itemId);
+      const conf = computeItemConfidence(item, balance, stats, stats, { volunteerView: false, sampleData: false });
+      const band = conf.confidenceBand;
+      return {
+        modelVersion: RECOUNT_CALIBRATION_MODEL_VERSION,
+        predictedQty: balance,
+        confidenceScore: conf.confidenceScore,
+        confidenceBand: band,
+        confidenceProbability: Math.round(conf.confidenceScore) / 100,
+        reason: conf.confidenceReason,
+        daysSinceLastRecount: conf.stats.daysSinceRecount,
+        movementsSinceLastRecount: conf.stats.totalMovements,
+        hadEverBeenRecounted: conf.stats.hasEverBeenRecounted,
+        predictedTrustworthy: band === "trusted" || band === "probably_right",
+        syntheticAtCapture: !!state.sampleData,
+        capturedAt: new Date().toISOString(),
+      };
+    } catch (e) {
+      return null; // calibration capture must never break a recount
+    }
+  }
+
+  function recountWithinTolerance(absError, actualQty) {
+    return absError <= RECOUNT_TOLERANCE_ABS
+      || (absError / Math.max(actualQty, 1)) <= RECOUNT_TOLERANCE_PCT;
+  }
+
+  // Four-way verdict: did the model's stated confidence match what was found?
+  function classifyRecountVerdict(predictedTrustworthy, withinTolerance) {
+    if (predictedTrustworthy && withinTolerance) return "confident_correct"; // rightly sure
+    if (predictedTrustworthy && !withinTolerance) return "overconfident";    // sure but wrong (worst)
+    if (!predictedTrustworthy && !withinTolerance) return "flagged_correctly"; // good catch
+    return "false_alarm"; // flagged doubt but the count was fine
+  }
+
+  function buildRecountCalibrationRows(transactions) {
+    return (transactions || [])
+      .filter(t => t.type === "recount" && t.prediction && t.newQty !== undefined && t.newQty !== null)
+      .map(t => {
+        const pred = t.prediction;
+        const actualQty = Number(t.newQty) || 0;
+        const predictedQty = Number(pred.predictedQty) || 0;
+        const error = actualQty - predictedQty; // + => model understated, − => overstated
+        const absError = Math.abs(error);
+        const errorPct = absError / Math.max(actualQty, predictedQty, 1);
+        const withinTolerance = recountWithinTolerance(absError, actualQty);
+        const trustworthy = !!pred.predictedTrustworthy;
+        const p = typeof pred.confidenceProbability === "number"
+          ? pred.confidenceProbability
+          : (Number(pred.confidenceScore) || 0) / 100;
+        return {
+          itemId: t.itemId,
+          itemName: itemName(t.itemId),
+          date: t.date,
+          predictedQty,
+          actualQty,
+          error,
+          absError,
+          errorPct: Math.round(errorPct * 100) / 100,
+          confidenceBand: pred.confidenceBand,
+          confidenceProbability: p,
+          predictedTrustworthy: trustworthy,
+          withinTolerance,
+          verdict: classifyRecountVerdict(trustworthy, withinTolerance),
+          brierContribution: Math.round(Math.pow(p - (withinTolerance ? 1 : 0), 2) * 1000) / 1000,
+          synthetic: !!pred.syntheticAtCapture,
+        };
+      });
+  }
+
+  function rcMean(nums) {
+    if (!nums.length) return 0;
+    return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100;
+  }
+
+  function rcRate(part, whole) {
+    return whole > 0 ? Math.round((part / whole) * 100) / 100 : null;
+  }
+
+  function buildRecountCalibration(transactions) {
+    const allRows = buildRecountCalibrationRows(transactions);
+    // Synthetic captures (seed/sample data) are not real labels — measure on real ones.
+    const rows = allRows.filter(r => !r.synthetic);
+    const n = rows.length;
+    const bands = ["trusted", "probably_right", "uncertain", "needs_checking"];
+    const byBand = {};
+    bands.forEach(b => {
+      const br = rows.filter(r => r.confidenceBand === b);
+      byBand[b] = {
+        count: br.length,
+        withinToleranceRate: rcRate(br.filter(r => r.withinTolerance).length, br.length),
+        meanAbsError: rcMean(br.map(r => r.absError)),
+      };
+    });
+    const trustworthyRows = rows.filter(r => r.predictedTrustworthy);
+    const flaggedRows = rows.filter(r => !r.predictedTrustworthy);
+    const wrongRows = rows.filter(r => !r.withinTolerance);
+    const verdictCounts = { confident_correct: 0, overconfident: 0, flagged_correctly: 0, false_alarm: 0 };
+    rows.forEach(r => { verdictCounts[r.verdict] = (verdictCounts[r.verdict] || 0) + 1; });
+
+    return {
+      modelVersion: RECOUNT_CALIBRATION_MODEL_VERSION,
+      totalLabeledRecounts: allRows.length,
+      realLabeledRecounts: n,
+      syntheticLabeledRecounts: allRows.length - n,
+      readyForCalibration: n >= RECOUNT_MIN_LABELED,
+      meanAbsError: rcMean(rows.map(r => r.absError)),
+      meanSignedError: rcMean(rows.map(r => r.error)), // bias: + = model tends to undercount
+      withinToleranceRate: rcRate(rows.filter(r => r.withinTolerance).length, n),
+      brierScore: rcMean(rows.map(r => r.brierContribution)), // lower is better-calibrated
+      verdictCounts,
+      overconfidenceRate: rcRate(verdictCounts.overconfident, trustworthyRows.length),
+      catchRate: rcRate(verdictCounts.flagged_correctly, wrongRows.length),
+      falseAlarmRate: rcRate(verdictCounts.false_alarm, flaggedRows.length),
+      byBand,
+      trackRecord: allRows.slice(-RECOUNT_MIN_LABELED).reverse(),
+      limitations: rcCalibrationLimitations(allRows.length, n),
+    };
+  }
+
+  function rcCalibrationLimitations(total, real) {
+    const out = [];
+    if (total === 0) out.push("No recounts have been captured with a prediction yet.");
+    if (real < RECOUNT_MIN_LABELED) out.push(`Fewer than ${RECOUNT_MIN_LABELED} real recounts — calibration is provisional.`);
+    if (total > real) out.push("Some recounts were captured on sample data and are excluded from calibration.");
+    out.push("Calibration measures the item-confidence model only, not packing or donation accuracy.");
+    return out;
+  }
+
+  function recountCalibrationSummaryConcise(cal) {
+    if (!cal) return null;
+    const v = cal.verdictCounts || {};
+    let headline;
+    if (cal.realLabeledRecounts === 0) {
+      headline = "No real recounts captured yet — the model has nothing to be scored against.";
+    } else if (!cal.readyForCalibration) {
+      headline = `Provisional: ${cal.realLabeledRecounts} real recount(s) so far; matched the shelf within tolerance ${Math.round((cal.withinToleranceRate || 0) * 100)}% of the time.`;
+    } else {
+      headline = `The confidence model matched ${Math.round((cal.withinToleranceRate || 0) * 100)}% of ${cal.realLabeledRecounts} recounts; overconfident on ${v.overconfident || 0}, good catches ${v.flagged_correctly || 0}.`;
+    }
+    return {
+      modelVersion: cal.modelVersion,
+      realLabeledRecounts: cal.realLabeledRecounts,
+      readyForCalibration: cal.readyForCalibration,
+      withinToleranceRate: cal.withinToleranceRate,
+      meanAbsError: cal.meanAbsError,
+      meanSignedError: cal.meanSignedError,
+      brierScore: cal.brierScore,
+      overconfidenceRate: cal.overconfidenceRate,
+      catchRate: cal.catchRate,
+      falseAlarmRate: cal.falseAlarmRate,
+      headline,
     };
   }
 
@@ -5838,11 +6042,10 @@
   }
 
   function renderHomeMore() {
-    const canUndo = !!state.undoSnapshot;
     let html = `<div class="home-more-wrap"><details class="home-more">
       <summary data-track-exposure="home_need_something_else" data-exposure-label="Need something else?">Need something else?</summary>
       <div class="home-more-body">`;
-    if (canUndo) {
+    if (canUndo()) {
       html += `<div class="home-more-section">
         <button type="button" class="home-undo" id="btn-undo">Undo last action</button>
       </div>`;
