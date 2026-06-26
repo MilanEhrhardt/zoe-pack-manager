@@ -31,6 +31,11 @@ function extractBlock(src, anchor) {
   }
   throw new Error(`unbalanced braces after: ${anchor}`);
 }
+function getConst(name) {
+  const m = new RegExp(`const ${name}\\s*=\\s*(.+?);`).exec(HTML);
+  if (!m) throw new Error(`const not found: ${name}`);
+  return `const ${name} = ${m[1]};`;
+}
 
 // Minimal stubs: esc is identity-ish (no DOM); volunteer band labels are real
 // in spirit; computeIntelligenceDashboardModel is injected per-test via global.
@@ -44,6 +49,16 @@ const STUBS = `
   }
   let __MODEL__ = null;
   function computeIntelligenceDashboardModel() { return __MODEL__; }
+  // chart data stubs
+  const ITEMS = [
+    { id: "pads", name: "Pads", threshold: 20 },
+    { id: "soap", name: "Soap", threshold: 10 },
+    { id: "wipes", name: "Wipes", threshold: 0 },        // untracked → excluded
+    { id: "winter", name: "Winter Hat", threshold: 5 },  // out of season → excluded
+  ];
+  const __BAL__ = { pads: 8, soap: 25, winter: 99 };
+  const getBalance = (id) => __BAL__[id] || 0;
+  const isOutOfSeason = (i) => i.id === "winter";
 `;
 
 const blocks = [
@@ -54,11 +69,18 @@ const blocks = [
   extractBlock(HTML, "function mindReasoningTypeLabel("),
   extractBlock(HTML, "function mindVerdictPill("),
   extractBlock(HTML, "function mindUsableReasoning("),
+  getConst("MIND_MONTHS"),
+  extractBlock(HTML, "function chartMonthLabel("),
+  extractBlock(HTML, "function chartStockVsLineRows("),
+  extractBlock(HTML, "function chartPacksByMonth("),
+  extractBlock(HTML, "function renderChartStockVsLine("),
+  extractBlock(HTML, "function renderChartPacksByMonth("),
   extractBlock(HTML, "function renderMindTrustSection("),
   extractBlock(HTML, "function renderMindCountNextSection("),
   extractBlock(HTML, "function renderMindShelfSection("),
   extractBlock(HTML, "function renderMindNoticedSection("),
   extractBlock(HTML, "function renderMindStockSection("),
+  extractBlock(HTML, "function renderMindNumbersSection("),
   extractBlock(HTML, "function renderIntelligenceDashboard("),
 ];
 
@@ -66,6 +88,8 @@ const harness = `
   ${blocks.join("\n")}
   return {
     mindPct, mindBandPill, mindSafe, mindVerdictPill, mindUsableReasoning,
+    chartMonthLabel, chartStockVsLineRows, chartPacksByMonth,
+    renderChartStockVsLine, renderChartPacksByMonth,
     renderMindTrustSection, renderMindCountNextSection, renderMindShelfSection,
     renderMindNoticedSection, renderMindStockSection, renderIntelligenceDashboard,
     setModel: (m) => { __MODEL__ = m; },
@@ -273,6 +297,95 @@ check("dashboard survives a null model without throwing", () => {
   api.setModel(null);
   const html = api.renderIntelligenceDashboard();
   assert.match(html, /could not be assembled/);
+});
+
+// ── Charts: data (by the numbers) ───────────────────────────────────────
+check("chartMonthLabel maps YYYY-MM to a month name", () => {
+  assert.equal(api.chartMonthLabel("2026-04"), "Apr");
+  assert.equal(api.chartMonthLabel("2026-12"), "Dec");
+});
+check("chartStockVsLineRows excludes untracked + out-of-season, flags below-line, sorts deficit-first", () => {
+  const rows = api.chartStockVsLineRows();
+  const names = rows.map(r => r.name);
+  assert.deepEqual(names, ["Pads", "Soap"]); // Wipes (threshold 0) & Winter Hat (out of season) dropped
+  const pads = rows.find(r => r.name === "Pads");
+  const soap = rows.find(r => r.name === "Soap");
+  assert.equal(pads.below, true);   // 8 < 20
+  assert.equal(soap.below, false);  // 25 >= 10
+  assert.equal(rows[0].name, "Pads"); // most-deficient first (0.40 < 2.50)
+});
+check("chartPacksByMonth aggregates builds and assembled deliveries by month & pack", () => {
+  const tx = [
+    { type: "build", date: "2026-04-03", packKey: "momPack", qty: 5 },
+    { type: "build", date: "2026-04-20", packKey: "babyPack", qty: 2 },
+    { type: "build", date: "2026-05-01", packKey: "momPack", qty: 3 },
+    { type: "deliver", date: "2026-05-10", packKey: "momPack", qty: 4, deliverType: "assembled" },
+    { type: "deliver", date: "2026-05-11", itemId: "nappies", qty: 9, deliverType: "completeUnit" }, // not a pack → ignored
+    { type: "donation", date: "2026-05-12" }, // ignored
+  ];
+  const months = api.chartPacksByMonth(tx);
+  assert.equal(months.length, 2);
+  assert.deepEqual(months.map(m => m.month), ["2026-04", "2026-05"]); // chronological
+  assert.equal(months[0].builtMom, 5);
+  assert.equal(months[0].builtBaby, 2);
+  assert.equal(months[1].builtMom, 3);
+  assert.equal(months[1].delMom, 4);
+  assert.equal(months[1].delBaby, 0);
+});
+check("chartPacksByMonth ignores undated / empty months", () => {
+  assert.deepEqual(api.chartPacksByMonth([{ type: "build", packKey: "momPack", qty: 5 }]), []);
+  assert.deepEqual(api.chartPacksByMonth([]), []);
+  assert.deepEqual(api.chartPacksByMonth(null), []);
+});
+
+// ── Charts: rendering ───────────────────────────────────────────────────
+check("stock chart renders a below-line bar in red and shows balance/threshold", () => {
+  const html = api.renderChartStockVsLine([{ name: "Pads", balance: 8, threshold: 20, below: true }]);
+  assert.match(html, /is-below/);
+  assert.match(html, /<b>8<\/b> \/ 20/);
+  assert.match(html, /reorder level/);
+});
+check("stock chart clamps surplus width and keeps healthy bars un-flagged", () => {
+  const html = api.renderChartStockVsLine([{ name: "Soap", balance: 999, threshold: 10, below: false }]);
+  assert.doesNotMatch(html, /is-below/);
+  assert.match(html, /width:100\.0%/); // clamped at 1.5×/1.5 = 100%
+});
+check("stock chart has an empty state", () => {
+  assert.match(api.renderChartStockVsLine([]), /No tracked items/);
+});
+check("packs chart emits an SVG with month labels and a legend", () => {
+  const html = api.renderChartPacksByMonth([
+    { month: "2026-04", builtMom: 5, builtBaby: 2, delMom: 0, delBaby: 0 },
+    { month: "2026-05", builtMom: 3, builtBaby: 0, delMom: 4, delBaby: 0 },
+  ]);
+  assert.match(html, /<svg/);
+  assert.match(html, /<rect/);
+  assert.match(html, />Apr</);
+  assert.match(html, />May</);
+  assert.match(html, /Mom Pack/);
+  assert.match(html, /Baby Pack/);
+});
+check("packs chart has an empty state", () => {
+  assert.match(api.renderChartPacksByMonth([]), /No packs built or delivered/);
+});
+check("packs chart never divides by zero when all values are zero", () => {
+  const html = api.renderChartPacksByMonth([{ month: "2026-04", builtMom: 0, builtBaby: 0, delMom: 0, delBaby: 0 }]);
+  assert.match(html, /<svg/);
+  assert.doesNotMatch(html, /NaN/);
+});
+check("numbers section is included in the full dashboard render", () => {
+  api.setModel({
+    sampleData: false,
+    calibration: { readyForCalibration: true, headline: "h", beliefHeadline: "b", withinToleranceRate: 0.9, realLabeledRecounts: 10, beliefCalibration: { verdict: "well_calibrated" } },
+    countPriorities: { topPick: null, topThree: [] },
+    beliefSummary: { itemCount: 7 }, reasoning: { topThreeReasonings: [] },
+    lowStock: [], buildable: [{ label: "Mom Pack", count: 5 }],
+    charts: { stockVsLine: [{ name: "Pads", balance: 8, threshold: 20, below: true }], packsByMonth: [] },
+  });
+  const html = api.renderIntelligenceDashboard();
+  assert.match(html, /By the numbers/);
+  assert.match(html, /Stock against its reorder line/);
+  assert.match(html, /Packs built/);
 });
 
 console.log(`intelligence-dashboard.test.js: ${pass} checks passed`);
