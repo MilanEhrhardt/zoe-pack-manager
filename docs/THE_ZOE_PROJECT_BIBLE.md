@@ -181,7 +181,7 @@ Volunteers never see: dashboards, charts, transaction lists, analytics toggles o
 | **Donation** | Log incoming stock | Donor, date, multi-line items, packet sizes | Yes |
 | **Build** | Record packs built | Pack type, qty, packer, destination, optional toggles, subflow for swaps/omissions/extras | Yes |
 | **Deliver** | Record outbound | Tab: assembled packs OR complete units; qty, destination, date | Yes |
-| **Stock** | Recount one item | Item, physical count, optional reason | Yes |
+| **Stock** | Recount one item | Item, physical count, optional structured reason (chips, gated by variance) | Yes |
 | **Admin** | Backup, import, analytics, AI pack | Hidden; not daily | Import: yes |
 
 Undo: multi-level (last 25 actions), home **Undo last action** when stack non-empty.
@@ -213,7 +213,7 @@ opening balances + donations − recipe deductions (build) − complete-unit del
 - **Mom Pack / Baby Pack** recipes: locked **core** + **optional** toggles on main screen.
 - `computeBuildStockPlan` determines shelf usage: core, included optionals (with decrement rules), substitutions, omissions, custom extras.
 - Optional surplus nudge: tissues/hand cream default on when stock high.
-- **Something was different** subflow: substitutions, omissions, unlisted extras only — not for common optionals.
+- **Something was different** subflow: substitutions, omissions, unlisted extras only — not for common optionals. Optional per-line reason chips on swaps and left-outs (Phase X2).
 - On save: decrement items, increase `readyPacks[packKey]`, record build transaction (packer, destination, optional included, subs, omissions).
 - Baby Pack: recipe treated as draft until volunteers confirm (`PRODUCT_DECISIONS.md`).
 
@@ -284,7 +284,7 @@ The **Storeroom Prioritisation Engine** is a future **multi-objective recommenda
 
 | Phase | Scope |
 |-------|-------|
-| **Phase 1** | Engine runs invisibly; recommendations appear in AI Data Pack / ops export only. No Janet UI. |
+| **Phase 1** | Engine runs invisibly; recommendations appear in AI Data Pack / ops export only. No Janet UI. Intelligence layers are **self-checking** before export (`ibv.1` dependency validation on the canonical bundle). |
 | **Phase 2** | Confidence Meter + optional single whisper after field validation; outcome telemetry. |
 | **Phase 3** | Cross-install learning; richer ops briefs (donor asks, clinic-aware priorities). Janet surface stays one whisper maximum. |
 

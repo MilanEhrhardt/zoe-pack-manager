@@ -55,6 +55,10 @@ const blocks = [
   extractBlock(HTML, "function extractDonorsFromTransactions("),
   extractBlock(HTML, "function analyticsId("),
   extractBlock(HTML, "function analyticsUpgradeState("),
+  extractBlock(HTML, "const OPERATIONAL_CAUSES = {"),
+  extractBlock(HTML, "function operationalCauseFromId("),
+  extractBlock(HTML, "function normalizeOperationalReason("),
+  extractBlock(HTML, "function normalizeImportedTransactionContext("),
   extractBlock(HTML, "function normalizeImportedState("),
 ].join("\n\n");
 
