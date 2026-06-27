@@ -4138,19 +4138,21 @@
   // ═══════════════════════════════════════════════════════════════════
 
   function snapshotForUndo() {
-    return JSON.parse(JSON.stringify({
-      balances: state.balances,
-      readyPacks: state.readyPacks,
+    return {
+      balances: JSON.parse(JSON.stringify(state.balances)),
+      readyPacks: JSON.parse(JSON.stringify(state.readyPacks)),
       txCount: state.transactions.length,
-    }));
+    };
   }
 
-  function fullSnapshotForHistory() {
-    return JSON.parse(JSON.stringify({
-      balances: state.balances,
-      readyPacks: state.readyPacks,
-      transactions: state.transactions,
-    }));
+  // Balances/readyPacks are small maps — cheap to clone. The transactions log is
+  // append-only, so undo truncates to a saved length and redo re-appends the saved
+  // tail; we never deep-clone the whole log into a history snapshot.
+  function cloneBalancesAndPacks() {
+    return {
+      balances: JSON.parse(JSON.stringify(state.balances)),
+      readyPacks: JSON.parse(JSON.stringify(state.readyPacks)),
+    };
   }
 
   function trimHistoryStack(stack) {
@@ -4158,15 +4160,11 @@
     stack.splice(0, stack.length - UNDO_STACK_LIMIT);
   }
 
-  function restoreHistorySnapshot(snap) {
+  // Restore only the balance maps; the transactions array is handled explicitly by
+  // each caller (truncate for undo, re-append the saved tail for redo).
+  function applyHistorySnapshot(snap) {
     state.balances = snap.balances;
     state.readyPacks = snap.readyPacks;
-    if (Array.isArray(snap.transactions)) {
-      state.transactions = snap.transactions;
-    } else {
-      state.transactions = state.transactions.slice(0, snap.txCount);
-      state.transactions.push({ id: uid(), type: "undo", date: todayISO() });
-    }
   }
 
   function beginTransaction() {
@@ -4199,10 +4197,18 @@
     analyticsTrack("undo_clicked", { undosAvailable: remainingBefore, snapshot: analyticsOperationalSnapshot() });
     if (!canUndo()) return;
     if (!Array.isArray(state.redoStack)) state.redoStack = [];
-    state.redoStack.push(fullSnapshotForHistory());
-    trimHistoryStack(state.redoStack);
     const snap = state.undoStack.pop();
-    restoreHistorySnapshot(snap);
+    // New light snapshots carry txCount; legacy full snapshots carry transactions[].
+    const targetCount = Array.isArray(snap.transactions) ? snap.transactions.length : snap.txCount;
+    // Remember the txs we're undoing so redo can restore them without cloning the log.
+    const redoEntry = cloneBalancesAndPacks();
+    redoEntry.tail = state.transactions.slice(targetCount);
+    state.redoStack.push(redoEntry);
+    trimHistoryStack(state.redoStack);
+    applyHistorySnapshot(snap);
+    state.transactions = Array.isArray(snap.transactions)
+      ? snap.transactions
+      : state.transactions.slice(0, snap.txCount);
     invalidateSessionTxDerivedCache();
     saveState();
     render();
@@ -4213,10 +4219,13 @@
     analyticsTrack("redo_clicked", { redosAvailable: remainingBefore, snapshot: analyticsOperationalSnapshot() });
     if (!canRedo()) return;
     if (!Array.isArray(state.undoStack)) state.undoStack = [];
-    state.undoStack.push(fullSnapshotForHistory());
+    state.undoStack.push(snapshotForUndo()); // current state becomes a fresh undo point
     trimHistoryStack(state.undoStack);
     const snap = state.redoStack.pop();
-    restoreHistorySnapshot(snap);
+    applyHistorySnapshot(snap);
+    state.transactions = Array.isArray(snap.transactions)
+      ? snap.transactions                      // legacy full redo snapshot
+      : state.transactions.concat(snap.tail || []);
     invalidateSessionTxDerivedCache();
     saveState();
     render();
