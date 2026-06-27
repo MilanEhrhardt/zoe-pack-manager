@@ -68,6 +68,11 @@ const blocks = [
   extractBlock(HTML, "const OPERATIONAL_CAUSES = {"),
   extractBlock(HTML, "function operationalCauseFromId("),
   extractBlock(HTML, "function normalizeOperationalReason("),
+  extractBlock(HTML, "const EXCEPTION_CAUSES = {"),
+  extractBlock(HTML, "const LEGACY_EXCEPTION_CAUSE_MAP = {"),
+  extractBlock(HTML, "function exceptionCauseFromId("),
+  extractBlock(HTML, "function resolveExceptionCauseId("),
+  extractBlock(HTML, "function normalizeExceptionReason("),
   extractBlock(HTML, "function normalizeImportedTransactionContext("),
   extractBlock(HTML, "function normalizeImportedState("),
 ].join("\n\n");

@@ -204,7 +204,6 @@ const RECIPES = {
       { itemId: "deo", decrement: true },
       { itemId: "panties", decrement: true },
       { itemId: "breast-pads", decrement: true },
-      { itemId: "wet-wipes", decrement: true },
       { itemId: "tissues", decrement: true, surplusDriven: true },
       { itemId: "hand-cream", decrement: true, surplusDriven: true, defaultOff: true }
     ]
@@ -220,6 +219,7 @@ const RECIPES = {
     ],
     optional: [
       { itemId: "receiving", decrement: true },
+      { itemId: "wet-wipes", decrement: true },
       { itemId: "knitted-blanket", decrement: true },
       { itemId: "cotton-hat", decrement: true },
       { itemId: "socks", decrement: true },

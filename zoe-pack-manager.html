@@ -1727,7 +1727,7 @@
         packCount: Math.max(0, parseInt(s.packCount, 10) || 0),
         qtyPerPack: Math.max(1, parseInt(s.qtyPerPack, 10) || 1),
       };
-      const reason = normalizeOperationalReason(s.reason || (s.reasonId ? operationalCauseFromId(s.reasonId) : null));
+      const reason = normalizeExceptionReason(s.reason || s.reasonId || s.causeId);
       if (reason) row.reason = reason;
       return row;
     }).filter(s => s.insteadOf && s.substitute && s.insteadOf !== s.substitute && s.packCount > 0);
@@ -1740,7 +1740,7 @@
         packCount: Math.max(0, parseInt(o.packCount, 10) || 0),
         qtyPerPack: Math.max(1, parseInt(o.qtyPerPack, 10) || 1),
       };
-      const reason = normalizeOperationalReason(o.reason || (o.reasonId ? operationalCauseFromId(o.reasonId) : null));
+      const reason = normalizeExceptionReason(o.reason || o.reasonId || o.causeId);
       if (reason) row.reason = reason;
       return row;
     }).filter(o => o.itemId && o.packCount > 0);
@@ -1990,8 +1990,93 @@
     "missing_stock", "initial_count_wrong", "unknown",
   ];
 
-  const BUILD_SUB_REASON_CAUSE_IDS = ["stock_shortage", "volunteer_preference", "unknown"];
-  const BUILD_OMIT_REASON_CAUSE_IDS = ["stock_shortage", "volunteer_preference", "unknown"];
+  const EXCEPTION_CAUSES = {
+    not_on_shelf: { label: "Not on shelf", reasoningCause: "stock_shortage", category: "inventory" },
+    clinic_requested: { label: "Clinic asked", reasoningCause: "clinic_requested", category: "clinic" },
+    volunteer_choice: { label: "We chose this", reasoningCause: "volunteer_preference", category: "volunteer" },
+    not_needed_today: { label: "Not needed today", reasoningCause: "recipient_or_pack_context", category: "operations" },
+    other: { label: "Other", reasoningCause: "unknown", category: "unknown" },
+  };
+  const SUB_EXCEPTION_CAUSE_IDS = ["not_on_shelf", "clinic_requested", "volunteer_choice", "other"];
+  const OMIT_EXCEPTION_CAUSE_IDS = ["not_on_shelf", "clinic_requested", "not_needed_today", "other"];
+  const LEGACY_EXCEPTION_CAUSE_MAP = {
+    stock_shortage: "not_on_shelf",
+    volunteer_preference: "volunteer_choice",
+    unknown: "other",
+  };
+
+  function exceptionCauseFromId(causeId) {
+    const meta = EXCEPTION_CAUSES[causeId];
+    if (!meta) return null;
+    return { causeId, label: meta.label, source: "volunteer" };
+  }
+
+  function exceptionReasoningCause(causeId) {
+    return EXCEPTION_CAUSES[causeId]?.reasoningCause || "unknown";
+  }
+
+  function resolveExceptionCauseId(rawId) {
+    const id = String(rawId || "").trim();
+    if (!id) return "";
+    return LEGACY_EXCEPTION_CAUSE_MAP[id] || id;
+  }
+
+  function normalizeExceptionReason(raw) {
+    if (raw == null) return null;
+    if (typeof raw === "string") {
+      const mapped = resolveExceptionCauseId(raw);
+      return mapped ? exceptionCauseFromId(mapped) : null;
+    }
+    if (typeof raw === "object") {
+      if (raw.causeId) return exceptionCauseFromId(resolveExceptionCauseId(raw.causeId));
+      if (raw.reasonId) return exceptionCauseFromId(resolveExceptionCauseId(raw.reasonId));
+      if (raw.id) return exceptionCauseFromId(resolveExceptionCauseId(raw.id));
+    }
+    return null;
+  }
+
+  function computeExceptionReasonSummary(transactions) {
+    const subs = { total: 0, withReason: 0, byCause: {} };
+    const omits = { total: 0, withReason: 0, byCause: {} };
+    const bump = (bucket, reason) => {
+      bucket.total += 1;
+      if (reason?.causeId) {
+        bucket.withReason += 1;
+        bucket.byCause[reason.causeId] = (bucket.byCause[reason.causeId] || 0) + 1;
+      }
+    };
+    (transactions || []).forEach(tx => {
+      if (tx.type !== "build") return;
+      (tx.substitutions || []).forEach(sub => bump(subs, normalizeExceptionReason(sub.reason)));
+      (tx.omissions || []).forEach(omit => bump(omits, normalizeExceptionReason(omit.reason)));
+    });
+    const finalize = b => ({
+      total: b.total,
+      withReason: b.withReason,
+      reasonCaptureRate: b.total ? Math.round((b.withReason / b.total) * 100) / 100 : 0,
+      byCause: { ...b.byCause },
+    });
+    return { substitutions: finalize(subs), omissions: finalize(omits) };
+  }
+
+  function trackExceptionReasonsMissing(normalizedSubs, normalizedOmissions, packKey) {
+    (normalizedSubs || []).forEach(s => {
+      if (s.reason) return;
+      analyticsTrack("exception_reason_missing", {
+        exceptionType: "substitution",
+        packKey,
+        itemId: s.insteadOf,
+      });
+    });
+    (normalizedOmissions || []).forEach(o => {
+      if (o.reason) return;
+      analyticsTrack("exception_reason_missing", {
+        exceptionType: "omission",
+        packKey,
+        itemId: o.itemId,
+      });
+    });
+  }
 
   function operationalCauseFromId(causeId) {
     const meta = OPERATIONAL_CAUSES[causeId];
@@ -2043,6 +2128,21 @@
     };
   }
 
+  function renderExceptionReasonChips(causeIds, selectedCauseId, chipClass, dataAttrs) {
+    const cls = chipClass || "reason-chip";
+    const extra = dataAttrs ? ` ${dataAttrs}` : "";
+    const buttons = causeIds.map(id => {
+      const meta = EXCEPTION_CAUSES[id];
+      if (!meta) return "";
+      const on = selectedCauseId === id ? " reason-chip--on" : "";
+      return `<button type="button" class="${cls}${on}" data-cause-id="${esc(id)}"${extra}>${esc(meta.label)}</button>`;
+    }).join("");
+    return `<div class="reason-chips">
+      <span class="reason-chips-label">Why? (optional)</span>
+      <div class="shortcut-btns reason-chips-row">${buttons}</div>
+    </div>`;
+  }
+
   function renderOperationalReasonChips(causeIds, selectedId, chipClass, dataAttrs) {
     const cls = chipClass || "reason-chip";
     const extra = dataAttrs ? ` ${dataAttrs}` : "";
@@ -2067,14 +2167,18 @@
     }
     if (tx.type === "build") {
       (tx.substitutions || []).forEach(sub => {
-        const reason = normalizeOperationalReason(sub.reason);
+        const reason = normalizeExceptionReason(sub.reason || sub.reasonId || sub.causeId);
         if (reason) sub.reason = reason;
         else delete sub.reason;
+        delete sub.reasonId;
+        delete sub.causeId;
       });
       (tx.omissions || []).forEach(omit => {
-        const reason = normalizeOperationalReason(omit.reason);
+        const reason = normalizeExceptionReason(omit.reason || omit.reasonId || omit.causeId);
         if (reason) omit.reason = reason;
         else delete omit.reason;
+        delete omit.reasonId;
+        delete omit.causeId;
       });
     }
   }
@@ -4365,7 +4469,33 @@
       return { ...base, donor: tx.donor || "", lineCount: tx.lines?.length || 0, unitsAdded: (tx.lines || []).reduce((a, l) => a + (Number(l.unitsAdded) || 0), 0), items: (tx.lines || []).map(l => ({ itemId: l.itemId, qty: l.qty, unitsAdded: l.unitsAdded })) };
     }
     if (tx.type === "build") {
-      return { ...base, packKey: tx.packKey, qty: tx.qty, packer: tx.packer, destination: tx.destination, optionalIncluded: tx.optionalIncluded || [], customExtraCount: tx.customExtras?.length || 0, substitutionCount: tx.substitutions?.length || 0, omissionCount: tx.omissions?.length || 0, isTesterUser: isTesterUser(tx.packer) };
+      const subs = tx.substitutions || [];
+      const omits = tx.omissions || [];
+      const subReasons = subs.map(s => ({
+        itemId: s.insteadOf,
+        replacementItemId: s.substitute,
+        causeId: normalizeExceptionReason(s.reason)?.causeId || null,
+      })).filter(r => r.causeId);
+      const omitReasons = omits.map(o => ({
+        itemId: o.itemId,
+        causeId: normalizeExceptionReason(o.reason)?.causeId || null,
+      })).filter(r => r.causeId);
+      return {
+        ...base,
+        packKey: tx.packKey,
+        qty: tx.qty,
+        packer: tx.packer,
+        destination: tx.destination,
+        optionalIncluded: tx.optionalIncluded || [],
+        customExtraCount: tx.customExtras?.length || 0,
+        substitutionCount: subs.length,
+        omissionCount: omits.length,
+        substitutionsWithReason: subReasons.length,
+        omissionsWithReason: omitReasons.length,
+        substitutionReasons: subReasons,
+        omissionReasons: omitReasons,
+        isTesterUser: isTesterUser(tx.packer),
+      };
     }
     if (tx.type === "deliver") {
       return { ...base, deliverType: tx.deliverType, destination: tx.destination, packKey: tx.packKey || "", itemId: tx.itemId || "", qty: tx.qty };
@@ -4504,6 +4634,7 @@
     const packingHabitsFull = bundle ? bundle.packingHabits : (opts.packingHabits || packingHabitSummary());
     const packingHabitsSummary = packingHabitsSummaryConcise(packingHabitsFull);
     const packingHabitTrends = packingHabitTrendsConcise(packingHabitsFull.trends);
+    const exceptionReasonSummary = computeExceptionReasonSummary(tx);
     const operationalIntelligence = bundle ? bundle.operationalIntelligence
       : (opts.operationalIntelligence || computeOperationalIntelligence({ itemConfidence, packingHabits: packingHabitsFull }));
     const operationalIntelligenceSummary = operationalIntelligenceSummaryConcise(operationalIntelligence);
@@ -4594,6 +4725,7 @@
       recountCalibrationSummary,
       stockBeliefSummary,
       countPrioritiesSummary,
+      exceptionReasonSummary,
       interactionEpisodeSummary,
       intelligenceBundleValidationSummary: bundle
         ? intelligenceBundleValidationSummary(sessionIntelligenceBundleValidation())
@@ -4980,6 +5112,7 @@
     if (contextItemIds.size) {
       tx.commitContext = buildCommitContext([...contextItemIds]);
     }
+    trackExceptionReasonsMissing(normalizedSubs, normalizedOmissions, packKey);
     for (const [itemId, deduct] of Object.entries(usage)) {
       if (deduct > 0) state.balances[itemId] = getBalance(itemId) - deduct;
     }
@@ -8083,9 +8216,13 @@
 
     const impactReadiness = computeImpactReadiness(readinessCtx);
     const limitations = opBuildLimitations(readinessCtx);
-    const summary = opBuildOperationalSummary(
-      buildImpact, substitutionImpact, optionalImpact, donationImpact, recountImpact, stockRisk, impactReadiness
-    );
+    const exceptionReasonSummary = computeExceptionReasonSummary(transactions);
+    const summary = {
+      ...opBuildOperationalSummary(
+        buildImpact, substitutionImpact, optionalImpact, donationImpact, recountImpact, stockRisk, impactReadiness
+      ),
+      exceptionReasonSummary,
+    };
 
     return {
       generatedAt: referenceAt,
@@ -11327,7 +11464,7 @@
         ${packErr ? `<div class="field-error" data-sub-error="${idx}">${esc(packErr)}</div>` : ""}
         <label>How many per pack?</label>
         <input type="number" class="sub-qty" data-sub-idx="${idx}" min="1" value="${esc(String(sub.qtyPerPack ?? defaultQty))}" placeholder="e.g. 2">
-        ${renderOperationalReasonChips(BUILD_SUB_REASON_CAUSE_IDS, sub.reasonId || "", "reason-chip sub-reason-chip", `data-sub-idx="${idx}"`)}
+        ${renderExceptionReasonChips(SUB_EXCEPTION_CAUSE_IDS, sub.reasonId || "", "reason-chip sub-reason-chip", `data-sub-idx="${idx}"`)}
         <button type="button" class="btn-small remove-sub" data-sub-idx="${idx}" style="margin-top:8px;">Remove</button>
       </div>`;
     });
@@ -11345,7 +11482,7 @@
         <input type="number" class="omit-packs" data-omit-idx="${idx}" min="1" ${qty > 0 ? `max="${qty}"` : ""} value="${esc(String(omit.packCount ?? ""))}" placeholder="e.g. 3">
         <label>How many per pack?</label>
         <input type="number" class="omit-qty" data-omit-idx="${idx}" min="1" value="${esc(String(omit.qtyPerPack ?? "1"))}" placeholder="e.g. 1">
-        ${renderOperationalReasonChips(BUILD_OMIT_REASON_CAUSE_IDS, omit.reasonId || "", "reason-chip omit-reason-chip", `data-omit-idx="${idx}"`)}
+        ${renderExceptionReasonChips(OMIT_EXCEPTION_CAUSE_IDS, omit.reasonId || "", "reason-chip omit-reason-chip", `data-omit-idx="${idx}"`)}
         <button type="button" class="btn-small remove-omit" data-omit-idx="${idx}" style="margin-top:8px;">Remove</button>
       </div>`;
     });
@@ -11993,7 +12130,7 @@
           qtyPerPack: firstShortage
             ? String(recipeQtyPerPack(form.packKey, firstShortage.itemId, included, customExtras))
             : "",
-          reasonId: firstShortage ? "stock_shortage" : "",
+          reasonId: firstShortage ? "not_on_shelf" : "",
         });
       }
       render();
@@ -12047,10 +12184,33 @@
         const causeId = btn.dataset.causeId;
         if (btn.dataset.subIdx != null) {
           const sub = form.substitutions[parseInt(btn.dataset.subIdx, 10)];
-          if (sub) sub.reasonId = sub.reasonId === causeId ? "" : causeId;
+          if (sub) {
+            const wasSelected = sub.reasonId === causeId;
+            sub.reasonId = wasSelected ? "" : causeId;
+            if (!wasSelected) {
+              analyticsTrack("exception_reason_selected", {
+                exceptionType: "substitution",
+                causeId,
+                packKey: form.packKey,
+                itemId: sub.insteadOf || "",
+                replacementItemId: sub.substitute || "",
+              });
+            }
+          }
         } else if (btn.dataset.omitIdx != null) {
           const omit = form.omissions[parseInt(btn.dataset.omitIdx, 10)];
-          if (omit) omit.reasonId = omit.reasonId === causeId ? "" : causeId;
+          if (omit) {
+            const wasSelected = omit.reasonId === causeId;
+            omit.reasonId = wasSelected ? "" : causeId;
+            if (!wasSelected) {
+              analyticsTrack("exception_reason_selected", {
+                exceptionType: "omission",
+                causeId,
+                packKey: form.packKey,
+                itemId: omit.itemId || "",
+              });
+            }
+          }
         }
         render();
       };

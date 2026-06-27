@@ -39,12 +39,12 @@ Copy this block for each new decision:
 
 | Field | Content |
 |-------|---------|
-| **Decision** | Add optional structured volunteer `reason` objects (`{ id, label, category }`) on recount transactions (chip picker, gated by material variance) and per substitution/omission line on builds. Include `commitContext` balance snapshots at commit. Shared `causeId` vocabulary aligned with habit/reasoning inference. Legacy recount free-text migrates to `reason.id = legacy_text` on import. Donation and delivery reasons deferred. |
-| **Date** | 2026-06-26 |
-| **Context** | Intelligence layers infer substitution causes probabilistically; ground-truth volunteer intent dramatically improves data quality for Operational Intelligence, Evidence Fusion, and future Active Learning — but only where exceptions occur. |
-| **Reasoning** | Minimal scope: no mandatory fields, no new pages, chip UI (not free text), default = no reason captured. Recount reason replaces the existing optional text field. Per-line reasons on build exceptions only — not normal builds. |
-| **Alternatives Considered** | **Full taxonomy on all tx types** — deferred (donation/delivery). **Free-text reasons** — rejected for Janet UX and export consistency. **Mandatory reasons** — rejected. |
-| **Status** | Accepted |
+| **Decision** | Optional per-line volunteer `reason` on build substitutions and omissions only — chip UI (`Why? optional`), not mandatory, not on normal builds or custom extras. Substitutions: Not on shelf, Clinic asked, We chose this, Other. Omissions: Not on shelf, Clinic asked, Not needed today, Other. Stored as `{ causeId, label, source: "volunteer" }`; omitted when nothing selected. Legacy operational ids (`stock_shortage`, etc.) migrate on import. Export aggregation: `exceptionReasonSummary` in analytics summary and `operationalIntelligence.summary` (totals, capture rate, byCause). Analytics: `exception_reason_selected`, `exception_reason_missing`. Operational Reasoning Engine consumption deferred. Recount reasons unchanged (`OPERATIONAL_CAUSES`). `commitContext` balance snapshots on exception builds. |
+| **Date** | 2026-06-27 |
+| **Context** | Field test + intelligence layers infer substitution causes probabilistically; ground-truth volunteer intent improves data quality — but only where exceptions occur, without burdening normal packing. |
+| **Reasoning** | Small per-line context field, not a reason system: no modal, no mandatory choice, human labels. Volunteer `causeId`s map to reasoning vocabulary via `EXCEPTION_CAUSES.reasoningCause` at export time only (Phase 1). |
+| **Alternatives Considered** | **Free-text "Other"** — deferred. **Wire into Operational Reasoning immediately** — deferred; export/aggregate only first. **Same chip set for sub and omit** — rejected; not_needed_today is omission-specific. |
+| **Status** | Accepted — chips, persistence, analytics, and export summary shipped. Headless tests `tests/exception-reason.test.js`, `tests/operational-context.test.js`. |
 
 ### Intelligence bundle dependency validation (internal / export-only)
 
