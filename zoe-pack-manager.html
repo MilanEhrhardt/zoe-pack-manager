@@ -321,6 +321,15 @@
     .footer p { margin-bottom: 10px; }
     .footer button { margin-right: 14px; }
     .footer-tools { display: flex; flex-wrap: wrap; gap: 14px; }
+    .add-item-fold { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+    .add-item-fold > summary { cursor: pointer; font-weight: 600; color: var(--zoe-purple-dark); font-size: 0.92rem; }
+    .add-item-form { margin-top: 12px; }
+    .add-item-form > .muted { font-size: 0.85rem; margin: 0 0 10px; }
+    .add-item-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .add-item-msg { margin: 12px 0; font-size: 0.9rem; font-weight: 600; }
+    .add-item-msg--error { color: #A13A34; }
+    .add-item-msg--ok { color: var(--zoe-green); }
+    @media (max-width: 559px) { .add-item-row { grid-template-columns: 1fr; } }
     .analytics-note {
       margin-top: 12px;
       font-size: 0.86rem;
@@ -724,12 +733,17 @@
     }
     .zoe-select-search-wrap {
       flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
       padding: 0 0 6px;
       margin: 0 0 4px;
       border-bottom: 1px solid var(--border);
     }
     .zoe-select-search {
-      width: 100%;
+      flex: 1;
+      min-width: 0;
+      width: auto;
       padding: 10px 12px;
       font-size: 0.95rem;
       font-family: inherit;
@@ -741,6 +755,89 @@
     .zoe-select-search:focus {
       outline: 3px solid rgba(95,67,178,0.18);
       border-color: var(--zoe-purple);
+    }
+    .zoe-select-add-btn {
+      flex-shrink: 0;
+      padding: 9px 12px;
+      font-size: 0.82rem;
+      font-weight: 650;
+      font-family: inherit;
+      color: var(--zoe-purple-dark);
+      background: rgba(95,67,178,0.08);
+      border: 1px solid rgba(95,67,178,0.22);
+      border-radius: 10px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .zoe-select-add-btn:hover { background: rgba(95,67,178,0.14); }
+    .zoe-select-menu--adding .zoe-select-options { display: none; }
+    .zoe-select-add-panel {
+      padding: 4px 2px 2px;
+      max-height: 320px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .zoe-select-add-hint {
+      margin: 0 0 10px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.35;
+    }
+    .zoe-select-add-label {
+      display: block;
+      margin: 0 0 4px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .zoe-select-add-name,
+    .zoe-select-add-category,
+    .zoe-select-add-unit,
+    .zoe-select-add-threshold {
+      width: 100%;
+      margin: 0 0 10px;
+      padding: 9px 11px;
+      font-size: 0.92rem;
+      font-family: inherit;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--text);
+    }
+    .zoe-select-add-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+    .zoe-select-add-row .zoe-select-add-label { margin-top: 0; }
+    .zoe-select-add-row select,
+    .zoe-select-add-row input { margin-bottom: 0; }
+    @media (max-width: 559px) { .zoe-select-add-row { grid-template-columns: 1fr; } }
+    .zoe-select-add-msg {
+      margin: 8px 0 10px;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+    .zoe-select-add-msg--error { color: #A13A34; }
+    .zoe-select-add-msg--ok { color: var(--zoe-green); }
+    .zoe-select-add-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 12px;
+    }
+    .zoe-select-empty-add {
+      display: inline;
+      margin: 0;
+      padding: 0;
+      font: inherit;
+      font-weight: 650;
+      color: var(--zoe-purple-dark);
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
     }
     .zoe-select-option.hidden,
     .zoe-select-group-label.hidden { display: none; }
@@ -1498,7 +1595,6 @@
         { itemId: "deo", decrement: true },
         { itemId: "panties", decrement: true },
         { itemId: "breast-pads", decrement: true },
-        { itemId: "wet-wipes", decrement: true },
         { itemId: "tissues", decrement: true, surplusDriven: true, defaultOff: true },
         { itemId: "hand-cream", decrement: true, surplusDriven: true, defaultOff: true },
       ],
@@ -1515,6 +1611,7 @@
       ],
       optional: [
         { itemId: "receiving", decrement: true },
+        { itemId: "wet-wipes", decrement: true },
         { itemId: "knitted-blanket", decrement: true },
         { itemId: "cotton-hat", decrement: true },
         { itemId: "socks", decrement: true },
@@ -1996,6 +2093,74 @@
 
   const itemMap = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 
+  // ── Editable catalogue ────────────────────────────────────────────────────
+  // ITEMS is the built-in catalogue; volunteers can add items that aren't listed
+  // (a real need — a missing item was silently coerced to the wrong one in field
+  // testing). Custom items persist on state.customItems and are merged into the
+  // live ITEMS / itemMap at load. BASE_ITEMS is the immutable built-in set so the
+  // catalogue can be reset cleanly when a different state is loaded.
+  const BASE_ITEMS = ITEMS.slice();
+  const CUSTOM_ITEMS_MAX = 200;
+  const CATALOGUE_CATEGORIES = ["Moms", "Baby Clothes", "Baby Products", "Blankets", "Toys", "Miscellaneous"];
+
+  function slugifyItemId(name) {
+    return String(name || "").toLowerCase().trim()
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "item";
+  }
+  // Custom ids are prefixed so they can never collide with a built-in id, and
+  // de-duped against the whole live catalogue.
+  function makeCustomItemId(name) {
+    const base = "custom-" + slugifyItemId(name);
+    let id = base, n = 2;
+    while (itemMap[id]) { id = `${base}-${n}`; n++; }
+    return id;
+  }
+  function normalizeCustomItem(ci) {
+    if (!ci || typeof ci !== "object") return null;
+    const name = String(ci.name || "").trim();
+    if (!name) return null;
+    const category = CATALOGUE_CATEGORIES.includes(ci.category) ? ci.category : "Miscellaneous";
+    const unit = ci.unit === "packet" ? "packet" : "each";
+    const threshold = Math.max(0, parseInt(ci.threshold, 10) || 0);
+    const id = ci.id || makeCustomItemId(name);
+    return item(id, name, category, unit, threshold, { custom: true });
+  }
+  function rebuildItemMap() {
+    Object.keys(itemMap).forEach(k => delete itemMap[k]);
+    ITEMS.forEach(i => { itemMap[i.id] = i; });
+  }
+  // Reset the live catalogue to the built-in set plus this state's custom items.
+  // Called whenever state is (re)loaded so custom items never leak across states.
+  function setCatalogueCustomItems(customItems) {
+    ITEMS.length = 0;
+    BASE_ITEMS.forEach(i => ITEMS.push(i));
+    (customItems || []).forEach(ci => {
+      const norm = normalizeCustomItem(ci);
+      if (norm && !ITEMS.some(i => i.id === norm.id)) ITEMS.push(norm);
+    });
+    rebuildItemMap();
+  }
+  // Add one item to the catalogue. Returns { ok, item } or { ok:false, error }.
+  function addCustomItem(input) {
+    const name = String(input?.name || "").trim();
+    if (!name) return { ok: false, error: "Please enter an item name." };
+    if (ITEMS.some(i => i.name.trim().toLowerCase() === name.toLowerCase())) {
+      return { ok: false, error: `"${name}" is already in the list.` };
+    }
+    if (!Array.isArray(state.customItems)) state.customItems = [];
+    if (state.customItems.length >= CUSTOM_ITEMS_MAX) {
+      return { ok: false, error: "There are too many custom items already." };
+    }
+    const it = normalizeCustomItem({ name, category: input.category, unit: input.unit, threshold: input.threshold });
+    state.customItems.push({ id: it.id, name: it.name, category: it.category, unit: it.unit, threshold: it.threshold });
+    ITEMS.push(it);
+    itemMap[it.id] = it;
+    if (!state.balances) state.balances = {};
+    if (state.balances[it.id] === undefined) state.balances[it.id] = 0;
+    saveState();
+    return { ok: true, item: it };
+  }
+
   var ANALYTICS_SCHEMA_VERSION = "1.3.0";
   var ANALYTICS_MAX_EVENTS = 5000;
   // Analytics fires many micro-events (exposure, episodes, focus, hover); coalesce
@@ -2119,6 +2284,7 @@
       packContext: "momPack",
       donors: [],
       lastSelectedPacker: "",
+      customItems: [],
     };
   }
 
@@ -2353,6 +2519,7 @@
 
   function closeZoeSelect() {
     if (!openZoeSelect) return;
+    closeZoeSelectAddPanel(openZoeSelect.wrap);
     openZoeSelect.menu.classList.add("hidden");
     openZoeSelect.trigger.classList.remove("is-open");
     openZoeSelect.trigger.setAttribute("aria-expanded", "false");
@@ -2367,8 +2534,187 @@
     </button>`;
   }
 
+  function isCatalogueItemSelect(sel) {
+    if (!sel || sel.tagName !== "SELECT") return false;
+    if (sel.id === "stock-item") return true;
+    return /\b(line-item|sub-instead|sub-substitute|omit-item|ce-item)\b/.test(sel.className);
+  }
+
+  function catalogueSelectPackKey(sel) {
+    if (view === "build" && form.packKey) return form.packKey;
+    return getPackContext();
+  }
+
+  function catalogueAddDefaultCategory(sel) {
+    const pk = catalogueSelectPackKey(sel);
+    if (pk === "babyPack") return "Baby Products";
+    if (sel.classList.contains("line-item")) return "Miscellaneous";
+    return "Moms";
+  }
+
+  function catalogueSelectOptionsHtml(sel, selectedId) {
+    if (view === "build") readBuildForm();
+    if (view === "donation") readDonationForm();
+    const selected = selectedId !== undefined ? selectedId : sel.value;
+    const pk = catalogueSelectPackKey(sel);
+    if (sel.classList.contains("sub-instead")) {
+      const included = Object.keys(form.optional || {}).filter(k => form.optional[k]);
+      const customExtras = (form.customExtras || []).filter(e => e.itemId);
+      const packIds = packItemIdsForSubstitution(form.packKey, included, customExtras);
+      return `<option value="">—</option>${itemOptions(selected, form.packKey, { recipeFirst: true, grouped: true, limitToIds: packIds })}`;
+    }
+    if (sel.classList.contains("sub-substitute")) {
+      return `<option value="">—</option>${itemOptions(selected, form.packKey, { recipeFirst: true, grouped: true })}`;
+    }
+    if (sel.id === "stock-item") return itemOptions(selected, pk, { showBalance: true });
+    return itemOptions(selected, pk, { recipeFirst: true, grouped: true });
+  }
+
+  function rebuildCatalogueSelect(sel, selectedId) {
+    const val = selectedId !== undefined ? selectedId : sel.value;
+    sel.innerHTML = catalogueSelectOptionsHtml(sel, val);
+    sel.value = val;
+    const wrap = sel.closest(".zoe-select-wrap");
+    if (!wrap) return;
+    if (zoeSelectOptionCount(sel) >= ZOE_SELECT_SEARCH_MIN) wrap.dataset.zoeSelectSearchable = "1";
+    else delete wrap.dataset.zoeSelectSearchable;
+    syncZoeSelectTrigger(wrap);
+    const menu = wrap.querySelector(".zoe-select-menu");
+    if (menu && !menu.classList.contains("hidden")) buildZoeSelectMenu(wrap);
+  }
+
+  function refreshAllCatalogueSelects(originWrap, newItemId) {
+    document.querySelectorAll("select").forEach(sel => {
+      if (!isCatalogueItemSelect(sel)) return;
+      const wrap = sel.closest(".zoe-select-wrap");
+      const pick = wrap === originWrap ? newItemId : sel.value;
+      rebuildCatalogueSelect(sel, pick);
+    });
+  }
+
+  function closeZoeSelectAddPanel(wrap) {
+    const menu = wrap?.querySelector(".zoe-select-menu");
+    if (!menu) return;
+    menu.classList.remove("zoe-select-menu--adding");
+    menu.querySelector(".zoe-select-add-panel")?.classList.add("hidden");
+    menu.querySelector(".zoe-select-options")?.classList.remove("hidden");
+    const msg = menu.querySelector(".zoe-select-add-msg");
+    if (msg) { msg.classList.add("hidden"); msg.textContent = ""; msg.className = "zoe-select-add-msg hidden"; }
+  }
+
+  function openZoeSelectAddPanel(wrap, prefillName) {
+    const menu = wrap.querySelector(".zoe-select-menu");
+    const panel = menu?.querySelector(".zoe-select-add-panel");
+    const sel = wrap.querySelector("select");
+    if (!menu || !panel || !sel) return;
+    const nameEl = panel.querySelector(".zoe-select-add-name");
+    const catEl = panel.querySelector(".zoe-select-add-category");
+    if (nameEl) nameEl.value = (prefillName || "").trim();
+    if (catEl) catEl.value = catalogueAddDefaultCategory(sel);
+    const thrEl = panel.querySelector(".zoe-select-add-threshold");
+    if (thrEl) thrEl.value = "0";
+    const msg = panel.querySelector(".zoe-select-add-msg");
+    if (msg) { msg.classList.add("hidden"); msg.textContent = ""; msg.className = "zoe-select-add-msg hidden"; }
+    menu.classList.add("zoe-select-menu--adding");
+    panel.classList.remove("hidden");
+    requestAnimationFrame(() => nameEl?.focus());
+  }
+
+  function submitZoeSelectCatalogueAdd(wrap) {
+    const menu = wrap.querySelector(".zoe-select-menu");
+    const panel = menu?.querySelector(".zoe-select-add-panel");
+    if (!panel) return;
+    const msgEl = panel.querySelector(".zoe-select-add-msg");
+    const result = addCustomItem({
+      name: panel.querySelector(".zoe-select-add-name")?.value,
+      category: panel.querySelector(".zoe-select-add-category")?.value,
+      unit: panel.querySelector(".zoe-select-add-unit")?.value,
+      threshold: panel.querySelector(".zoe-select-add-threshold")?.value,
+    });
+    if (!msgEl) return;
+    if (!result.ok) {
+      msgEl.className = "zoe-select-add-msg zoe-select-add-msg--error";
+      msgEl.textContent = result.error;
+      msgEl.classList.remove("hidden");
+      return;
+    }
+    analyticsTrack("custom_item_added", {
+      itemId: result.item.id,
+      category: result.item.category,
+      unit: result.item.unit,
+      source: "inline_select",
+    });
+    if (view === "build") readBuildForm();
+    if (view === "donation") readDonationForm();
+    refreshAllCatalogueSelects(wrap, result.item.id);
+    closeZoeSelectAddPanel(wrap);
+    chooseZoeSelectOption(wrap, result.item.id);
+  }
+
+  function bindZoeSelectCatalogueAdd(wrap, menu) {
+    if (menu.dataset.zoeCatalogueAddBound) return;
+    menu.dataset.zoeCatalogueAddBound = "1";
+    menu.addEventListener("click", (ev) => {
+      const t = ev.target;
+      if (t.classList?.contains("zoe-select-add-btn") || t.classList?.contains("zoe-select-empty-add")) {
+        ev.preventDefault();
+        const search = menu.querySelector(".zoe-select-search");
+        openZoeSelectAddPanel(wrap, search?.value || "");
+        return;
+      }
+      if (t.classList?.contains("zoe-select-add-back")) {
+        ev.preventDefault();
+        closeZoeSelectAddPanel(wrap);
+        menu.querySelector(".zoe-select-search")?.focus();
+        return;
+      }
+      if (t.classList?.contains("zoe-select-add-save")) {
+        ev.preventDefault();
+        submitZoeSelectCatalogueAdd(wrap);
+      }
+    });
+    menu.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape" || !menu.classList.contains("zoe-select-menu--adding")) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeZoeSelectAddPanel(wrap);
+      menu.querySelector(".zoe-select-search")?.focus();
+    });
+  }
+
+  function renderZoeSelectCatalogueAddPanel() {
+    const catOpts = CATALOGUE_CATEGORIES.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+    return `<div class="zoe-select-add-panel hidden">
+      <p class="zoe-select-add-hint">Starts at 0 on the shelf — count it in afterwards.</p>
+      <label class="zoe-select-add-label">Item name</label>
+      <input type="text" class="zoe-select-add-name" placeholder="e.g. Lip balm" autocomplete="off">
+      <div class="zoe-select-add-row">
+        <div>
+          <label class="zoe-select-add-label">Group</label>
+          <select class="zoe-select-add-category" data-zoe-select-skip="1">${catOpts}</select>
+        </div>
+        <div>
+          <label class="zoe-select-add-label">Counted as</label>
+          <select class="zoe-select-add-unit" data-zoe-select-skip="1"><option value="each">Each</option><option value="packet">Packet</option></select>
+        </div>
+        <div>
+          <label class="zoe-select-add-label">Tell me when below</label>
+          <input type="number" class="zoe-select-add-threshold" min="0" step="1" value="0" inputmode="numeric">
+        </div>
+      </div>
+      <div class="zoe-select-add-msg hidden"></div>
+      <div class="zoe-select-add-actions">
+        <button type="button" class="btn-small zoe-select-add-back">Back</button>
+        <button type="button" class="btn-small zoe-select-add-save">Add item</button>
+      </div>
+    </div>`;
+  }
+
   function filterZoeSelectMenu(menu, query) {
-    const q = (query || "").trim().toLowerCase();
+    const qRaw = (query || "").trim();
+    const q = qRaw.toLowerCase();
+    const wrap = menu.closest(".zoe-select-wrap");
+    const catalogue = wrap?.dataset.zoeCatalogueSelect === "1";
     const options = menu.querySelectorAll(".zoe-select-option");
     const groups = menu.querySelectorAll(".zoe-select-group-label");
     let visible = 0;
@@ -2393,8 +2739,16 @@
       if (!empty && optionsEl) {
         empty = document.createElement("div");
         empty.className = "zoe-select-empty";
-        empty.textContent = "No matches";
         optionsEl.appendChild(empty);
+      }
+      if (empty) {
+        if (catalogue) {
+          empty.innerHTML = qRaw
+            ? `No matches for “${esc(qRaw)}”. <button type="button" class="zoe-select-empty-add">Add as new item</button>`
+            : `No matches. <button type="button" class="zoe-select-empty-add">Add new item</button>`;
+        } else {
+          empty.textContent = "No matches";
+        }
       }
     } else {
       empty?.remove();
@@ -2421,6 +2775,11 @@
       } else if (ev.key === "Escape") {
         ev.preventDefault();
         ev.stopPropagation();
+        if (menu.classList.contains("zoe-select-menu--adding")) {
+          closeZoeSelectAddPanel(wrap);
+          search.focus();
+          return;
+        }
         const trigger = openZoeSelect?.trigger;
         closeZoeSelect();
         trigger?.focus();
@@ -2428,6 +2787,7 @@
         ev.preventDefault();
         const first = zoeSelectVisibleOptions(menu)[0];
         if (first) chooseZoeSelectOption(wrap, first.dataset.value);
+        else if (wrap.dataset.zoeCatalogueSelect === "1") openZoeSelectAddPanel(wrap, search.value);
       }
     });
   }
@@ -2437,11 +2797,14 @@
     const menu = wrap.querySelector(".zoe-select-menu");
     if (!sel || !menu) return;
     const searchable = wrap.dataset.zoeSelectSearchable === "1";
+    const catalogue = wrap.dataset.zoeCatalogueSelect === "1";
     menu.classList.toggle("zoe-select-menu--searchable", searchable);
+    closeZoeSelectAddPanel(wrap);
     let html = "";
     if (searchable) {
       html += `<div class="zoe-select-search-wrap">
         <input type="text" class="zoe-select-search" placeholder="Type to search…" aria-label="Search options" autocomplete="off" spellcheck="false">
+        ${catalogue ? `<button type="button" class="zoe-select-add-btn">Add new</button>` : ""}
       </div>`;
     }
     html += `<div class="zoe-select-options">`;
@@ -2454,11 +2817,13 @@
       }
     }
     html += `</div>`;
+    if (catalogue && searchable) html += renderZoeSelectCatalogueAddPanel();
     menu.innerHTML = html;
     menu.querySelectorAll(".zoe-select-option").forEach(btn => {
       btn.onmousedown = (ev) => { ev.preventDefault(); chooseZoeSelectOption(wrap, btn.dataset.value); };
     });
     if (searchable) bindZoeSelectSearch(wrap, menu);
+    if (catalogue && searchable) bindZoeSelectCatalogueAdd(wrap, menu);
     bindZoeSelectMenuScroll(menu);
   }
 
@@ -2556,15 +2921,23 @@
     });
     document.addEventListener("keydown", (ev) => {
       if (!openZoeSelect) return;
-      if (ev.target.classList?.contains("zoe-select-search")) return;
+      const { menu, wrap } = openZoeSelect;
       if (ev.key === "Escape") {
+        if (menu.classList.contains("zoe-select-menu--adding")) {
+          ev.preventDefault();
+          closeZoeSelectAddPanel(wrap);
+          menu.querySelector(".zoe-select-search")?.focus();
+          return;
+        }
+        if (ev.target.classList?.contains("zoe-select-search")) return;
         ev.preventDefault();
         const trigger = openZoeSelect.trigger;
         closeZoeSelect();
         trigger?.focus();
         return;
       }
-      const { menu } = openZoeSelect;
+      if (ev.target.classList?.contains("zoe-select-search")) return;
+      if (menu.classList.contains("zoe-select-menu--adding")) return;
       const items = zoeSelectVisibleOptions(menu);
       if (!items.length) return;
       if (ev.key === "ArrowDown") {
@@ -2600,6 +2973,7 @@
       wrap.className = "zoe-select-wrap";
       sel.parentNode.insertBefore(wrap, sel);
       wrap.appendChild(sel);
+      if (isCatalogueItemSelect(sel)) wrap.dataset.zoeCatalogueSelect = "1";
       if (zoeSelectOptionCount(sel) >= ZOE_SELECT_SEARCH_MIN) {
         wrap.dataset.zoeSelectSearchable = "1";
       }
@@ -3049,6 +3423,7 @@
   function loadSampleData() {
     if (!confirm("Replace all current data with sample donation history? You can Export first to keep a backup.")) return;
     state = analyticsUpgradeState(buildSyntheticState());
+    setCatalogueCustomItems(state.customItems);
     invalidateSessionTxDerivedCache();
     analyticsTrack("sample_data_loaded", { transactionCount: state.transactions.length });
     saveState();
@@ -3199,7 +3574,17 @@
       redoStackTrimmed: 0,
       redoStackCleared: 0,
       donorsTrimmed: 0,
+      customItemsTrimmed: 0,
     };
+
+    // Merge persisted custom items into the live catalogue before defaulting
+    // balances, so added items get a balance and appear in every dropdown.
+    if (!Array.isArray(parsed.customItems)) parsed.customItems = [];
+    if (parsed.customItems.length > CUSTOM_ITEMS_MAX) {
+      trim.customItemsTrimmed = parsed.customItems.length - CUSTOM_ITEMS_MAX;
+      parsed.customItems = parsed.customItems.slice(0, CUSTOM_ITEMS_MAX);
+    }
+    setCatalogueCustomItems(parsed.customItems);
 
     ITEMS.forEach(i => {
       if (parsed.balances[i.id] === undefined) parsed.balances[i.id] = 0;
@@ -10350,6 +10735,30 @@
         <button type="button" id="btn-export-ai-pack"${exp("admin_export_ai_pack", "Export AI Data Pack")}>Export AI Data Pack</button>
       </div>
       <div class="analytics-note"><strong>Before you share:</strong> Backup and AI Data Pack files can include sensitive local data — donor and packer names, clinics, transaction history, and analytics. Only save or send them somewhere you trust.</div>
+      <details class="add-item-fold">
+        <summary>Add a new item to the list</summary>
+        <div class="add-item-form">
+          <p class="muted">Fallback for adding items when you're not in a list. While packing, donating, or counting stock, use <strong>Add new</strong> in the item search instead. Starts at 0 on the shelf — count it in afterwards.</p>
+          <label for="new-item-name">Item name</label>
+          <input type="text" id="new-item-name" placeholder="e.g. Lip balm" autocomplete="off">
+          <div class="add-item-row">
+            <div>
+              <label for="new-item-category">Group</label>
+              <select id="new-item-category">${CATALOGUE_CATEGORIES.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("")}</select>
+            </div>
+            <div>
+              <label for="new-item-unit">Counted as</label>
+              <select id="new-item-unit"><option value="each">Each</option><option value="packet">Packet</option></select>
+            </div>
+            <div>
+              <label for="new-item-threshold">Tell me when below</label>
+              <input type="number" id="new-item-threshold" min="0" step="1" value="0" inputmode="numeric">
+            </div>
+          </div>
+          <div id="new-item-msg" class="add-item-msg hidden"></div>
+          <button type="button" id="btn-add-item">Add item</button>
+        </div>
+      </details>
       <div class="analytics-controls">
         <div class="analytics-status">
           <div><strong>Analytics recording</strong><br><span class="muted">Pause this while you test. Resume before your mom uses it.</span></div>
@@ -11232,6 +11641,33 @@
     if (clearAnalyticsDayBtn) clearAnalyticsDayBtn.onclick = () => {
       const dateInput = document.getElementById("analytics-clear-date");
       clearAnalyticsForDate(dateInput ? dateInput.value : todayISO());
+    };
+
+    const addItemBtn = document.getElementById("btn-add-item");
+    if (addItemBtn) addItemBtn.onclick = () => {
+      const nameEl = document.getElementById("new-item-name");
+      const msgEl = document.getElementById("new-item-msg");
+      const result = addCustomItem({
+        name: nameEl ? nameEl.value : "",
+        category: document.getElementById("new-item-category")?.value,
+        unit: document.getElementById("new-item-unit")?.value,
+        threshold: document.getElementById("new-item-threshold")?.value,
+      });
+      if (!msgEl) return;
+      msgEl.classList.remove("hidden");
+      if (!result.ok) {
+        msgEl.className = "add-item-msg add-item-msg--error";
+        msgEl.textContent = result.error;
+        return;
+      }
+      // Catalogue is now live; no full re-render needed — the item appears in
+      // every dropdown the next time a screen renders. Keep the panel open and confirm.
+      msgEl.className = "add-item-msg add-item-msg--ok";
+      msgEl.textContent = `Added — "${result.item.name}" is now in the lists. It starts at 0 on the shelf; count it in when you're ready.`;
+      if (nameEl) nameEl.value = "";
+      const thrEl = document.getElementById("new-item-threshold");
+      if (thrEl) thrEl.value = "0";
+      analyticsTrack("custom_item_added", { itemId: result.item.id, category: result.item.category, unit: result.item.unit, source: "admin_tools" });
     };
 
     document.querySelectorAll("details").forEach(d => {

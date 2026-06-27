@@ -24,6 +24,17 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Editable catalogue — volunteers can add items
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Volunteers can add a catalogue item that isn't built in. **Primary path:** **Add new** in any searchable catalogue item dropdown (swaps, extras, omissions, donations, stock count) — beside the search field, or **Add as new item** when search returns no matches; a compact in-dropdown form (name, group, counted-as unit, reorder line) calls the same `addCustomItem()` validator; on save the new item is selected immediately and all catalogue selects on screen refresh. **Fallback:** *Add a new item to the list* under *Need something else? → admin tools* for when they're not in an item list. Item starts at 0 on the shelf. Persists on `state.customItems`; merged into live `ITEMS`/`itemMap` at load/import via `setCatalogueCustomItems` (reset from `BASE_ITEMS` each state load so custom items never leak across Load Sample Data / import). Ids prefixed `custom-`; capped `CUSTOM_ITEMS_MAX = 200`; bounded on import. Inline add is gated to catalogue item selects only (`isCatalogueItemSelect`) — packer, destination, clinic, and pack-context dropdowns unchanged. Analytics `source`: `inline_select` vs `admin_tools`. No change to recipes, stock math, or volunteer build toggles. |
+| **Date** | 2026-06-27 (admin); inline follow-up same release |
+| **Context** | Field test (Janet, 27 June): a real item ("Le Pass" lip balm) wasn't in the catalogue, so she selected the nearest listed item ("Tiny Lip Vaseline") — silently recording the wrong item. The hardcoded catalogue forced a data-integrity error. Pain occurs at item-search time (e.g. swap substitute), not in admin tools. |
+| **Reasoning** | Phase 1 (admin form) shipped the low-risk data layer and validation. Phase 2 (inline) catches the failure at the exact moment without forcing a detour to *Need something else?* Shared `zoe-select` changes are additive and catalogue-gated to limit regression risk across non-item dropdowns. Merge-and-reset semantics keep custom items from contaminating sample/imported states. |
+| **Alternatives Considered** | **Admin-only** — shipped first; insufficient for in-flow pain (Janet lip balm). **Inline only, no admin** — rejected; admin remains useful for setup without opening a build/donation. **Free-text "other" capture** — rejected; unstructured data the stock model can't use. **Editable recipes too** — out of scope; catalogue-only. |
+| **Status** | Accepted — both paths shipped; inline is primary, admin is fallback. Headless test `tests/catalogue-items.test.js` (data layer). |
+
 ### Operational context capture — recount + build exceptions only (Phase X1 + X2)
 
 | Field | Content |
