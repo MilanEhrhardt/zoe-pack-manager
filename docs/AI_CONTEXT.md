@@ -59,7 +59,7 @@ Home screen actions volunteers use:
 
 ### Packing
 
-Build Mom Pack or Baby Pack: qty, packer, destination, then **“Did you include these?”** Yes/No toggles for recipe optionals (deo, tissues, wet wipes, hand cream, etc.) on the main screen. **“+ Something else happened”** opens a slim subflow for swaps, items left out, or unlisted extras only.
+Build Mom Pack or Baby Pack: qty, packer, destination, then **“Did you include these?”** Yes/No toggles for recipe optionals (Mom: deo, tissues, hand cream, etc.; Baby: wet wipes, receiving, knit items, etc.) on the main screen. **“+ Something else happened”** opens a slim subflow for swaps, items left out, or unlisted extras only.
 
 ### Donations
 
@@ -126,6 +126,7 @@ See also `.cursor/rules.md` and `docs/CURSOR_RULES.md`.
 
 - **Single file:** `zoe-pack-manager.html` — HTML, CSS, and JavaScript in one document
 - **Persistence:** browser `localStorage` (auto-save on this computer)
+- **Editable catalogue:** `ITEMS` is the built-in catalogue; volunteers can add items not in the list via *Need something else? → Add a new item to the list*. Custom items persist on `state.customItems`, merge into the live `ITEMS`/`itemMap` at load/import (`setCatalogueCustomItems`, reset from `BASE_ITEMS` so they never leak across states), start at 0 on the shelf, and appear in every item picker. Ids prefixed `custom-`; capped at 200. See `PRODUCT_DECISIONS.md`.
 - **Offline:** no server, install, or internet required for daily use
 - **Analytics:** local event logging with JSON/CSV export for user-testing analysis (Mission Control dashboard reads exports). Key events record `sessionUser`, `currentSelectedUser`, and `isTesterSession`. Summary splits sessions into production volunteer, tester, and unknown. **Interaction Episodes (Phase 3D / 3D.1):** canonical behavioural layer — tracked-control events carry `interactionEpisodeId`; `interaction_episode_complete` on episode end; `interactionEpisodeSummary` in export. **Exposure Tracking v1:** per-control `ui_exposure` only (`details.controlId`, `visibleMs`, `clicked`) — no batch screen snapshots in new sessions. Summary `ignoredVisibleControls` (production default). **Milan** is a tester identity.
 - **Item confidence (Increment A):** deterministic read-only trust scores per stock item in AI Data Pack export and analytics summary only — `volunteerConfidence` excludes Milan tester builds; `allMovementsConfidence` includes all. No volunteer UI yet. See `PRODUCT_DECISIONS.md`.

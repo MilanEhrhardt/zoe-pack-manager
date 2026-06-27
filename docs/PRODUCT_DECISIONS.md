@@ -24,6 +24,17 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Editable catalogue — volunteers can add items
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Let volunteers add a catalogue item that isn't built in, via an *Add a new item to the list* form in admin tools (*Need something else?*). Item takes name + group + counted-as unit + reorder line; validated (name required, no duplicate name); starts at 0 on the shelf. Persists on `state.customItems`; merged into the live `ITEMS`/`itemMap` at load and import via `setCatalogueCustomItems` (reset from `BASE_ITEMS` each state load so custom items never leak across Load Sample Data / import). Ids prefixed `custom-`; capped `CUSTOM_ITEMS_MAX = 200`; bounded on import. Appears in every item picker (donation, stock count, swaps, extras). No change to recipes, stock math, or volunteer build toggles. |
+| **Date** | 2026-06-27 |
+| **Context** | Field test (Janet, 27 June): a real item ("Le Pass" lip balm) wasn't in the catalogue, so she selected the nearest listed item ("Tiny Lip Vaseline") — silently recording the wrong item. The hardcoded catalogue forced a data-integrity error. |
+| **Reasoning** | Removes the silent-coercion failure mode and unblocks accurate recording without touching the volunteer build flow. Admin placement keeps catalogue management out of the daily packing path; merge-and-reset semantics keep custom items from contaminating sample/imported states. |
+| **Alternatives Considered** | **Inline "add new item" inside the build extras dropdown** — better for the exact moment of pain, but touches the shared custom-select component (regression risk across all dropdowns); deferred as a focused follow-up. **Free-text "other" capture** — rejected; produces unstructured data the stock model can't use. **Editable recipes too** — out of scope; this is catalogue-only. |
+| **Status** | Accepted — admin form shipped; inline build-flow affordance is the natural follow-up. |
+
 ### Operational context capture — recount + build exceptions only (Phase X1 + X2)
 
 | Field | Content |
