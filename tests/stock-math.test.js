@@ -38,6 +38,9 @@ function extractBlock(src, anchor) {
 
 const blocks = [
   extractBlock(HTML, "const RECIPES = {"),
+  extractBlock(HTML, "const OPERATIONAL_CAUSES = {"),
+  extractBlock(HTML, "function operationalCauseFromId("),
+  extractBlock(HTML, "function normalizeOperationalReason("),
   extractBlock(HTML, "function normalizeSubstitutions("),
   extractBlock(HTML, "function normalizeOmissions("),
   extractBlock(HTML, "function recipeQtyPerPack("),

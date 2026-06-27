@@ -24,6 +24,28 @@ Copy this block for each new decision:
 
 ## Decisions
 
+### Operational context capture — recount + build exceptions only (Phase X1 + X2)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Add optional structured volunteer `reason` objects (`{ id, label, category }`) on recount transactions (chip picker, gated by material variance) and per substitution/omission line on builds. Include `commitContext` balance snapshots at commit. Shared `causeId` vocabulary aligned with habit/reasoning inference. Legacy recount free-text migrates to `reason.id = legacy_text` on import. Donation and delivery reasons deferred. |
+| **Date** | 2026-06-26 |
+| **Context** | Intelligence layers infer substitution causes probabilistically; ground-truth volunteer intent dramatically improves data quality for Operational Intelligence, Evidence Fusion, and future Active Learning — but only where exceptions occur. |
+| **Reasoning** | Minimal scope: no mandatory fields, no new pages, chip UI (not free text), default = no reason captured. Recount reason replaces the existing optional text field. Per-line reasons on build exceptions only — not normal builds. |
+| **Alternatives Considered** | **Full taxonomy on all tx types** — deferred (donation/delivery). **Free-text reasons** — rejected for Janet UX and export consistency. **Mandatory reasons** — rejected. |
+| **Status** | Accepted |
+
+### Intelligence bundle dependency validation (internal / export-only)
+
+| Field | Content |
+|-------|---------|
+| **Decision** | Add declarative DAG manifest (`INTELLIGENCE_BUNDLE_DAG`) and post-build validator (`ibv.1`) for the canonical intelligence bundle. Validates required layers, manifest dependency order, structural shape, `generatedAt` alignment, duplicate IDs, belief–reasoning link integrity, hypothesis probability sums, non-finite number scan, and cache-coherence warnings via `bundle.meta`. Full validation stored on session cache; summary exposed in AI Data Pack `diagnostics.intelligenceBundleValidation` and analytics `intelligenceBundleValidationSummary`. |
+| **Date** | 2026-06-26 |
+| **Context** | Phase A unified intelligence assembly into `sessionIntelligenceBundle()`, but dependency order and cross-layer contracts still lived only in procedural code — future edits could silently break the DAG, drift timestamps, or ship broken links. |
+| **Reasoning** | A lightweight engineering safety net: deterministic, pure, bounded, no third-party deps. Makes the DAG visible to developers without changing volunteer UX or export layer shapes (additive diagnostics only). Exports must never fail on validation errors — local-first charity tool. |
+| **Alternatives Considered** | **Test-only validation** — rejected; export diagnostics help offline AI analysis catch issues in real packs. **Manifest-driven build** — deferred; validate-after-build is lower risk. **Block export on errors** — rejected. |
+| **Status** | Accepted |
+
 ### Storeroom Mind — admin intelligence dashboard (ops-facing, read-only)
 
 | Field | Content |

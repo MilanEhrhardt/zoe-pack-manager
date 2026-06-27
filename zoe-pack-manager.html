@@ -1033,6 +1033,11 @@
     .tab.active { border-color: var(--zoe-purple); background: rgba(95,67,178,0.08); font-weight: 650; color: var(--zoe-purple-dark); }
     .shortcut-btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
     .shortcut-btns button { padding: 10px 14px; font-size: 0.92rem; background: rgba(95,67,178,0.06); border: 1px solid rgba(95,67,178,0.24); border-radius: 999px; cursor: pointer; font-family: inherit; }
+    .reason-chips { margin: 4px 0 16px; }
+    .reason-chips-label { display: block; font-size: 0.88rem; color: var(--zoe-muted, #666); margin-bottom: 8px; }
+    .reason-chips-row { margin: 0; }
+    .reason-chip.reason-chip--on { background: var(--zoe-purple); color: #fff; border-color: var(--zoe-purple); }
+    .sub-line .reason-chips, .omission-line .reason-chips { margin-top: 10px; }
     .stock-count-next {
       margin: 0 0 22px;
       padding: 16px 18px;
@@ -1618,20 +1623,30 @@
   }
 
   function normalizeSubstitutions(substitutions) {
-    return (substitutions || []).map(s => ({
-      insteadOf: s.insteadOf,
-      substitute: s.substitute,
-      packCount: Math.max(0, parseInt(s.packCount, 10) || 0),
-      qtyPerPack: Math.max(1, parseInt(s.qtyPerPack, 10) || 1),
-    })).filter(s => s.insteadOf && s.substitute && s.insteadOf !== s.substitute && s.packCount > 0);
+    return (substitutions || []).map(s => {
+      const row = {
+        insteadOf: s.insteadOf,
+        substitute: s.substitute,
+        packCount: Math.max(0, parseInt(s.packCount, 10) || 0),
+        qtyPerPack: Math.max(1, parseInt(s.qtyPerPack, 10) || 1),
+      };
+      const reason = normalizeOperationalReason(s.reason || (s.reasonId ? operationalCauseFromId(s.reasonId) : null));
+      if (reason) row.reason = reason;
+      return row;
+    }).filter(s => s.insteadOf && s.substitute && s.insteadOf !== s.substitute && s.packCount > 0);
   }
 
   function normalizeOmissions(omissions) {
-    return (omissions || []).map(o => ({
-      itemId: o.itemId,
-      packCount: Math.max(0, parseInt(o.packCount, 10) || 0),
-      qtyPerPack: Math.max(1, parseInt(o.qtyPerPack, 10) || 1),
-    })).filter(o => o.itemId && o.packCount > 0);
+    return (omissions || []).map(o => {
+      const row = {
+        itemId: o.itemId,
+        packCount: Math.max(0, parseInt(o.packCount, 10) || 0),
+        qtyPerPack: Math.max(1, parseInt(o.qtyPerPack, 10) || 1),
+      };
+      const reason = normalizeOperationalReason(o.reason || (o.reasonId ? operationalCauseFromId(o.reasonId) : null));
+      if (reason) row.reason = reason;
+      return row;
+    }).filter(o => o.itemId && o.packCount > 0);
   }
 
   function recipeQtyPerPack(packKey, itemId, optionalIncluded, customExtras) {
@@ -1857,6 +1872,115 @@
   const RECOUNT_TOLERANCE_ABS = 2;
   const RECOUNT_TOLERANCE_PCT = 0.10;
   const RECOUNT_MIN_LABELED = 8; // real labeled recounts needed before calibration is meaningful
+
+  // Operational context (Phase X): optional structured volunteer reasons + commit snapshots.
+  // cause ids align with packing-habit / reasoning inference vocabulary where possible.
+  const OPERATIONAL_CONTEXT_VERSION = "ctx.1";
+
+  const OPERATIONAL_CAUSES = {
+    stock_shortage: { label: "Not on the shelf", category: "inventory" },
+    volunteer_preference: { label: "Easier option", category: "volunteer" },
+    counting_error: { label: "Counting mistake", category: "inventory" },
+    stock_found_elsewhere: { label: "Found elsewhere", category: "inventory" },
+    damaged_stock: { label: "Damaged stock", category: "inventory" },
+    missing_stock: { label: "Missing stock", category: "inventory" },
+    initial_count_wrong: { label: "First count was wrong", category: "inventory" },
+    unknown: { label: "Not sure", category: "operations" },
+  };
+
+  const RECOUNT_REASON_CAUSE_IDS = [
+    "counting_error", "stock_found_elsewhere", "damaged_stock",
+    "missing_stock", "initial_count_wrong", "unknown",
+  ];
+
+  const BUILD_SUB_REASON_CAUSE_IDS = ["stock_shortage", "volunteer_preference", "unknown"];
+  const BUILD_OMIT_REASON_CAUSE_IDS = ["stock_shortage", "volunteer_preference", "unknown"];
+
+  function operationalCauseFromId(causeId) {
+    const meta = OPERATIONAL_CAUSES[causeId];
+    if (!meta) return null;
+    return { id: causeId, label: meta.label, category: meta.category };
+  }
+
+  function normalizeOperationalReason(raw) {
+    if (raw == null) return null;
+    if (typeof raw === "string") {
+      const text = raw.trim();
+      if (!text) return null;
+      return { id: "legacy_text", label: text, category: "operations" };
+    }
+    if (typeof raw === "object" && raw.id === "legacy_text" && raw.label) {
+      const label = String(raw.label).trim();
+      return label ? { id: "legacy_text", label, category: raw.category || "operations" } : null;
+    }
+    if (typeof raw === "object" && raw.id && OPERATIONAL_CAUSES[raw.id]) {
+      return operationalCauseFromId(raw.id);
+    }
+    return null;
+  }
+
+  function operationalReasonLabel(reasonOrId) {
+    if (reasonOrId && OPERATIONAL_CAUSES[reasonOrId]) {
+      return OPERATIONAL_CAUSES[reasonOrId].label;
+    }
+    const n = normalizeOperationalReason(reasonOrId);
+    return n ? n.label : "";
+  }
+
+  function recountVarianceSignificant(oldQty, newQty) {
+    const absError = Math.abs((newQty || 0) - (oldQty || 0));
+    if (absError === 0) return false;
+    const denom = Math.max(Math.abs(oldQty || 0), Math.abs(newQty || 0), 1);
+    return absError > RECOUNT_TOLERANCE_ABS && absError / denom > RECOUNT_TOLERANCE_PCT;
+  }
+
+  function buildCommitContext(itemIds) {
+    const balances = {};
+    (itemIds || []).forEach(id => {
+      if (id) balances[id] = getBalance(id);
+    });
+    return {
+      version: OPERATIONAL_CONTEXT_VERSION,
+      capturedAt: new Date().toISOString(),
+      balances,
+    };
+  }
+
+  function renderOperationalReasonChips(causeIds, selectedId, chipClass, dataAttrs) {
+    const cls = chipClass || "reason-chip";
+    const extra = dataAttrs ? ` ${dataAttrs}` : "";
+    const buttons = causeIds.map(id => {
+      const meta = OPERATIONAL_CAUSES[id];
+      if (!meta) return "";
+      const on = selectedId === id ? " reason-chip--on" : "";
+      return `<button type="button" class="${cls}${on}" data-cause-id="${esc(id)}"${extra}>${esc(meta.label)}</button>`;
+    }).join("");
+    return `<div class="reason-chips">
+      <span class="reason-chips-label">Why? (optional)</span>
+      <div class="shortcut-btns reason-chips-row">${buttons}</div>
+    </div>`;
+  }
+
+  function normalizeImportedTransactionContext(tx) {
+    if (!tx || typeof tx !== "object") return;
+    if (tx.type === "recount" && tx.reason != null) {
+      const reason = normalizeOperationalReason(tx.reason);
+      if (reason) tx.reason = reason;
+      else delete tx.reason;
+    }
+    if (tx.type === "build") {
+      (tx.substitutions || []).forEach(sub => {
+        const reason = normalizeOperationalReason(sub.reason);
+        if (reason) sub.reason = reason;
+        else delete sub.reason;
+      });
+      (tx.omissions || []).forEach(omit => {
+        const reason = normalizeOperationalReason(omit.reason);
+        if (reason) omit.reason = reason;
+        else delete omit.reason;
+      });
+    }
+  }
 
   // Stock belief-state: model each item's true on-hand quantity as a
   // distribution (mean μ, variance σ²) by replaying the log with uncertainty
@@ -3110,6 +3234,7 @@
       trim.transactionsTrimmed = parsed.transactions.length - BACKUP_IMPORT_MAX_TRANSACTIONS;
       parsed.transactions = parsed.transactions.slice(-BACKUP_IMPORT_MAX_TRANSACTIONS);
     }
+    parsed.transactions.forEach(normalizeImportedTransactionContext);
     if (trim.transactionsTrimmed > 0 && parsed.redoStack.length > 0) {
       trim.redoStackCleared = parsed.redoStack.length;
       parsed.redoStack = [];
@@ -3949,21 +4074,22 @@
     ].sort((a, b) => b.score - a.score).slice(0, 25);
 
     const sessionBreakdown = analyticsClassifySessions(events);
-    const itemConfidence = opts.itemConfidence || computeAllItemConfidence();
+    const bundle = opts.intelligenceBundle;
+    const itemConfidence = bundle ? bundle.itemConfidence : (opts.itemConfidence || computeAllItemConfidence());
     const confidenceSummary = buildConfidenceSummary(itemConfidence);
-    const packingHabitsFull = opts.packingHabits || packingHabitSummary();
+    const packingHabitsFull = bundle ? bundle.packingHabits : (opts.packingHabits || packingHabitSummary());
     const packingHabitsSummary = packingHabitsSummaryConcise(packingHabitsFull);
     const packingHabitTrends = packingHabitTrendsConcise(packingHabitsFull.trends);
-    const operationalIntelligence = opts.operationalIntelligence
-      || computeOperationalIntelligence({ itemConfidence, packingHabits: packingHabitsFull });
+    const operationalIntelligence = bundle ? bundle.operationalIntelligence
+      : (opts.operationalIntelligence || computeOperationalIntelligence({ itemConfidence, packingHabits: packingHabitsFull }));
     const operationalIntelligenceSummary = operationalIntelligenceSummaryConcise(operationalIntelligence);
-    const recountCalibration = opts.recountCalibration || buildRecountCalibration(tx);
+    const recountCalibration = bundle ? bundle.recountCalibration : (opts.recountCalibration || buildRecountCalibration(tx));
     const recountCalibrationSummary = recountCalibrationSummaryConcise(recountCalibration);
-    const stockBeliefState = opts.stockBeliefState || sessionStockBeliefState();
+    const stockBeliefState = bundle ? bundle.stockBeliefState : (opts.stockBeliefState || sessionStockBeliefState());
     const stockBeliefSummary = buildStockBeliefSummary(stockBeliefState);
-    const countPriorities = opts.countPriorities || computeCountPriorities(stockBeliefState);
+    const countPriorities = bundle ? bundle.countPriorities : (opts.countPriorities || computeCountPriorities(stockBeliefState));
     const countPrioritiesSummary = countPrioritiesSummaryConcise(countPriorities);
-    const evidenceFusion = opts.evidenceFusion || computeEvidenceFusion({
+    const evidenceFusion = bundle ? bundle.evidenceFusion : (opts.evidenceFusion || computeEvidenceFusion({
       itemConfidence,
       packingHabits: packingHabitsFull,
       operationalIntelligence,
@@ -3971,9 +4097,9 @@
       recountCalibration,
       analyticsEvents: events,
       synthetic: !!state.sampleData,
-    });
+    }));
     const evidenceFusionSummary = evidenceFusionSummaryConcise(evidenceFusion);
-    const operationalReasoning = opts.operationalReasoning || computeOperationalReasoning({
+    const operationalReasoning = bundle ? bundle.operationalReasoning : (opts.operationalReasoning || computeOperationalReasoning({
       itemConfidence,
       packingHabits: packingHabitsFull,
       operationalIntelligence,
@@ -3982,20 +4108,20 @@
       recountCalibration,
       analyticsEvents: events,
       synthetic: !!state.sampleData,
-    });
+    }));
     const operationalReasoningSummary = operationalReasoningSummaryConcise(operationalReasoning);
-    const beliefEngine = opts.beliefEngine || computeBeliefEngine({
+    const beliefEngine = bundle ? bundle.beliefEngine : (opts.beliefEngine || computeBeliefEngine({
       itemConfidence, packingHabits: packingHabitsFull, operationalIntelligence, evidenceFusion,
       operationalReasoning, stockBeliefState, recountCalibration,
       analyticsEvents: events,
       synthetic: !!state.sampleData,
-    });
+    }));
     const beliefEngineSummary = beliefEngineSummaryConcise(beliefEngine);
-    const operationalMemory = opts.operationalMemory || computeOperationalMemory({
+    const operationalMemory = bundle ? bundle.operationalMemory : (opts.operationalMemory || computeOperationalMemory({
       itemConfidence, packingHabits: packingHabitsFull, operationalIntelligence, beliefEngine,
       operationalReasoning, evidenceFusion, stockBeliefState, recountCalibration,
       synthetic: !!state.sampleData,
-    });
+    }));
     const operationalMemorySummary = operationalMemorySummaryConcise(operationalMemory);
     const productionIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { productionOnly: true });
     const testerIgnoredVisibleControls = analyticsIgnoredVisibleControlsFromEvents(events, { testerOnly: true });
@@ -4045,6 +4171,9 @@
       stockBeliefSummary,
       countPrioritiesSummary,
       interactionEpisodeSummary,
+      intelligenceBundleValidationSummary: bundle
+        ? intelligenceBundleValidationSummary(sessionIntelligenceBundleValidation())
+        : null,
       ...sessionBreakdown,
     };
   }
@@ -4072,11 +4201,12 @@
   function exportAnalyticsJSON() {
     analyticsEpisodeFlushForExport();
     analyticsTrack("analytics_export_requested", { format: "json" });
+    const bundle = sessionIntelligenceBundle();
     const payload = {
-      exportedAt: new Date().toISOString(),
+      exportedAt: bundle.generatedAt,
       app: "Zoe Pack Manager",
       analytics: state.analytics,
-      summary: analyticsDerivedSummary(),
+      summary: analyticsDerivedSummary({ intelligenceBundle: bundle }),
     };
     downloadTextFile(JSON.stringify(payload, null, 2), `zoe-analytics-${todayISO()}.json`, "application/json");
   }
@@ -4086,36 +4216,9 @@
     analyticsTrack("analytics_export_requested", { format: "ai_data_pack" });
     analyticsTrack("ai_data_pack_export_requested", { format: "ai_data_pack" });
     const userCtx = analyticsUserFields();
-    const itemConfidence = computeAllItemConfidence();
-    const packingHabits = packingHabitSummary();
-    const operationalIntelligence = computeOperationalIntelligence({ itemConfidence, packingHabits });
-    const recountCalibration = buildRecountCalibration(state.transactions);
-    const stockBeliefState = sessionStockBeliefState();
-    const evidenceFusion = computeEvidenceFusion({
-      itemConfidence, packingHabits, operationalIntelligence, stockBeliefState, recountCalibration,
-      analyticsEvents: state.analytics?.events || [],
-      synthetic: !!state.sampleData,
-    });
-    const operationalReasoning = computeOperationalReasoning({
-      itemConfidence, packingHabits, operationalIntelligence, evidenceFusion,
-      stockBeliefState, recountCalibration,
-      analyticsEvents: state.analytics?.events || [],
-      synthetic: !!state.sampleData,
-    });
-    const beliefEngine = computeBeliefEngine({
-      itemConfidence, packingHabits, operationalIntelligence, evidenceFusion, operationalReasoning,
-      stockBeliefState, recountCalibration,
-      analyticsEvents: state.analytics?.events || [],
-      synthetic: !!state.sampleData,
-    });
-    const operationalMemory = computeOperationalMemory({
-      itemConfidence, packingHabits, operationalIntelligence, beliefEngine, operationalReasoning,
-      evidenceFusion, stockBeliefState, recountCalibration,
-      synthetic: !!state.sampleData,
-    });
-    const countPriorities = computeCountPriorities(stockBeliefState);
+    const bundle = sessionIntelligenceBundle();
     const payload = {
-      exportedAt: new Date().toISOString(),
+      exportedAt: bundle.generatedAt,
       app: "Zoe Pack Manager",
       purpose: "Local operational analytics and AI-ready improvement dataset",
       schema: {
@@ -4140,21 +4243,21 @@
         donors: state.donors,
         transactions: state.transactions,
       },
-      itemConfidence,
-      packingHabits,
-      operationalIntelligence,
-      evidenceFusion,
-      operationalReasoning,
-      beliefEngine,
-      operationalMemory,
-      recountCalibration,
-      stockBeliefState,
-      countPriorities,
+      itemConfidence: bundle.itemConfidence,
+      packingHabits: bundle.packingHabits,
+      operationalIntelligence: bundle.operationalIntelligence,
+      evidenceFusion: bundle.evidenceFusion,
+      operationalReasoning: bundle.operationalReasoning,
+      beliefEngine: bundle.beliefEngine,
+      operationalMemory: bundle.operationalMemory,
+      recountCalibration: bundle.recountCalibration,
+      stockBeliefState: bundle.stockBeliefState,
+      countPriorities: bundle.countPriorities,
       analytics: state.analytics,
-      summary: analyticsDerivedSummary({
-        itemConfidence, packingHabits, operationalIntelligence, evidenceFusion, operationalReasoning,
-        beliefEngine, operationalMemory, recountCalibration, stockBeliefState, countPriorities,
-      }),
+      summary: analyticsDerivedSummary({ intelligenceBundle: bundle }),
+      diagnostics: {
+        intelligenceBundleValidation: intelligenceBundleValidationSummary(sessionIntelligenceBundleValidation()),
+      },
     };
     downloadTextFile(JSON.stringify(payload, null, 2), `zoe-ai-data-pack-${todayISO()}.json`, "application/json");
   }
@@ -4439,6 +4542,9 @@
     const normalizedSubs = normalizeSubstitutions(substitutions);
     const normalizedOmissions = normalizeOmissions(omissions);
     const { usage } = computeBuildStockPlan(packKey, qty, optionalIncluded, normalizedExtras, normalizedSubs, normalizedOmissions);
+    const contextItemIds = new Set();
+    normalizedSubs.forEach(s => { contextItemIds.add(s.insteadOf); contextItemIds.add(s.substitute); });
+    normalizedOmissions.forEach(o => contextItemIds.add(o.itemId));
     const tx = {
       id: uid(), type: "build", date: date || todayISO(),
       packKey, qty, packer, destination,
@@ -4447,6 +4553,9 @@
       substitutions: normalizedSubs,
       omissions: normalizedOmissions,
     };
+    if (contextItemIds.size) {
+      tx.commitContext = buildCommitContext([...contextItemIds]);
+    }
     for (const [itemId, deduct] of Object.entries(usage)) {
       if (deduct > 0) state.balances[itemId] = getBalance(itemId) - deduct;
     }
@@ -4478,17 +4587,25 @@
     return null;
   }
 
-  function commitRecount(itemId, newQty, reason, date) {
+  function commitRecount(itemId, newQty, reasonInput, date) {
     const oldQty = getBalance(itemId);
     // Feedback loop: snapshot what the model believed BEFORE we overwrite it,
     // so this recount becomes a labeled (belief, outcome) pair. Never blocks.
     const prediction = captureRecountPrediction(itemId);
+    const reason = reasonInput
+      ? (typeof reasonInput === "string" && OPERATIONAL_CAUSES[reasonInput]
+        ? operationalCauseFromId(reasonInput)
+        : normalizeOperationalReason(reasonInput))
+      : null;
     beginTransaction();
     state.balances[itemId] = newQty;
-    finishTransaction({
-      id: uid(), type: "recount", date: date || todayISO(), itemId, oldQty, newQty, reason: reason || "",
+    const tx = {
+      id: uid(), type: "recount", date: date || todayISO(), itemId, oldQty, newQty,
       prediction,
-    });
+      commitContext: buildCommitContext([itemId]),
+    };
+    if (reason) tx.reason = reason;
+    finishTransaction(tx);
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -4546,8 +4663,325 @@
     return txDate > anchorDate;
   }
 
-  // Session cache for transaction-log replays (belief state, activity stats).
-  // Keyed by transaction count + sampleData flag; invalidated when the log changes.
+  // ═══════════════════════════════════════════════════════════════════
+  // INTELLIGENCE BUNDLE VALIDATION — dependency contract checks
+  // ═══════════════════════════════════════════════════════════════════
+
+  const INTELLIGENCE_BUNDLE_VALIDATOR_VERSION = "ibv.1";
+
+  const INTELLIGENCE_BUNDLE_DAG = [
+    { key: "itemConfidence", name: "Item Confidence", dependencies: [], required: true, expectsArray: true },
+    { key: "packingHabits", name: "Packing Habits", dependencies: [], required: true, expectsObject: true, expectsGeneratedAt: "warning" },
+    { key: "recountCalibration", name: "Recount Calibration", dependencies: [], required: true, expectsObject: true, expectsModelVersion: true },
+    { key: "stockBeliefState", name: "Stock Belief-State", dependencies: [], required: true, expectsObject: true, expectsModelVersion: true },
+    { key: "operationalIntelligence", name: "Operational Intelligence", dependencies: ["itemConfidence", "packingHabits"], required: true, expectsObject: true, expectsGeneratedAt: "warning", expectsSummary: true },
+    { key: "evidenceFusion", name: "Evidence Fusion", dependencies: ["itemConfidence", "packingHabits", "operationalIntelligence", "stockBeliefState", "recountCalibration"], required: true, expectsObject: true, expectsGeneratedAt: "strict", expectsSummary: true, expectsModelVersion: true },
+    { key: "operationalReasoning", name: "Operational Reasoning", dependencies: ["itemConfidence", "packingHabits", "operationalIntelligence", "evidenceFusion", "stockBeliefState", "recountCalibration"], required: true, expectsObject: true, expectsGeneratedAt: "strict", expectsSummary: true, expectsModelVersion: true },
+    { key: "beliefEngine", name: "Belief Engine", dependencies: ["itemConfidence", "packingHabits", "operationalIntelligence", "evidenceFusion", "operationalReasoning", "stockBeliefState", "recountCalibration"], required: true, expectsObject: true, expectsGeneratedAt: "strict", expectsSummary: true, expectsModelVersion: true },
+    { key: "operationalMemory", name: "Operational Memory", dependencies: ["itemConfidence", "packingHabits", "operationalIntelligence", "beliefEngine", "operationalReasoning", "evidenceFusion", "stockBeliefState", "recountCalibration"], required: true, expectsObject: true, expectsGeneratedAt: "strict", expectsSummary: true, expectsModelVersion: true },
+    { key: "countPriorities", name: "Value of Information", dependencies: ["stockBeliefState"], required: true, expectsObject: true, expectsModelVersion: true },
+  ];
+
+  function ibvIsPlainObject(v) {
+    return v != null && typeof v === "object" && !Array.isArray(v);
+  }
+
+  function intelligenceBundleDagIndex(manifest) {
+    const index = {};
+    (manifest || []).forEach((spec, i) => { index[spec.key] = { spec, order: i }; });
+    return index;
+  }
+
+  function validateBundleLayerShape(layerValue, spec) {
+    const structuralChecks = [];
+    const errors = [];
+    const warnings = [];
+    if (spec.expectsArray) {
+      const ok = Array.isArray(layerValue);
+      structuralChecks.push({ check: "expectsArray", ok });
+      if (!ok) errors.push("expected array");
+    }
+    if (spec.expectsObject) {
+      const ok = ibvIsPlainObject(layerValue);
+      structuralChecks.push({ check: "expectsObject", ok });
+      if (!ok) errors.push("expected non-null object");
+    }
+    return { structuralChecks, errors, warnings };
+  }
+
+  function validateBundleGeneratedAt(bundle, layerValue, spec) {
+    const mode = spec.expectsGeneratedAt;
+    if (!mode) return { generatedAtAligned: null, errors: [], warnings: [] };
+    const bundleAt = bundle.generatedAt;
+    const layerAt = layerValue && layerValue.generatedAt;
+    if (!layerAt) {
+      const msg = "layer generatedAt missing";
+      if (mode === "strict") return { generatedAtAligned: false, errors: [msg], warnings: [] };
+      return { generatedAtAligned: null, errors: [], warnings: [msg] };
+    }
+    const aligned = layerAt === bundleAt;
+    if (!aligned) {
+      const msg = `generatedAt mismatch (layer ${layerAt} vs bundle ${bundleAt})`;
+      if (mode === "strict") return { generatedAtAligned: false, errors: [msg], warnings: [] };
+      return { generatedAtAligned: false, errors: [], warnings: [msg] };
+    }
+    return { generatedAtAligned: true, errors: [], warnings: [] };
+  }
+
+  function findNonFiniteNumbers(value, path, opts) {
+    opts = opts || {};
+    const maxDepth = opts.maxDepth != null ? opts.maxDepth : 8;
+    const maxFindings = opts.maxFindings != null ? opts.maxFindings : 50;
+    const findings = [];
+    const seen = new WeakSet();
+
+    function walk(v, p, depth) {
+      if (findings.length >= maxFindings || depth > maxDepth) return;
+      if (v == null || typeof v !== "object") {
+        if (typeof v === "number" && !Number.isFinite(v)) findings.push({ path: p, value: v });
+        return;
+      }
+      if (seen.has(v)) return;
+      seen.add(v);
+      if (Array.isArray(v)) {
+        v.forEach((item, i) => walk(item, `${p}[${i}]`, depth + 1));
+        return;
+      }
+      Object.keys(v).forEach(k => walk(v[k], p ? `${p}.${k}` : k, depth + 1));
+    }
+    walk(value, path || "", 0);
+    return findings;
+  }
+
+  function validateIntelligenceBundleGraphIntegrity(bundle) {
+    const errors = [];
+    const warnings = [];
+    const reasonings = bundle.operationalReasoning?.reasonings || [];
+    const beliefs = bundle.beliefEngine?.beliefs || [];
+    const reasoningIds = new Set(reasonings.map(r => r.reasoningId).filter(Boolean));
+
+    const countDupes = (items, idKey, label) => {
+      const counts = {};
+      items.forEach(item => {
+        const id = item[idKey];
+        if (!id) return;
+        counts[id] = (counts[id] || 0) + 1;
+      });
+      Object.entries(counts).forEach(([id, c]) => {
+        if (c > 1) errors.push(`duplicate ${label}: ${id}`);
+      });
+    };
+    countDupes(reasonings, "reasoningId", "reasoningId");
+    countDupes(beliefs, "beliefId", "beliefId");
+    countDupes(bundle.operationalMemory?.memories || [], "memoryId", "memoryId");
+
+    reasonings.forEach(r => {
+      const hCounts = {};
+      (r.hypotheses || []).forEach(h => {
+        if (!h.hypothesisId) return;
+        hCounts[h.hypothesisId] = (hCounts[h.hypothesisId] || 0) + 1;
+      });
+      Object.entries(hCounts).forEach(([id, c]) => {
+        if (c > 1) errors.push(`duplicate hypothesisId: ${id} in reasoning ${r.reasoningId}`);
+      });
+    });
+
+    beliefs.forEach(b => {
+      const ref = b.derivedFromReasoningId;
+      if (!ref) return;
+      if (!reasoningIds.has(ref)) {
+        errors.push(`belief ${b.beliefId} references missing reasoningId ${ref}`);
+      }
+    });
+
+    reasonings.forEach(r => {
+      const hyps = r.hypotheses || [];
+      if (!hyps.length) return;
+      const sum = hyps.reduce((s, h) => s + (typeof h.confidence === "number" ? h.confidence : 0), 0);
+      if (sum < 0.8 || sum > 1.2) {
+        errors.push(`reasoning ${r.reasoningId} hypothesis confidence sum wildly invalid: ${sum}`);
+      } else if (Math.abs(sum - 1) > 0.05) {
+        warnings.push(`reasoning ${r.reasoningId} hypothesis confidence sum ${sum.toFixed(3)} (expected ~1.0)`);
+      }
+    });
+
+    return { errors, warnings };
+  }
+
+  function validateIntelligenceBundleMeta(bundle) {
+    const errors = [];
+    const warnings = [];
+    const meta = bundle.meta;
+    if (!meta) {
+      warnings.push("bundle.meta missing");
+      return { errors, warnings };
+    }
+    const txCount = (state.transactions || []).length;
+    const analyticsCount = (state.analytics?.events || []).length;
+    if (meta.transactionCount !== txCount) {
+      warnings.push(`meta.transactionCount (${meta.transactionCount}) does not match state (${txCount})`);
+    }
+    if (meta.analyticsEventCount !== analyticsCount) {
+      warnings.push(`meta.analyticsEventCount (${meta.analyticsEventCount}) does not match state (${analyticsCount})`);
+    }
+    if (meta.sampleData !== !!state.sampleData) {
+      warnings.push("meta.sampleData does not match state.sampleData");
+    }
+    return { errors, warnings };
+  }
+
+  function validateIntelligenceBundleDependencies(bundle, manifest) {
+    manifest = manifest || INTELLIGENCE_BUNDLE_DAG;
+    const dagIndex = intelligenceBundleDagIndex(manifest);
+    const layerResults = [];
+    const errors = [];
+    const warnings = [];
+    const dependencyOrder = manifest.map(s => s.key);
+
+    manifest.forEach((spec, idx) => {
+      (spec.dependencies || []).forEach(dep => {
+        const depIdx = dagIndex[dep]?.order;
+        if (depIdx == null) {
+          errors.push(`manifest references unknown dependency ${dep} for ${spec.key}`);
+        } else if (depIdx > idx) {
+          errors.push(`dependency order violation: ${spec.key} depends on ${dep} which appears later in manifest`);
+        }
+      });
+    });
+
+    manifest.forEach(spec => {
+      const key = spec.key;
+      const layerValue = bundle[key];
+      const present = layerValue !== undefined && layerValue !== null;
+      const layerErrors = [];
+      const layerWarnings = [];
+      const missingDependencies = [];
+
+      if (spec.required && !present) layerErrors.push("required layer missing");
+
+      (spec.dependencies || []).forEach(dep => {
+        if (bundle[dep] === undefined || bundle[dep] === null) missingDependencies.push(dep);
+      });
+      if (missingDependencies.length) {
+        layerErrors.push(`missing dependencies: ${missingDependencies.join(", ")}`);
+      }
+
+      let structuralChecks = [];
+      let generatedAtAligned = null;
+      if (present) {
+        const shape = validateBundleLayerShape(layerValue, spec);
+        structuralChecks = shape.structuralChecks;
+        layerErrors.push(...shape.errors);
+        layerWarnings.push(...shape.warnings);
+
+        const genAt = validateBundleGeneratedAt(bundle, layerValue, spec);
+        generatedAtAligned = genAt.generatedAtAligned;
+        layerErrors.push(...genAt.errors);
+        layerWarnings.push(...genAt.warnings);
+
+        if (spec.expectsModelVersion && !layerValue.modelVersion) {
+          layerWarnings.push("modelVersion missing");
+        }
+        if (spec.expectsSummary && layerValue.summary == null) {
+          layerWarnings.push("summary missing");
+        }
+
+        findNonFiniteNumbers(layerValue, key).forEach(f => {
+          layerErrors.push(`non-finite number at ${f.path}`);
+        });
+
+        if (spec.expectsArray && Array.isArray(layerValue) && layerValue.length === 0) {
+          layerWarnings.push("layer array is empty");
+        }
+      }
+
+      layerResults.push({
+        key,
+        name: spec.name,
+        ok: layerErrors.length === 0,
+        present,
+        dependenciesPresent: (spec.dependencies || []).every(d => bundle[d] != null),
+        missingDependencies,
+        generatedAtAligned,
+        structuralChecks,
+        warnings: layerWarnings,
+        errors: layerErrors,
+      });
+
+      layerErrors.forEach(e => errors.push(`${key}: ${e}`));
+      layerWarnings.forEach(w => warnings.push(`${key}: ${w}`));
+    });
+
+    const graph = validateIntelligenceBundleGraphIntegrity(bundle);
+    errors.push(...graph.errors);
+    warnings.push(...graph.warnings);
+
+    const meta = validateIntelligenceBundleMeta(bundle);
+    errors.push(...meta.errors);
+    warnings.push(...meta.warnings);
+
+    return {
+      validatorVersion: INTELLIGENCE_BUNDLE_VALIDATOR_VERSION,
+      ok: errors.length === 0,
+      generatedAt: bundle.generatedAt || null,
+      checkedAt: new Date().toISOString(),
+      errorCount: errors.length,
+      warningCount: warnings.length,
+      errors,
+      warnings,
+      layerResults,
+      dependencyOrder,
+      limitations: [
+        "Validator checks bundle structure and cross-layer links at build time only.",
+        "Does not detect unexpected bundle recomputation within a session.",
+        "analyticsDerivedSummary.generatedAt may differ from bundle.generatedAt.",
+        "Memory-to-reasoning link integrity is not validated (memories omit sourceReasoningId).",
+      ],
+    };
+  }
+
+  function validateIntelligenceBundle(bundle) {
+    try {
+      return validateIntelligenceBundleDependencies(bundle || {}, INTELLIGENCE_BUNDLE_DAG);
+    } catch (e) {
+      return {
+        validatorVersion: INTELLIGENCE_BUNDLE_VALIDATOR_VERSION,
+        ok: false,
+        generatedAt: bundle?.generatedAt || null,
+        checkedAt: new Date().toISOString(),
+        errorCount: 1,
+        warningCount: 0,
+        errors: [`validator threw: ${e.message || String(e)}`],
+        warnings: [],
+        layerResults: [],
+        dependencyOrder: INTELLIGENCE_BUNDLE_DAG.map(s => s.key),
+        limitations: [],
+      };
+    }
+  }
+
+  function intelligenceBundleValidationSummary(validation) {
+    if (!validation) {
+      return { ok: false, errorCount: 0, warningCount: 0, topErrors: ["no validation result"], topWarnings: [] };
+    }
+    return {
+      ok: validation.ok,
+      validatorVersion: validation.validatorVersion,
+      errorCount: validation.errorCount,
+      warningCount: validation.warningCount,
+      topErrors: (validation.errors || []).slice(0, 5),
+      topWarnings: (validation.warnings || []).slice(0, 5),
+    };
+  }
+
+  function sessionIntelligenceBundleValidation() {
+    sessionIntelligenceBundle();
+    return sessionTxDerivedCache?.intelligenceBundleValidation || null;
+  }
+
+  // Session cache for transaction-log replays (belief state, activity stats,
+  // full intelligence bundle). Keyed by transaction count + sampleData +
+  // analytics event count; invalidated when the log or analytics change.
   let sessionTxDerivedCache = null;
 
   function invalidateSessionTxDerivedCache() {
@@ -4558,6 +4992,7 @@
     return {
       txCount: (state.transactions || []).length,
       sampleData: !!state.sampleData,
+      analyticsEventCount: (state.analytics?.events || []).length,
     };
   }
 
@@ -4565,17 +5000,88 @@
     const key = sessionTxCacheKey();
     if (sessionTxDerivedCache
       && sessionTxDerivedCache.txCount === key.txCount
-      && sessionTxDerivedCache.sampleData === key.sampleData) {
+      && sessionTxDerivedCache.sampleData === key.sampleData
+      && sessionTxDerivedCache.analyticsEventCount === key.analyticsEventCount) {
       return;
     }
     const txs = state.transactions || [];
     sessionTxDerivedCache = {
       txCount: key.txCount,
       sampleData: key.sampleData,
+      analyticsEventCount: key.analyticsEventCount,
       beliefState: computeStockBeliefState(txs),
       activityStatsVolunteer: buildItemActivityStatsIndex(txs, { excludeTesterBuilds: true }),
       activityStatsAll: buildItemActivityStatsIndex(txs, { excludeTesterBuilds: false }),
     };
+  }
+
+  function buildIntelligenceBundle() {
+    ensureSessionTxDerivedCache();
+    const generatedAt = new Date().toISOString();
+    const referenceAt = generatedAt;
+    const analyticsEvents = state.analytics?.events || [];
+    const synthetic = !!state.sampleData;
+    const itemConfidence = computeAllItemConfidence();
+    const packingHabits = packingHabitSummary({ referenceAt });
+    const operationalIntelligence = computeOperationalIntelligence({ itemConfidence, packingHabits, referenceAt });
+    const recountCalibration = buildRecountCalibration(state.transactions);
+    const stockBeliefState = sessionTxDerivedCache.beliefState;
+    const evidenceFusion = computeEvidenceFusion({
+      itemConfidence, packingHabits, operationalIntelligence, stockBeliefState, recountCalibration,
+      analyticsEvents, synthetic, referenceAt,
+    });
+    const operationalReasoning = computeOperationalReasoning({
+      itemConfidence, packingHabits, operationalIntelligence, evidenceFusion,
+      stockBeliefState, recountCalibration,
+      analyticsEvents, synthetic, referenceAt,
+    });
+    const beliefEngine = computeBeliefEngine({
+      itemConfidence, packingHabits, operationalIntelligence, evidenceFusion, operationalReasoning,
+      stockBeliefState, recountCalibration,
+      analyticsEvents, synthetic, referenceAt,
+    });
+    const operationalMemory = computeOperationalMemory({
+      itemConfidence, packingHabits, operationalIntelligence, beliefEngine, operationalReasoning,
+      evidenceFusion, stockBeliefState, recountCalibration,
+      synthetic, referenceAt,
+    });
+    const countPriorities = computeCountPriorities(stockBeliefState);
+    return {
+      generatedAt,
+      meta: {
+        transactionCount: (state.transactions || []).length,
+        analyticsEventCount: analyticsEvents.length,
+        sampleData: synthetic,
+        cacheKey: sessionTxCacheKey(),
+        validatorVersion: INTELLIGENCE_BUNDLE_VALIDATOR_VERSION,
+      },
+      itemConfidence,
+      packingHabits,
+      operationalIntelligence,
+      recountCalibration,
+      stockBeliefState,
+      evidenceFusion,
+      operationalReasoning,
+      beliefEngine,
+      operationalMemory,
+      countPriorities,
+      activityStatsVolunteer: sessionTxDerivedCache.activityStatsVolunteer,
+      activityStatsAll: sessionTxDerivedCache.activityStatsAll,
+    };
+  }
+
+  function sessionIntelligenceBundle() {
+    ensureSessionTxDerivedCache();
+    if (!sessionTxDerivedCache.intelligenceBundle) {
+      const bundle = buildIntelligenceBundle();
+      const validation = validateIntelligenceBundle(bundle);
+      sessionTxDerivedCache.intelligenceBundle = bundle;
+      sessionTxDerivedCache.intelligenceBundleValidation = validation;
+      if (!validation.ok && typeof console !== "undefined" && console.warn) {
+        console.warn("Intelligence bundle validation reported errors:", validation.errors);
+      }
+    }
+    return sessionTxDerivedCache.intelligenceBundle;
   }
 
   function sessionStockBeliefState() {
@@ -5432,7 +5938,7 @@
   function getStockCountNextSuggestion(packCtx) {
     const pk = packCtx || getPackContext();
     const lastRecount = getLastRecountDates(state.transactions);
-    const cp = computeCountPriorities(sessionStockBeliefState());
+    const cp = sessionIntelligenceBundle().countPriorities;
     for (const row of (cp.ranked || [])) {
       if (!isItemVisibleInPackContext(row.itemId, pk)) continue;
       const info = stockCountNextInfo(lastRecount[row.itemId], row.itemId);
@@ -6301,7 +6807,9 @@
     };
   }
 
-  function packingHabitSummary() {
+  function packingHabitSummary(opts) {
+    opts = opts || {};
+    const referenceAt = opts.referenceAt || new Date().toISOString();
     const transactions = state.transactions || [];
     const events = extractPackingHabitEvents(transactions);
     const patternData = computePackingHabitPatterns(events);
@@ -6356,7 +6864,7 @@
       };
     });
     return {
-      generatedAt: new Date().toISOString(),
+      generatedAt: referenceAt,
       productionBuildCount: events.productionBuildCount,
       excludedTesterBuildCount: events.excludedTesterBuildCount,
       windows: trends.windows,
@@ -7095,8 +7603,9 @@
 
   function computeOperationalIntelligence(deps) {
     deps = deps || {};
+    const referenceAt = deps.referenceAt || new Date().toISOString();
     const transactions = state.transactions || [];
-    const packingHabits = deps.packingHabits || packingHabitSummary();
+    const packingHabits = deps.packingHabits || packingHabitSummary({ referenceAt });
     const itemConfidence = deps.itemConfidence || computeAllItemConfidence();
 
     const buildImpact = computeBuildImpact(transactions);
@@ -7155,7 +7664,7 @@
     );
 
     return {
-      generatedAt: new Date().toISOString(),
+      generatedAt: referenceAt,
       dataQuality: { synthetic: !!state.sampleData, productionOnlyDefault: true },
       summary,
       buildImpact,
@@ -9614,7 +10123,7 @@
       !omImpactReady(ctx) ? "Impact readiness gate is closed — memories remain cautious." : null,
     ].filter(Boolean);
     return {
-      generatedAt: new Date().toISOString(),
+      generatedAt: referenceAt,
       modelVersion: OM_MODEL_VERSION,
       dataQuality: { synthetic: ctx.synthetic, productionOnlyDefault: true },
       memories,
@@ -9919,28 +10428,12 @@
   // returning only what the dashboard renders. Each engine is isolated so a
   // failure in one section never blanks the whole screen.
   function computeIntelligenceDashboardModel() {
-    const itemConfidence = mindSafe(() => computeAllItemConfidence(), null);
-    const packingHabits = mindSafe(() => packingHabitSummary(), null);
-    const stockBeliefState = mindSafe(() => sessionStockBeliefState(), null);
+    const bundle = mindSafe(() => sessionIntelligenceBundle(), null);
+    const stockBeliefState = bundle?.stockBeliefState ?? null;
     const beliefSummary = mindSafe(() => buildStockBeliefSummary(stockBeliefState), null);
-    const recountCalibration = mindSafe(() => buildRecountCalibration(state.transactions), null);
-    const calibration = mindSafe(() => recountCalibrationSummaryConcise(recountCalibration), null);
-    const countPriorities = mindSafe(() => countPrioritiesSummaryConcise(computeCountPriorities(stockBeliefState)), null);
-
-    let reasoning = null;
-    mindSafe(() => {
-      const operationalIntelligence = computeOperationalIntelligence({ itemConfidence, packingHabits });
-      const evidenceFusion = computeEvidenceFusion({
-        itemConfidence, packingHabits, operationalIntelligence, stockBeliefState, recountCalibration,
-        analyticsEvents: state.analytics?.events || [], synthetic: !!state.sampleData,
-      });
-      const operationalReasoning = computeOperationalReasoning({
-        itemConfidence, packingHabits, operationalIntelligence, evidenceFusion,
-        stockBeliefState, recountCalibration,
-        analyticsEvents: state.analytics?.events || [], synthetic: !!state.sampleData,
-      });
-      reasoning = operationalReasoningSummaryConcise(operationalReasoning);
-    }, null);
+    const calibration = mindSafe(() => recountCalibrationSummaryConcise(bundle?.recountCalibration), null);
+    const countPriorities = mindSafe(() => countPrioritiesSummaryConcise(bundle?.countPriorities), null);
+    const reasoning = mindSafe(() => operationalReasoningSummaryConcise(bundle?.operationalReasoning), null);
 
     const lowStock = mindSafe(() => getLowStock().map(i => ({
       name: i.name, balance: getBalance(i.id), threshold: i.threshold,
@@ -10386,6 +10879,7 @@
         ${packErr ? `<div class="field-error" data-sub-error="${idx}">${esc(packErr)}</div>` : ""}
         <label>How many per pack?</label>
         <input type="number" class="sub-qty" data-sub-idx="${idx}" min="1" value="${esc(String(sub.qtyPerPack ?? defaultQty))}" placeholder="e.g. 2">
+        ${renderOperationalReasonChips(BUILD_SUB_REASON_CAUSE_IDS, sub.reasonId || "", "reason-chip sub-reason-chip", `data-sub-idx="${idx}"`)}
         <button type="button" class="btn-small remove-sub" data-sub-idx="${idx}" style="margin-top:8px;">Remove</button>
       </div>`;
     });
@@ -10403,6 +10897,7 @@
         <input type="number" class="omit-packs" data-omit-idx="${idx}" min="1" ${qty > 0 ? `max="${qty}"` : ""} value="${esc(String(omit.packCount ?? ""))}" placeholder="e.g. 3">
         <label>How many per pack?</label>
         <input type="number" class="omit-qty" data-omit-idx="${idx}" min="1" value="${esc(String(omit.qtyPerPack ?? "1"))}" placeholder="e.g. 1">
+        ${renderOperationalReasonChips(BUILD_OMIT_REASON_CAUSE_IDS, omit.reasonId || "", "reason-chip omit-reason-chip", `data-omit-idx="${idx}"`)}
         <button type="button" class="btn-small remove-omit" data-omit-idx="${idx}" style="margin-top:8px;">Remove</button>
       </div>`;
     });
@@ -10633,10 +11128,15 @@
         ${itemOptions(form.stockItem, packCtx, { showBalance: true })}
       </select>
       <label>Physical count</label>
-      <input type="number" id="stock-count" data-track-exposure="stock_count_input" data-exposure-label="Physical count" min="0" value="${esc(String(form.stockCount ?? ""))}" placeholder="What you counted on the shelf">
-      <label>Reason (optional)</label>
-      <input type="text" id="stock-reason" value="${esc(form.stockReason || "")}" placeholder="e.g. counting correction">
-      ${errorMsg ? `<div class="error">${esc(errorMsg)}</div>` : ""}
+      <input type="number" id="stock-count" data-track-exposure="stock_count_input" data-exposure-label="Physical count" min="0" value="${esc(String(form.stockCount ?? ""))}" placeholder="What you counted on the shelf">`;
+    const oldQty = getBalance(form.stockItem);
+    const parsedCount = parseInt(form.stockCount, 10);
+    if (!isNaN(parsedCount) && recountVarianceSignificant(oldQty, parsedCount)) {
+      html += renderOperationalReasonChips(
+        RECOUNT_REASON_CAUSE_IDS, form.stockReasonId || "", "reason-chip stock-reason-chip", 'data-stock-reason="1"'
+      );
+    }
+    html += `${errorMsg ? `<div class="error">${esc(errorMsg)}</div>` : ""}
       <div class="actions"><button class="btn btn-primary" id="stock-save" data-track-exposure="stock_save_correction" data-exposure-label="Save Count">Save Count</button></div>`;
     return html;
   }
@@ -10994,7 +11494,7 @@
       form.exceptionsOpen = true;
       if (!form.omissions) form.omissions = [];
       if (!form.omissions.some(o => !o.itemId && !o.packCount)) {
-        form.omissions.push({ itemId: "", packCount: "", qtyPerPack: "1" });
+        form.omissions.push({ itemId: "", packCount: "", qtyPerPack: "1", reasonId: "" });
       }
       render();
     };
@@ -11018,6 +11518,7 @@
           qtyPerPack: firstShortage
             ? String(recipeQtyPerPack(form.packKey, firstShortage.itemId, included, customExtras))
             : "",
+          reasonId: firstShortage ? "stock_shortage" : "",
         });
       }
       render();
@@ -11062,6 +11563,20 @@
       btn.onclick = () => {
         readBuildForm();
         form.omissions.splice(parseInt(btn.dataset.omitIdx, 10), 1);
+        render();
+      };
+    });
+    document.querySelectorAll(".sub-reason-chip, .omit-reason-chip").forEach(btn => {
+      btn.onclick = () => {
+        readBuildForm();
+        const causeId = btn.dataset.causeId;
+        if (btn.dataset.subIdx != null) {
+          const sub = form.substitutions[parseInt(btn.dataset.subIdx, 10)];
+          if (sub) sub.reasonId = sub.reasonId === causeId ? "" : causeId;
+        } else if (btn.dataset.omitIdx != null) {
+          const omit = form.omissions[parseInt(btn.dataset.omitIdx, 10)];
+          if (omit) omit.reasonId = omit.reasonId === causeId ? "" : causeId;
+        }
         render();
       };
     });
@@ -11156,6 +11671,8 @@
       if (substituteEl) sub.substitute = substituteEl.value;
       if (packsEl) sub.packCount = packsEl.value;
       if (qtyEl) sub.qtyPerPack = qtyEl.value;
+      const reasonChip = document.querySelector(`.sub-reason-chip.reason-chip--on[data-sub-idx="${idx}"]`);
+      sub.reasonId = reasonChip ? reasonChip.dataset.causeId : "";
     });
     (form.customExtras || []).forEach((extra, idx) => {
       const itemEl = document.querySelector(`.ce-item[data-ce-idx="${idx}"]`);
@@ -11170,6 +11687,8 @@
       if (itemEl) omit.itemId = itemEl.value;
       if (packsEl) omit.packCount = packsEl.value;
       if (qtyEl) omit.qtyPerPack = qtyEl.value;
+      const reasonChip = document.querySelector(`.omit-reason-chip.reason-chip--on[data-omit-idx="${idx}"]`);
+      omit.reasonId = reasonChip ? reasonChip.dataset.causeId : "";
     });
   }
 
@@ -11266,12 +11785,25 @@
       form.stockItem = this.value;
       render();
     };
+    const stockCountEl = document.getElementById("stock-count");
+    if (stockCountEl) {
+      stockCountEl.addEventListener("change", () => { readStockForm(); render(); });
+    }
+    document.querySelectorAll(".stock-reason-chip").forEach(btn => {
+      btn.onclick = () => {
+        readStockForm();
+        const causeId = btn.dataset.causeId;
+        form.stockReasonId = form.stockReasonId === causeId ? "" : causeId;
+        render();
+      };
+    });
     document.getElementById("stock-save").onclick = () => {
       readStockForm();
       const count = parseInt(form.stockCount, 10);
       if (isNaN(count) || count < 0) { errorMsg = "Please enter the count you found on the shelf."; render(); return; }
       const it = itemMap[form.stockItem];
       const old = getBalance(form.stockItem);
+      const reasonLabel = form.stockReasonId ? operationalReasonLabel(form.stockReasonId) : "";
       confirmAction = {
         summarySpec: {
           paragraphs: [
@@ -11282,12 +11814,12 @@
                 { strong: it.name },
                 ` from ${old} to `,
                 { strong: count },
-                ...(form.stockReason ? [{ br: true }, `Reason: ${form.stockReason}`] : []),
+                ...(reasonLabel ? [{ br: true }, `Reason: ${reasonLabel}`] : []),
               ],
             },
           ],
         },
-        run: () => commitRecount(form.stockItem, count, form.stockReason, form.stockDate),
+        run: () => commitRecount(form.stockItem, count, form.stockReasonId || null, form.stockDate),
       };
       showConfirmModal();
     };
@@ -11297,7 +11829,8 @@
     form.stockItem = document.getElementById("stock-item")?.value || form.stockItem;
     form.stockDate = document.getElementById("stock-date")?.value || form.stockDate || todayISO();
     form.stockCount = document.getElementById("stock-count")?.value ?? form.stockCount;
-    form.stockReason = document.getElementById("stock-reason")?.value || form.stockReason;
+    const activeReason = document.querySelector(".stock-reason-chip.reason-chip--on");
+    form.stockReasonId = activeReason ? activeReason.dataset.causeId : (form.stockReasonId || "");
   }
 
 
