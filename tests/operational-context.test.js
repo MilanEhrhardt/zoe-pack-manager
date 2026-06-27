@@ -43,6 +43,11 @@ const blocks = [
   getConst("RECOUNT_TOLERANCE_PCT"),
   getConst("OPERATIONAL_CONTEXT_VERSION"),
   extractBlock(HTML, "const OPERATIONAL_CAUSES = {"),
+  extractBlock(HTML, "const EXCEPTION_CAUSES = {"),
+  extractBlock(HTML, "const LEGACY_EXCEPTION_CAUSE_MAP = {"),
+  extractBlock(HTML, "function exceptionCauseFromId("),
+  extractBlock(HTML, "function resolveExceptionCauseId("),
+  extractBlock(HTML, "function normalizeExceptionReason("),
   extractBlock(HTML, "function operationalCauseFromId("),
   extractBlock(HTML, "function normalizeOperationalReason("),
   extractBlock(HTML, "function operationalReasonLabel("),
@@ -96,9 +101,9 @@ const ok = (name, cond, info) => {
 
 (() => {
   const subs = api.normalizeSubstitutions([{
-    insteadOf: "pads", substitute: "panties", packCount: 2, qtyPerPack: 1, reasonId: "stock_shortage",
+    insteadOf: "pads", substitute: "panties", packCount: 2, qtyPerPack: 1, reasonId: "not_on_shelf",
   }]);
-  ok("substitution preserves reason", subs[0].reason?.id === "stock_shortage");
+  ok("substitution preserves reason", subs[0].reason?.causeId === "not_on_shelf");
   const plain = api.normalizeSubstitutions([{
     insteadOf: "pads", substitute: "panties", packCount: 1, qtyPerPack: 1,
   }]);
@@ -114,7 +119,7 @@ const ok = (name, cond, info) => {
     substitutions: [{ insteadOf: "a", substitute: "b", packCount: 1, qtyPerPack: 1, reason: { id: "volunteer_preference" } }],
   };
   api.normalizeImportedTransactionContext(build);
-  ok("import normalizes build sub reason", build.substitutions[0].reason.id === "volunteer_preference");
+  ok("import normalizes build sub reason", build.substitutions[0].reason.causeId === "volunteer_choice");
 })();
 
 console.log(`\n${failed ? "FAILURES: " + failed : "all passed"}`);
