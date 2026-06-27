@@ -1701,8 +1701,21 @@
     (substitutions || []).forEach((raw, idx) => {
       const packCount = parseInt(raw.packCount, 10);
       const hasPackCount = raw.packCount !== "" && raw.packCount !== undefined && !isNaN(packCount) && packCount > 0;
-      if (raw.insteadOf && raw.substitute && raw.insteadOf === raw.substitute) {
+      const packCountEntered = raw.packCount !== "" && raw.packCount !== undefined && raw.packCount !== null;
+      const hasInsteadOf = !!raw.insteadOf;
+      const hasSubstitute = !!raw.substitute;
+      const touched = hasInsteadOf || hasSubstitute || packCountEntered;
+      if (hasInsteadOf && hasSubstitute && raw.insteadOf === raw.substitute) {
         lineErrors[idx] = "Pick two different items.";
+        return;
+      }
+      // A row with any field filled in must have all required fields — otherwise
+      // normalizeSubstitutions() would silently drop it on save (e.g. both items
+      // chosen but pack count left blank).
+      if (touched && !(hasInsteadOf && hasSubstitute && hasPackCount)) {
+        if (!hasInsteadOf) lineErrors[idx] = "Choose the item you swapped out.";
+        else if (!hasSubstitute) lineErrors[idx] = "Choose the item you used instead.";
+        else lineErrors[idx] = "Enter how many packs used this swap.";
         return;
       }
       if (!hasPackCount) return;
@@ -7864,9 +7877,9 @@
 
   function orEvidenceDiversityScore(evidenceObjectIds, ctx) {
     const count = (evidenceObjectIds || []).length;
-    const sources = orUniqueSources(evidenceObjectIds, ctx);
+    const uniqueSources = orUniqueSources(evidenceObjectIds, ctx); // already a numeric count
     if (!count) return 0;
-    return Math.round(Math.min(1, (sources.size / Math.max(1, count)) + count * 0.05) * 100) / 100;
+    return Math.round(Math.min(1, (uniqueSources / Math.max(1, count)) + count * 0.05) * 100) / 100;
   }
 
   function orReasoningMaturity(reasoning) {
@@ -10964,7 +10977,12 @@
     if (choiceExtra) choiceExtra.onclick = () => {
       readBuildForm();
       form.exceptionsOpen = true;
-      if (!form.customExtras.some(e => !e.itemId)) {
+      // Only seed the default extra when there's no empty row to fill AND no
+      // existing cup-of-soup row — otherwise repeated clicks stack duplicates
+      // (the seeded row isn't blank, so the empty-row check alone never catches it).
+      const hasBlankExtra = form.customExtras.some(e => !e.itemId);
+      const hasSoupExtra = form.customExtras.some(e => e.itemId === "cup-of-soup-sachets");
+      if (!hasBlankExtra && !hasSoupExtra) {
         form.customExtras.push({ itemId: "cup-of-soup-sachets", qtyPerPack: "2" });
       }
       render();
