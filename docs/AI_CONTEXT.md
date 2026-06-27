@@ -59,7 +59,7 @@ Home screen actions volunteers use:
 
 ### Packing
 
-Build Mom Pack or Baby Pack: qty, packer, destination, then **“Did you include these?”** Yes/No toggles for recipe optionals (Mom: deo, tissues, hand cream, etc.; Baby: wet wipes, receiving, knit items, etc.) on the main screen. **“+ Something else happened”** opens a slim subflow for swaps, items left out, or unlisted extras only.
+Build Mom Pack or Baby Pack: qty, packer, destination, then **“Did you include these?”** Yes/No toggles for recipe optionals (Mom: deo, tissues, hand cream, etc.; Baby: wet wipes, receiving, knit items, etc.) on the main screen. **“+ Something else happened”** opens a slim subflow for swaps, items left out, or unlisted extras only. If an item isn't in a dropdown, **Add new** in the search row creates it on the spot.
 
 ### Donations
 
