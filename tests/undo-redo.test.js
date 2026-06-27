@@ -1,10 +1,20 @@
 /*
- * Headless tests for undo/redo snapshot restore.
+ * Headless tests for the light undo/redo history in zoe-pack-manager.html.
+ *
+ * Run:  node tests/undo-redo.test.js
+ *
+ * Extracts the real snapshot/undo/redo functions (brace-matched). state and the
+ * side-effecting globals (saveState/render/analytics/cache) are stubbed so undo
+ * and redo can be driven and asserted deterministically.
+ *
+ * History snapshots are light: balances + readyPacks are cloned, but the
+ * append-only transactions log is never deep-cloned — undo truncates to a saved
+ * length and redo re-appends the saved tail. Legacy full snapshots (older saved
+ * state) are still restored for backward compatibility.
  */
 const fs = require("node:fs");
 const path = require("node:path");
 const assert = require("node:assert/strict");
-const { test } = require("node:test");
 
 const HTML = fs.readFileSync(path.join(__dirname, "..", "zoe-pack-manager.html"), "utf8");
 
@@ -23,113 +33,146 @@ function extractBlock(src, anchor) {
   }
   throw new Error(`unbalanced braces after: ${anchor}`);
 }
+function getConst(name) {
+  const m = new RegExp(`const ${name}\\s*=\\s*(.+?);`).exec(HTML);
+  if (!m) throw new Error(`const not found: ${name}`);
+  return `const ${name} = ${m[1]};`;
+}
 
-const blocks = [
-  "const UNDO_STACK_LIMIT = 25;",
-  extractBlock(HTML, "function todayISO("),
-  extractBlock(HTML, "function uid("),
-  extractBlock(HTML, "function snapshotForUndo("),
-  extractBlock(HTML, "function fullSnapshotForHistory("),
-  extractBlock(HTML, "function trimHistoryStack("),
-  extractBlock(HTML, "function restoreHistorySnapshot("),
-  extractBlock(HTML, "function canUndo("),
-  extractBlock(HTML, "function canRedo("),
-  extractBlock(HTML, "function beginTransaction("),
-  extractBlock(HTML, "function undoLast("),
-  extractBlock(HTML, "function redoLast("),
-].join("\n\n");
+const STUBS = `
+  let state = null;
+  const saveState = () => {};
+  const render = () => {};
+  const analyticsTrack = () => {};
+  const analyticsOperationalSnapshot = () => ({});
+  const invalidateSessionTxDerivedCache = () => {};
+  let __uid = 0;
+  const uid = () => "id" + (++__uid);
+  const todayISO = () => "2026-06-27";
+`;
 
-// eslint-disable-next-line no-new-func
-const api = new Function(`
-  let state = {
-    balances: { pads: 5 },
-    readyPacks: { momPack: 0, babyPack: 0 },
-    transactions: [{ id: "1", type: "donation" }],
-    undoStack: [],
-    redoStack: [],
-  };
-  function invalidateSessionTxDerivedCache() {}
-  function saveState() {}
-  function render() {}
-  function analyticsTrack() {}
-  function analyticsOperationalSnapshot() { return {}; }
-  ${blocks}
+const harness = `
+  ${STUBS}
+  ${getConst("UNDO_STACK_LIMIT")}
+  ${extractBlock(HTML, "function snapshotForUndo(")}
+  ${extractBlock(HTML, "function cloneBalancesAndPacks(")}
+  ${extractBlock(HTML, "function trimHistoryStack(")}
+  ${extractBlock(HTML, "function applyHistorySnapshot(")}
+  ${extractBlock(HTML, "function beginTransaction(")}
+  ${extractBlock(HTML, "function canUndo(")}
+  ${extractBlock(HTML, "function canRedo(")}
+  ${extractBlock(HTML, "function undoLast(")}
+  ${extractBlock(HTML, "function redoLast(")}
+  // mirrors finishTransaction's effect without the analytics machinery
+  function commit(tx, delta) {
+    beginTransaction();
+    state.transactions.push(tx);
+    for (const k of Object.keys(delta || {})) state.balances[k] = (state.balances[k] || 0) + delta[k];
+  }
   return {
-    restoreHistorySnapshot,
-    undoLast,
-    redoLast,
-    beginTransaction,
-    canUndo,
-    canRedo,
-    getState: () => state,
+    undoLast, redoLast, canUndo, canRedo, commit, trimHistoryStack, UNDO_STACK_LIMIT,
     setState: (s) => { state = s; },
+    get: () => state,
   };
-`)();
+`;
+const api = new Function(harness)();
 
-test("redo restores full transaction snapshot", () => {
-  api.setState({
-    balances: { pads: 10 },
-    readyPacks: { momPack: 2, babyPack: 0 },
-    transactions: [{ id: "1" }, { id: "2", type: "build" }],
-    undoStack: [],
-    redoStack: [],
-  });
-  api.restoreHistorySnapshot({
-    balances: { pads: 5 },
-    readyPacks: { momPack: 0, babyPack: 0 },
-    transactions: [{ id: "1" }],
-  });
-  const s = api.getState();
-  assert.equal(s.balances.pads, 5);
-  assert.equal(s.transactions.length, 1);
-});
+function freshState() {
+  return { balances: { pads: 10 }, readyPacks: {}, transactions: [], undoStack: [], redoStack: [] };
+}
 
-test("undo txCount path adds undo marker", () => {
-  api.setState({
-    balances: { pads: 10 },
-    readyPacks: { momPack: 0, babyPack: 0 },
-    transactions: [{ id: "1" }, { id: "2" }],
-    undoStack: [],
-    redoStack: [],
-  });
-  api.restoreHistorySnapshot({
-    balances: { pads: 5 },
-    readyPacks: { momPack: 0, babyPack: 0 },
-    txCount: 1,
-  });
-  const s = api.getState();
-  assert.equal(s.balances.pads, 5);
-  assert.equal(s.transactions.length, 2);
-  assert.equal(s.transactions[1].type, "undo");
-});
+let pass = 0;
+function check(name, fn) {
+  try { fn(); pass++; }
+  catch (e) { console.error(`FAIL: ${name}\n  ${e.message}`); process.exitCode = 1; }
+}
 
-test("undo then redo round-trip restores prior state", () => {
-  api.setState({
-    balances: { pads: 5 },
-    readyPacks: { momPack: 0, babyPack: 0 },
-    transactions: [{ id: "1", type: "donation" }],
-    undoStack: [{
-      balances: { pads: 5 },
-      readyPacks: { momPack: 0, babyPack: 0 },
-      transactions: [{ id: "1", type: "donation" }],
-    }],
-    redoStack: [],
-  });
-  const after = api.getState();
-  after.balances.pads = 12;
-  after.transactions.push({ id: "2", type: "recount", itemId: "pads", newQty: 12 });
-  api.setState(after);
-
-  assert.equal(api.getState().balances.pads, 12);
-  assert.equal(api.getState().transactions.length, 2);
-
+check("undo restores balances and truncates the log — with no 'undo' marker", () => {
+  api.setState(freshState());
+  api.commit({ id: "t1", type: "build" }, { pads: -3 });
+  assert.equal(api.get().balances.pads, 7);
   api.undoLast();
-  assert.equal(api.getState().balances.pads, 5);
-  assert.equal(api.getState().transactions.length, 1);
-  assert.ok(api.canRedo());
-
-  api.redoLast();
-  assert.equal(api.getState().balances.pads, 12);
-  assert.equal(api.getState().transactions.length, 2);
-  assert.ok(!api.canRedo());
+  const s = api.get();
+  assert.equal(s.balances.pads, 10, "balance restored");
+  assert.equal(s.transactions.length, 0, "log truncated");
+  assert.ok(!s.transactions.some(t => t.type === "undo"), "no synthetic undo marker injected");
+  assert.equal(api.canRedo(), true);
 });
+
+check("redo re-applies the undone commit (balance + the exact tx)", () => {
+  api.setState(freshState());
+  api.commit({ id: "t1", type: "build" }, { pads: -3 });
+  api.undoLast();
+  api.redoLast();
+  const s = api.get();
+  assert.equal(s.balances.pads, 7, "balance re-applied");
+  assert.equal(s.transactions.length, 1);
+  assert.equal(s.transactions[0].id, "t1", "the original tx is restored, not a clone/marker");
+  assert.equal(api.canRedo(), false);
+});
+
+check("multi-level undo then redo round-trips in order", () => {
+  api.setState(freshState());
+  api.commit({ id: "A", type: "build" }, { pads: -2 }); // pads 8
+  api.commit({ id: "B", type: "build" }, { pads: -5 }); // pads 3
+  api.undoLast(); // -> pads 8, [A]
+  api.undoLast(); // -> pads 10, []
+  let s = api.get();
+  assert.equal(s.balances.pads, 10);
+  assert.equal(s.transactions.length, 0);
+  api.redoLast(); // -> pads 8, [A]
+  assert.equal(api.get().balances.pads, 8);
+  assert.deepEqual(api.get().transactions.map(t => t.id), ["A"]);
+  api.redoLast(); // -> pads 3, [A,B]
+  s = api.get();
+  assert.equal(s.balances.pads, 3);
+  assert.deepEqual(s.transactions.map(t => t.id), ["A", "B"]);
+});
+
+check("a new commit after undo clears the redo chain", () => {
+  api.setState(freshState());
+  api.commit({ id: "A", type: "build" }, { pads: -2 });
+  api.undoLast();
+  assert.equal(api.canRedo(), true);
+  api.commit({ id: "C", type: "build" }, { pads: -1 });
+  assert.equal(api.canRedo(), false, "new save clears redo");
+});
+
+check("history snapshots never deep-clone the transactions log (perf invariant)", () => {
+  api.setState(freshState());
+  api.commit({ id: "A", type: "build" }, { pads: -2 });
+  api.undoLast();
+  const redo = api.get().redoStack[0];
+  assert.ok(Array.isArray(redo.tail), "redo entry stores a small tail");
+  assert.equal(redo.transactions, undefined, "redo entry does NOT store a full transactions clone");
+});
+
+check("backward-compatible: a legacy full redo snapshot still restores", () => {
+  const s = freshState();
+  s.redoStack = [{ balances: { pads: 99 }, readyPacks: {}, transactions: [{ id: "L", type: "build" }] }];
+  api.setState(s);
+  api.redoLast();
+  assert.equal(api.get().balances.pads, 99);
+  assert.deepEqual(api.get().transactions.map(t => t.id), ["L"]);
+});
+
+check("backward-compatible: a legacy full undo snapshot still restores", () => {
+  const s = freshState();
+  s.transactions = [{ id: "X" }, { id: "Y" }];
+  s.balances.pads = 1;
+  s.undoStack = [{ balances: { pads: 5 }, readyPacks: {}, transactions: [{ id: "X" }] }];
+  api.setState(s);
+  api.undoLast();
+  assert.equal(api.get().balances.pads, 5);
+  assert.deepEqual(api.get().transactions.map(t => t.id), ["X"]);
+  assert.deepEqual(api.get().redoStack[0].tail.map(t => t.id), ["Y"], "removed tail captured for redo");
+});
+
+check("trimHistoryStack caps a stack at UNDO_STACK_LIMIT (drops oldest)", () => {
+  const stack = Array.from({ length: api.UNDO_STACK_LIMIT + 7 }, (_, i) => ({ i }));
+  api.trimHistoryStack(stack);
+  assert.equal(stack.length, api.UNDO_STACK_LIMIT);
+  assert.equal(stack[0].i, 7, "oldest entries dropped, newest kept");
+});
+
+console.log(`undo-redo.test.js: ${pass} checks passed`);
