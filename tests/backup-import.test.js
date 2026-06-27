@@ -44,6 +44,16 @@ function extractArray(src, anchor) {
 const blocks = [
   extractBlock(HTML, "function item(id, name, category, unit, threshold, extra = {}) {"),
   extractArray(HTML, "const ITEMS = ["),
+  // editable-catalogue deps (normalizeImportedState now merges custom items)
+  "const BASE_ITEMS = ITEMS.slice();",
+  "const itemMap = Object.fromEntries(ITEMS.map(i => [i.id, i]));",
+  "const CUSTOM_ITEMS_MAX = 200;",
+  'const CATALOGUE_CATEGORIES = ["Moms", "Baby Clothes", "Baby Products", "Blankets", "Toys", "Miscellaneous"];',
+  extractBlock(HTML, "function slugifyItemId("),
+  extractBlock(HTML, "function makeCustomItemId("),
+  extractBlock(HTML, "function normalizeCustomItem("),
+  extractBlock(HTML, "function rebuildItemMap("),
+  extractBlock(HTML, "function setCatalogueCustomItems("),
   "const UNDO_STACK_LIMIT = 25;",
   "const BACKUP_IMPORT_MAX_BYTES = 10 * 1024 * 1024;",
   "const BACKUP_IMPORT_MAX_TRANSACTIONS = 50000;",

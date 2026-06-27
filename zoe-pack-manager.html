@@ -321,6 +321,15 @@
     .footer p { margin-bottom: 10px; }
     .footer button { margin-right: 14px; }
     .footer-tools { display: flex; flex-wrap: wrap; gap: 14px; }
+    .add-item-fold { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+    .add-item-fold > summary { cursor: pointer; font-weight: 600; color: var(--zoe-purple-dark); font-size: 0.92rem; }
+    .add-item-form { margin-top: 12px; }
+    .add-item-form > .muted { font-size: 0.85rem; margin: 0 0 10px; }
+    .add-item-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .add-item-msg { margin: 12px 0; font-size: 0.9rem; font-weight: 600; }
+    .add-item-msg--error { color: #A13A34; }
+    .add-item-msg--ok { color: var(--zoe-green); }
+    @media (max-width: 559px) { .add-item-row { grid-template-columns: 1fr; } }
     .analytics-note {
       margin-top: 12px;
       font-size: 0.86rem;
@@ -1498,7 +1507,6 @@
         { itemId: "deo", decrement: true },
         { itemId: "panties", decrement: true },
         { itemId: "breast-pads", decrement: true },
-        { itemId: "wet-wipes", decrement: true },
         { itemId: "tissues", decrement: true, surplusDriven: true, defaultOff: true },
         { itemId: "hand-cream", decrement: true, surplusDriven: true, defaultOff: true },
       ],
@@ -1515,6 +1523,7 @@
       ],
       optional: [
         { itemId: "receiving", decrement: true },
+        { itemId: "wet-wipes", decrement: true },
         { itemId: "knitted-blanket", decrement: true },
         { itemId: "cotton-hat", decrement: true },
         { itemId: "socks", decrement: true },
@@ -1996,6 +2005,74 @@
 
   const itemMap = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 
+  // ── Editable catalogue ────────────────────────────────────────────────────
+  // ITEMS is the built-in catalogue; volunteers can add items that aren't listed
+  // (a real need — a missing item was silently coerced to the wrong one in field
+  // testing). Custom items persist on state.customItems and are merged into the
+  // live ITEMS / itemMap at load. BASE_ITEMS is the immutable built-in set so the
+  // catalogue can be reset cleanly when a different state is loaded.
+  const BASE_ITEMS = ITEMS.slice();
+  const CUSTOM_ITEMS_MAX = 200;
+  const CATALOGUE_CATEGORIES = ["Moms", "Baby Clothes", "Baby Products", "Blankets", "Toys", "Miscellaneous"];
+
+  function slugifyItemId(name) {
+    return String(name || "").toLowerCase().trim()
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "item";
+  }
+  // Custom ids are prefixed so they can never collide with a built-in id, and
+  // de-duped against the whole live catalogue.
+  function makeCustomItemId(name) {
+    const base = "custom-" + slugifyItemId(name);
+    let id = base, n = 2;
+    while (itemMap[id]) { id = `${base}-${n}`; n++; }
+    return id;
+  }
+  function normalizeCustomItem(ci) {
+    if (!ci || typeof ci !== "object") return null;
+    const name = String(ci.name || "").trim();
+    if (!name) return null;
+    const category = CATALOGUE_CATEGORIES.includes(ci.category) ? ci.category : "Miscellaneous";
+    const unit = ci.unit === "packet" ? "packet" : "each";
+    const threshold = Math.max(0, parseInt(ci.threshold, 10) || 0);
+    const id = ci.id || makeCustomItemId(name);
+    return item(id, name, category, unit, threshold, { custom: true });
+  }
+  function rebuildItemMap() {
+    Object.keys(itemMap).forEach(k => delete itemMap[k]);
+    ITEMS.forEach(i => { itemMap[i.id] = i; });
+  }
+  // Reset the live catalogue to the built-in set plus this state's custom items.
+  // Called whenever state is (re)loaded so custom items never leak across states.
+  function setCatalogueCustomItems(customItems) {
+    ITEMS.length = 0;
+    BASE_ITEMS.forEach(i => ITEMS.push(i));
+    (customItems || []).forEach(ci => {
+      const norm = normalizeCustomItem(ci);
+      if (norm && !ITEMS.some(i => i.id === norm.id)) ITEMS.push(norm);
+    });
+    rebuildItemMap();
+  }
+  // Add one item to the catalogue. Returns { ok, item } or { ok:false, error }.
+  function addCustomItem(input) {
+    const name = String(input?.name || "").trim();
+    if (!name) return { ok: false, error: "Please enter an item name." };
+    if (ITEMS.some(i => i.name.trim().toLowerCase() === name.toLowerCase())) {
+      return { ok: false, error: `"${name}" is already in the list.` };
+    }
+    if (!Array.isArray(state.customItems)) state.customItems = [];
+    if (state.customItems.length >= CUSTOM_ITEMS_MAX) {
+      return { ok: false, error: "There are too many custom items already." };
+    }
+    const it = normalizeCustomItem({ name, category: input.category, unit: input.unit, threshold: input.threshold });
+    state.customItems.push({ id: it.id, name: it.name, category: it.category, unit: it.unit, threshold: it.threshold });
+    ITEMS.push(it);
+    itemMap[it.id] = it;
+    if (!state.balances) state.balances = {};
+    if (state.balances[it.id] === undefined) state.balances[it.id] = 0;
+    saveState();
+    return { ok: true, item: it };
+  }
+
   var ANALYTICS_SCHEMA_VERSION = "1.3.0";
   var ANALYTICS_MAX_EVENTS = 5000;
   // Analytics fires many micro-events (exposure, episodes, focus, hover); coalesce
@@ -2119,6 +2196,7 @@
       packContext: "momPack",
       donors: [],
       lastSelectedPacker: "",
+      customItems: [],
     };
   }
 
@@ -3049,6 +3127,7 @@
   function loadSampleData() {
     if (!confirm("Replace all current data with sample donation history? You can Export first to keep a backup.")) return;
     state = analyticsUpgradeState(buildSyntheticState());
+    setCatalogueCustomItems(state.customItems);
     invalidateSessionTxDerivedCache();
     analyticsTrack("sample_data_loaded", { transactionCount: state.transactions.length });
     saveState();
@@ -3199,7 +3278,17 @@
       redoStackTrimmed: 0,
       redoStackCleared: 0,
       donorsTrimmed: 0,
+      customItemsTrimmed: 0,
     };
+
+    // Merge persisted custom items into the live catalogue before defaulting
+    // balances, so added items get a balance and appear in every dropdown.
+    if (!Array.isArray(parsed.customItems)) parsed.customItems = [];
+    if (parsed.customItems.length > CUSTOM_ITEMS_MAX) {
+      trim.customItemsTrimmed = parsed.customItems.length - CUSTOM_ITEMS_MAX;
+      parsed.customItems = parsed.customItems.slice(0, CUSTOM_ITEMS_MAX);
+    }
+    setCatalogueCustomItems(parsed.customItems);
 
     ITEMS.forEach(i => {
       if (parsed.balances[i.id] === undefined) parsed.balances[i.id] = 0;
@@ -10350,6 +10439,30 @@
         <button type="button" id="btn-export-ai-pack"${exp("admin_export_ai_pack", "Export AI Data Pack")}>Export AI Data Pack</button>
       </div>
       <div class="analytics-note"><strong>Before you share:</strong> Backup and AI Data Pack files can include sensitive local data — donor and packer names, clinics, transaction history, and analytics. Only save or send them somewhere you trust.</div>
+      <details class="add-item-fold">
+        <summary>Add a new item to the list</summary>
+        <div class="add-item-form">
+          <p class="muted">Use this when something you packed or received isn't in the dropdowns yet. It starts at 0 on the shelf — count it in afterwards.</p>
+          <label for="new-item-name">Item name</label>
+          <input type="text" id="new-item-name" placeholder="e.g. Lip balm" autocomplete="off">
+          <div class="add-item-row">
+            <div>
+              <label for="new-item-category">Group</label>
+              <select id="new-item-category">${CATALOGUE_CATEGORIES.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("")}</select>
+            </div>
+            <div>
+              <label for="new-item-unit">Counted as</label>
+              <select id="new-item-unit"><option value="each">Each</option><option value="packet">Packet</option></select>
+            </div>
+            <div>
+              <label for="new-item-threshold">Tell me when below</label>
+              <input type="number" id="new-item-threshold" min="0" step="1" value="0" inputmode="numeric">
+            </div>
+          </div>
+          <div id="new-item-msg" class="add-item-msg hidden"></div>
+          <button type="button" id="btn-add-item">Add item</button>
+        </div>
+      </details>
       <div class="analytics-controls">
         <div class="analytics-status">
           <div><strong>Analytics recording</strong><br><span class="muted">Pause this while you test. Resume before your mom uses it.</span></div>
@@ -11232,6 +11345,33 @@
     if (clearAnalyticsDayBtn) clearAnalyticsDayBtn.onclick = () => {
       const dateInput = document.getElementById("analytics-clear-date");
       clearAnalyticsForDate(dateInput ? dateInput.value : todayISO());
+    };
+
+    const addItemBtn = document.getElementById("btn-add-item");
+    if (addItemBtn) addItemBtn.onclick = () => {
+      const nameEl = document.getElementById("new-item-name");
+      const msgEl = document.getElementById("new-item-msg");
+      const result = addCustomItem({
+        name: nameEl ? nameEl.value : "",
+        category: document.getElementById("new-item-category")?.value,
+        unit: document.getElementById("new-item-unit")?.value,
+        threshold: document.getElementById("new-item-threshold")?.value,
+      });
+      if (!msgEl) return;
+      msgEl.classList.remove("hidden");
+      if (!result.ok) {
+        msgEl.className = "add-item-msg add-item-msg--error";
+        msgEl.textContent = result.error;
+        return;
+      }
+      // Catalogue is now live; no full re-render needed — the item appears in
+      // every dropdown the next time a screen renders. Keep the panel open and confirm.
+      msgEl.className = "add-item-msg add-item-msg--ok";
+      msgEl.textContent = `Added — "${result.item.name}" is now in the lists. It starts at 0 on the shelf; count it in when you're ready.`;
+      if (nameEl) nameEl.value = "";
+      const thrEl = document.getElementById("new-item-threshold");
+      if (thrEl) thrEl.value = "0";
+      analyticsTrack("custom_item_added", { itemId: result.item.id, category: result.item.category, unit: result.item.unit });
     };
 
     document.querySelectorAll("details").forEach(d => {
