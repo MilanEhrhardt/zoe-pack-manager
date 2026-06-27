@@ -1860,7 +1860,10 @@
   const itemMap = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 
   var ANALYTICS_SCHEMA_VERSION = "1.3.0";
-  var ANALYTICS_MAX_EVENTS = 50000;
+  var ANALYTICS_MAX_EVENTS = 5000;
+  // Analytics fires many micro-events (exposure, episodes, focus, hover); coalesce
+  // their full-state persistence rather than rewriting localStorage on each one.
+  var ANALYTICS_PERSIST_DEBOUNCE_MS = 800;
 
   let state = loadState();
   let view = "home";
@@ -2934,6 +2937,25 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* no-op */ }
   }
 
+  // Coalesced persistence for the high-frequency analytics path. Operational
+  // commits keep persisting synchronously via saveState(); this only batches the
+  // many low-value analytics writes. A trailing write is flushed on beforeunload.
+  var analyticsPersistTimer = null;
+  function persistStateSoon() {
+    if (analyticsPersistTimer !== null) return;
+    analyticsPersistTimer = setTimeout(() => {
+      analyticsPersistTimer = null;
+      saveState();
+    }, ANALYTICS_PERSIST_DEBOUNCE_MS);
+  }
+  function flushPendingPersist() {
+    if (analyticsPersistTimer !== null) {
+      clearTimeout(analyticsPersistTimer);
+      analyticsPersistTimer = null;
+    }
+    saveState();
+  }
+
   function getSeason() {
     const m = new Date().getMonth();
     if (m >= 11 || m <= 2) return "summer";
@@ -3184,7 +3206,7 @@
         state.analytics.events.splice(0, state.analytics.events.length - ANALYTICS_MAX_EVENTS);
       }
       state.analytics.lastSeenAt = e.timestamp;
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (err) { /* keep app usable */ }
+      persistStateSoon();
     } catch (err) { /* analytics must never break the app */ }
   }
 
@@ -11697,6 +11719,7 @@
   window.addEventListener("beforeunload", function() {
     if (analyticsCurrentFlow) analyticsAbandonFlow("window_closed");
     analyticsTrack("app_close", { view, snapshot: analyticsOperationalSnapshot() });
+    flushPendingPersist(); // force the trailing debounced analytics write before the page goes away
   });
 
   // ═══════════════════════════════════════════════════════════════════
